@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { SignaturePad } from "@/components/SignaturePad";
+import { PhoneInput } from "@/components/PhoneInput";
+import { COUNTRY_CODES, DEFAULT_COUNTRY_DIAL_CODE } from "@/lib/countryCodes";
 import {
   RegistrationConfig,
   CERTIFICATION_LEVELS,
@@ -11,6 +13,31 @@ import {
   CERT_LEVEL_TO_DB,
   AGENCY_TO_DB,
 } from "./types";
+
+const SIZE_OPTIONS: Record<string, string[]> = {
+  bcd: ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"],
+  wetsuit: ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL", "XXXXL"],
+  fins: ["S", "M", "L", "XL", "XXL", "XXXL"],
+  boots: ["38", "39", "40", "41", "42", "43", "44", "45", "46"],
+};
+
+function splitStoredPhone(stored: string): { dialCode: string; number: string } {
+  const match = COUNTRY_CODES.filter((c) => c.dialCode !== "+" && stored.startsWith(c.dialCode)).sort(
+    (a, b) => b.dialCode.length - a.dialCode.length,
+  )[0];
+  if (match) {
+    return { dialCode: match.dialCode, number: stored.slice(match.dialCode.length) };
+  }
+  return { dialCode: DEFAULT_COUNTRY_DIAL_CODE, number: stored };
+}
+
+function sizeCategoryFor(itemKey: string): string | null {
+  if (itemKey.includes("bcd")) return "bcd";
+  if (itemKey.includes("wetsuit")) return "wetsuit";
+  if (itemKey.includes("fin")) return "fins";
+  if (itemKey.includes("boot")) return "boots";
+  return null;
+}
 
 const inputClass =
   "w-full rounded-card border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal";
@@ -26,11 +53,15 @@ type FormState = {
   departureDate: string;
   accommodation: string;
   email: string;
-  phone: string;
-  whatsapp: string;
+  phoneDialCode: string;
+  phoneNumber: string;
+  whatsappDialCode: string;
+  whatsappNumber: string;
   ecName: string;
-  ecPhone: string;
-  ecWhatsapp: string;
+  ecPhoneDialCode: string;
+  ecPhoneNumber: string;
+  ecWhatsappDialCode: string;
+  ecWhatsappNumber: string;
   ecEmail: string;
   ecRelationship: string;
   certLevel: string;
@@ -45,11 +76,13 @@ type FormState = {
   wantsInsuranceReferral: boolean | null;
   needsEquipment: boolean | null;
   equipmentSelections: Record<string, boolean>;
+  equipmentSizes: Record<string, string>;
   wantsComputer: boolean;
   medicalAnswers: Record<string, boolean>;
   privacyAgreed: boolean;
   waiverAgreed: boolean;
   signatureDataUrl: string | null;
+  certCardFile: File | null;
 };
 
 const initialForm: FormState = {
@@ -61,11 +94,15 @@ const initialForm: FormState = {
   departureDate: "",
   accommodation: "",
   email: "",
-  phone: "",
-  whatsapp: "",
+  phoneDialCode: DEFAULT_COUNTRY_DIAL_CODE,
+  phoneNumber: "",
+  whatsappDialCode: DEFAULT_COUNTRY_DIAL_CODE,
+  whatsappNumber: "",
   ecName: "",
-  ecPhone: "",
-  ecWhatsapp: "",
+  ecPhoneDialCode: DEFAULT_COUNTRY_DIAL_CODE,
+  ecPhoneNumber: "",
+  ecWhatsappDialCode: DEFAULT_COUNTRY_DIAL_CODE,
+  ecWhatsappNumber: "",
   ecEmail: "",
   ecRelationship: "",
   certLevel: "",
@@ -80,11 +117,13 @@ const initialForm: FormState = {
   wantsInsuranceReferral: null,
   needsEquipment: null,
   equipmentSelections: {},
+  equipmentSizes: {},
   wantsComputer: false,
   medicalAnswers: {},
   privacyAgreed: false,
   waiverAgreed: false,
   signatureDataUrl: null,
+  certCardFile: null,
 };
 
 const STEP_LABELS = [
@@ -188,6 +227,10 @@ export function RegistrationWizard({
     }));
   }
 
+  function setEquipmentSize(key: string, size: string) {
+    setForm((f) => ({ ...f, equipmentSizes: { ...f.equipmentSizes, [key]: size } }));
+  }
+
   const age = calcAge(form.birthday);
   const isMinor = age !== null && age < 18;
 
@@ -220,14 +263,18 @@ export function RegistrationWizard({
     });
     const prefill = data?.[0];
     if (prefill) {
+      const phoneSplit = prefill.phone ? splitStoredPhone(prefill.phone) : null;
+      const whatsappSplit = prefill.whatsapp ? splitStoredPhone(prefill.whatsapp) : null;
       setForm((f) => ({
         ...f,
         firstName: prefill.first_name ?? f.firstName,
         lastName: prefill.last_name ?? f.lastName,
         nationality: prefill.nationality ?? f.nationality,
         birthday: prefill.birthday ?? f.birthday,
-        phone: prefill.phone ?? f.phone,
-        whatsapp: prefill.whatsapp ?? f.whatsapp,
+        phoneDialCode: phoneSplit?.dialCode ?? f.phoneDialCode,
+        phoneNumber: phoneSplit?.number ?? f.phoneNumber,
+        whatsappDialCode: whatsappSplit?.dialCode ?? f.whatsappDialCode,
+        whatsappNumber: whatsappSplit?.number ?? f.whatsappNumber,
       }));
     }
     setReturningNotice(
@@ -275,12 +322,12 @@ export function RegistrationWizard({
       if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
         e.push("A valid email address is required.");
       }
-      if (!form.whatsapp.trim()) e.push("A WhatsApp number is required.");
+      if (!form.whatsappNumber.trim()) e.push("A WhatsApp number is required.");
     }
     if (n === 4) {
       if (!form.ecName.trim()) e.push("Emergency contact name is required.");
-      if (!form.ecPhone.trim()) e.push("Emergency contact phone is required.");
-      if (!form.ecWhatsapp.trim()) e.push("Emergency contact WhatsApp is required.");
+      if (!form.ecPhoneNumber.trim()) e.push("Emergency contact phone is required.");
+      if (!form.ecWhatsappNumber.trim()) e.push("Emergency contact WhatsApp is required.");
       if (!form.ecRelationship) e.push("Emergency contact relationship is required.");
     }
     if (n === 5) {
@@ -324,7 +371,12 @@ export function RegistrationWizard({
 
     const selectedItems = Object.entries(form.equipmentSelections)
       .filter(([, v]) => v)
-      .map(([k]) => k);
+      .map(([k]) => ({ name: k, size: form.equipmentSizes[k] || null }));
+
+    const phone = form.phoneNumber.trim() ? `${form.phoneDialCode}${form.phoneNumber.trim()}` : null;
+    const whatsapp = `${form.whatsappDialCode}${form.whatsappNumber.trim()}`;
+    const ecPhone = `${form.ecPhoneDialCode}${form.ecPhoneNumber.trim()}`;
+    const ecWhatsapp = `${form.ecWhatsappDialCode}${form.ecWhatsappNumber.trim()}`;
 
     const medicalSnapshot = (config?.medical_questions ?? []).map((q) => ({
       question_text: q.question_text,
@@ -341,8 +393,8 @@ export function RegistrationWizard({
       age,
       nationality: form.nationality.trim(),
       email: form.email.trim(),
-      phone: form.phone.trim() || null,
-      whatsapp: form.whatsapp.trim(),
+      phone,
+      whatsapp,
       certification_level: CERT_LEVEL_TO_DB[form.certLevel] ?? "none",
       training_agency: form.agency ? AGENCY_TO_DB[form.agency] : null,
       logged_dives: parseInt(form.loggedDives, 10) || 0,
@@ -354,8 +406,8 @@ export function RegistrationWizard({
       departure_date: form.departureDate,
       accommodation: form.accommodation.trim(),
       emergency_contact_name: form.ecName.trim(),
-      emergency_contact_phone: form.ecPhone.trim(),
-      emergency_contact_whatsapp: form.ecWhatsapp.trim(),
+      emergency_contact_phone: ecPhone,
+      emergency_contact_whatsapp: ecWhatsapp,
       emergency_contact_email: form.ecEmail.trim() || null,
       emergency_contact_relationship: form.ecRelationship,
       last_dive_date: form.certLevel !== "None" ? form.lastDiveDate || null : null,
@@ -380,16 +432,37 @@ export function RegistrationWizard({
       duplicate_email_flag: isDuplicateEmail,
     };
 
-    const { error } = await supabase.rpc("submit_diver_registration", {
+    const { data: result, error } = await supabase.rpc("submit_diver_registration", {
       p_payload: payload,
     });
 
-    setSubmitting(false);
-
     if (error) {
+      setSubmitting(false);
       setSubmitError("Something went wrong. Please check your details and try again.");
       return;
     }
+
+    if (form.certCardFile) {
+      const diverId = result?.diver_id;
+      const ext = form.certCardFile.name.split(".").pop() || "jpg";
+      const path = `${diveCenterId}/${diverId}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("cert-cards")
+        .upload(path, form.certCardFile, { upsert: true, contentType: form.certCardFile.type });
+      if (!uploadError) {
+        await supabase.rpc("set_diver_cert_card_url", {
+          p_diver_id: diverId,
+          p_dive_center_id: diveCenterId,
+          p_path: path,
+        });
+      } else {
+        console.error("Cert card upload failed (registration still succeeded):", uploadError);
+      }
+      // A failed cert card upload doesn't block registration — it's optional
+      // and the diver row already exists with everything that matters.
+    }
+
+    setSubmitting(false);
 
     setConfirmation({
       firstName: form.firstName,
@@ -690,20 +763,20 @@ export function RegistrationWizard({
                 <label className={labelClass}>
                   Phone Number <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
-                <input
-                  className={inputClass}
-                  value={form.phone}
-                  onChange={(e) => setField("phone", e.target.value)}
-                  placeholder="+63 917 123 4567"
+                <PhoneInput
+                  dialCode={form.phoneDialCode}
+                  number={form.phoneNumber}
+                  onDialCodeChange={(v) => setField("phoneDialCode", v)}
+                  onNumberChange={(v) => setField("phoneNumber", v)}
                 />
               </div>
               <div>
                 <label className={labelClass}>WhatsApp Number{requiredMark}</label>
-                <input
-                  className={inputClass}
-                  value={form.whatsapp}
-                  onChange={(e) => setField("whatsapp", e.target.value)}
-                  placeholder="+63 917 123 4567"
+                <PhoneInput
+                  dialCode={form.whatsappDialCode}
+                  number={form.whatsappNumber}
+                  onDialCodeChange={(v) => setField("whatsappDialCode", v)}
+                  onNumberChange={(v) => setField("whatsappNumber", v)}
                 />
               </div>
               <div className="flex gap-3 pt-2">
@@ -735,25 +808,25 @@ export function RegistrationWizard({
                   placeholder="Maria Santos"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Phone Number{requiredMark}</label>
-                  <input
-                    className={inputClass}
-                    value={form.ecPhone}
-                    onChange={(e) => setField("ecPhone", e.target.value)}
-                    placeholder="+63 928 123 4567"
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>WhatsApp{requiredMark}</label>
-                  <input
-                    className={inputClass}
-                    value={form.ecWhatsapp}
-                    onChange={(e) => setField("ecWhatsapp", e.target.value)}
-                    placeholder="+63 928 123 4567"
-                  />
-                </div>
+              <div>
+                <label className={labelClass}>Phone Number{requiredMark}</label>
+                <PhoneInput
+                  dialCode={form.ecPhoneDialCode}
+                  number={form.ecPhoneNumber}
+                  onDialCodeChange={(v) => setField("ecPhoneDialCode", v)}
+                  onNumberChange={(v) => setField("ecPhoneNumber", v)}
+                  placeholder="928 123 4567"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>WhatsApp{requiredMark}</label>
+                <PhoneInput
+                  dialCode={form.ecWhatsappDialCode}
+                  number={form.ecWhatsappNumber}
+                  onDialCodeChange={(v) => setField("ecWhatsappDialCode", v)}
+                  onNumberChange={(v) => setField("ecWhatsappNumber", v)}
+                  placeholder="928 123 4567"
+                />
               </div>
               <div>
                 <label className={labelClass}>
@@ -846,6 +919,21 @@ export function RegistrationWizard({
                     />
                     Nitrox certified
                   </label>
+                  <div>
+                    <label className={labelClass}>
+                      Upload your certification card{" "}
+                      <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setField("certCardFile", e.target.files?.[0] ?? null)}
+                      className="text-sm"
+                    />
+                    {form.certCardFile && (
+                      <p className="text-xs text-gray-500 mt-1">{form.certCardFile.name}</p>
+                    )}
+                  </div>
                 </>
               )}
               <div>
@@ -982,18 +1070,34 @@ export function RegistrationWizard({
                       })
                       .map((r) => {
                         const key = r.item_name.toLowerCase();
+                        const sizeCategory = sizeCategoryFor(key);
+                        const checked = !!form.equipmentSelections[key];
                         return (
-                          <label
+                          <div
                             key={r.id}
-                            className="flex items-center gap-2 text-sm cursor-pointer border border-gray-200 rounded-card px-3 py-2"
+                            className="flex items-center gap-2 border border-gray-200 rounded-card px-3 py-2"
                           >
-                            <input
-                              type="checkbox"
-                              checked={!!form.equipmentSelections[key]}
-                              onChange={(e) => setEquipmentSelection(key, e.target.checked)}
-                            />
-                            {r.item_name}
-                          </label>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer flex-1">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => setEquipmentSelection(key, e.target.checked)}
+                              />
+                              {r.item_name}
+                            </label>
+                            {checked && sizeCategory && (
+                              <select
+                                className="rounded-card border border-gray-300 px-2 py-1.5 text-xs"
+                                value={form.equipmentSizes[key] ?? ""}
+                                onChange={(e) => setEquipmentSize(key, e.target.value)}
+                              >
+                                <option value="">Size</option>
+                                {SIZE_OPTIONS[sizeCategory].map((s) => (
+                                  <option key={s}>{s}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
                         );
                       })}
                     {(config.equipment_rental_rates ?? []).length === 0 && (
