@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+:root {
+  --navy: #1a3c5e;
+  --navy-dark: #0f2540;
+  --navy-mid: #244d73;
+  --teal: #00a8ab;
+  --teal-light: #e0f7f8;
+  --teal-mid: #007b7d;
+  --white: #ffffff;
+  --off-white: #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e2e8f0;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --dark: #0f172a;
+  --red: #dc2626;
+  --red-light: #fef2f2;
+  --green: #16a34a;
+  --green-light: #f0fdf4;
+  --orange: #d97706;
+  --orange-light: #fffbeb;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --radius: 12px;
+  --radius-lg: 20px;
+
+  --background: var(--white);
+  --foreground: var(--dark);
+}
+
+@theme inline {
+  --color-navy: var(--navy);
+  --color-navy-dark: var(--navy-dark);
+  --color-navy-mid: var(--navy-mid);
+  --color-teal: var(--teal);
+  --color-teal-light: var(--teal-light);
+  --color-teal-mid: var(--teal-mid);
+  --color-off-white: var(--off-white);
+  --color-gray-100: var(--gray-100);
+  --color-gray-200: var(--gray-200);
+  --color-gray-300: var(--gray-300);
+  --color-gray-400: var(--gray-400);
+  --color-gray-600: var(--gray-600);
+  --color-gray-700: var(--gray-700);
+  --color-dark: var(--dark);
+  --color-red: var(--red);
+  --color-red-light: var(--red-light);
+  --color-green: var(--green);
+  --color-green-light: var(--green-light);
+  --color-orange: var(--orange);
+  --color-orange-light: var(--orange-light);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --font-display: var(--font-dm-serif-display), serif;
+  --font-body: var(--font-dm-sans), sans-serif;
+
+  --shadow-card: var(--shadow-sm);
+  --shadow-card-hover: var(--shadow-md);
+
+  --radius-card: var(--radius);
+  --radius-card-lg: var(--radius-lg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: var(--navy-dark);
+    --foreground: var(--off-white);
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
