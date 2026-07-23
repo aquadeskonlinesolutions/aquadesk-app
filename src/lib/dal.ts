@@ -11,6 +11,7 @@ export type CurrentUser = {
   role: "owner" | "secretary";
   canViewRevenue: boolean;
   isActive: boolean;
+  passwordChanged: boolean;
 };
 
 // Centralizes the "who is this and are they allowed here" check. Optimistic
@@ -29,12 +30,18 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
 
   const { data: profile, error } = await supabase
     .from("users")
-    .select("id, dive_center_id, full_name, email, role, can_view_revenue, is_active")
+    .select(
+      "id, dive_center_id, full_name, email, role, can_view_revenue, is_active, password_changed",
+    )
     .eq("id", user.id)
     .single();
 
   if (error || !profile || !profile.is_active) {
     redirect("/login");
+  }
+
+  if (!profile.password_changed) {
+    redirect("/account/password");
   }
 
   return {
@@ -45,5 +52,79 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     role: profile.role,
     canViewRevenue: profile.can_view_revenue,
     isActive: profile.is_active,
+    passwordChanged: profile.password_changed,
   };
 });
+
+export type CurrentPlatformAdmin = {
+  id: string;
+  userId: string;
+  fullName: string;
+  email: string;
+};
+
+export const getCurrentPlatformAdmin = cache(
+  async (): Promise<CurrentPlatformAdmin> => {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      redirect("/login");
+    }
+
+    const { data: admin, error } = await supabase
+      .from("platform_admins")
+      .select("id, user_id, full_name, email, is_active")
+      .eq("user_id", user.id)
+      .single();
+
+    if (error || !admin || !admin.is_active) {
+      redirect("/login");
+    }
+
+    return {
+      id: admin.id,
+      userId: admin.user_id,
+      fullName: admin.full_name,
+      email: admin.email,
+    };
+  },
+);
+
+// Figures out where a just-authenticated (or already-authenticated) visitor
+// should land: platform admins go to the office console, dive-center users
+// go to the app (or a forced password change first), anyone else is logged
+// out entirely since they don't belong to either tier.
+export async function resolveLandingPath(): Promise<string> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return "/login";
+
+  const { data: admin } = await supabase
+    .from("platform_admins")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (admin) return "/office";
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("id, is_active, password_changed")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profile?.is_active) {
+    return profile.password_changed ? "/dashboard" : "/account/password";
+  }
+
+  return "/login";
+}

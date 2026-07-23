@@ -46,7 +46,9 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && pathname === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    // Root page.tsx does the real "where does this user belong" check
+    // (platform admin vs. dive-center user vs. forced password change).
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return response;

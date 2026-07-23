@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { resolveLandingPath } from "@/lib/dal";
 
 export async function signOut() {
   const supabase = await createClient();
@@ -32,5 +33,5 @@ export async function signIn(
     return { error: "Invalid email or password." };
   }
 
-  redirect("/dashboard");
+  redirect(await resolveLandingPath());
 }
