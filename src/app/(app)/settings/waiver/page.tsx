@@ -1,10 +1,19 @@
-import { PagePlaceholder } from "@/components/PagePlaceholder";
+import { requireOwner } from "@/lib/dal";
+import { loadWaiverData } from "./data";
+import { WaiverEditorSection } from "./WaiverEditorSection";
+import { MedicalQuestionsSection } from "./MedicalQuestionsSection";
 
-export default function SettingsWaiverPage() {
+export default async function SettingsWaiverPage() {
+  const user = await requireOwner();
+  const data = await loadWaiverData(user.diveCenterId);
+
   return (
-    <PagePlaceholder
-      title="Waiver & Registration"
-      description="Waiver text, medical questions, and privacy notice."
-    />
+    <div>
+      <WaiverEditorSection
+        waiverContent={data.waiverContent}
+        waiverUpdatedAt={data.waiverUpdatedAt}
+      />
+      <MedicalQuestionsSection questions={data.medicalQuestions} />
+    </div>
   );
 }

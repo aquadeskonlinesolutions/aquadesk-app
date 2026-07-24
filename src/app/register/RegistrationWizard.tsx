@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { sanitizeWaiverHtml } from "@/lib/sanitizeWaiverHtml";
 import { SignaturePad } from "@/components/SignaturePad";
 import { PhoneInput } from "@/components/PhoneInput";
 import { COUNTRY_CODES, DEFAULT_COUNTRY_DIAL_CODE } from "@/lib/countryCodes";
@@ -424,7 +425,9 @@ export function RegistrationWizard({
       medical_flag: anyMedicalYes(),
       privacy_consent_at: new Date().toISOString(),
       privacy_notice_snapshot: resolvedPrivacyNotice,
-      waiver_content_snapshot: config?.dive_center?.waiver_content ?? null,
+      waiver_content_snapshot: config?.dive_center?.waiver_content
+        ? sanitizeWaiverHtml(config.dive_center.waiver_content)
+        : null,
       waiver_date: new Date().toISOString(),
       waiver_signed: true,
       waiver_opened: true,
@@ -1206,9 +1209,9 @@ export function RegistrationWizard({
               <div
                 className="text-sm text-gray-700 max-h-56 overflow-y-auto border border-gray-200 rounded-card p-3"
                 dangerouslySetInnerHTML={{
-                  __html:
-                    dc.waiver_content ||
-                    '<span style="color:#94A3B8">This dive center has not yet added waiver text. Please contact them directly before your dive.</span>',
+                  __html: dc.waiver_content
+                    ? sanitizeWaiverHtml(dc.waiver_content)
+                    : '<span style="color:#94A3B8">This dive center has not yet added waiver text. Please contact them directly before your dive.</span>',
                 }}
               />
               <label className="flex items-start gap-2 text-sm cursor-pointer">
