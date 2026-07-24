@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { getOverviewData, getStaffActivityData, getJoinRideData } from "./actions";
+import { getOverviewData, getStaffActivityData, getJoinRideData, getRentalGearsData } from "./actions";
 import { OverviewTab } from "./OverviewTab";
 import { StaffTab } from "./StaffTab";
 import { JoinRideTab } from "./JoinRideTab";
-import type { OverviewData, StaffActivityData, JoinRideData } from "./data";
+import { RentalGearsTab } from "./RentalGearsTab";
+import type { OverviewData, StaffActivityData, JoinRideData, RentalGearsData } from "./data";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -45,6 +46,8 @@ export function ReportsClient({
   const [staffLoading, setStaffLoading] = useState(false);
   const [joinData, setJoinData] = useState<JoinRideData | null>(null);
   const [joinLoading, setJoinLoading] = useState(false);
+  const [rentalData, setRentalData] = useState<RentalGearsData | null>(null);
+  const [rentalLoading, setRentalLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -82,6 +85,12 @@ export function ReportsClient({
       getJoinRideData()
         .then(setJoinData)
         .finally(() => setJoinLoading(false));
+    }
+    if (key === "rentals" && !rentalData && !rentalLoading) {
+      setRentalLoading(true);
+      getRentalGearsData()
+        .then(setRentalData)
+        .finally(() => setRentalLoading(false));
     }
   }
 
@@ -180,7 +189,17 @@ export function ReportsClient({
         )}
       </div>
 
-      {tab !== "overview" && tab !== "staff" && tab !== "join" && (
+      <div className={tab === "rentals" ? "print:hidden" : "hidden"}>
+        {rentalData ? (
+          <RentalGearsTab data={rentalData} appliedFrom={appliedFrom} appliedTo={appliedTo} />
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+            {rentalLoading ? "Loading…" : "No data yet."}
+          </div>
+        )}
+      </div>
+
+      {tab !== "overview" && tab !== "staff" && tab !== "join" && tab !== "rentals" && (
         <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
           {TABS.find((t) => t.key === tab)?.label} — not built yet.
         </div>

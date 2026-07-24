@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { requireRevenueAccess } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { safeNum } from "@/lib/payments";
-import { loadOverviewData, loadStaffActivityData, loadJoinRideData, type JoinRideDirection } from "./data";
+import {
+  loadOverviewData,
+  loadStaffActivityData,
+  loadJoinRideData,
+  loadRentalGearsData,
+  type JoinRideDirection,
+} from "./data";
 
 export async function getOverviewData(dateFrom: string, dateTo: string) {
   const user = await requireRevenueAccess();
@@ -291,4 +297,80 @@ export async function generateJoinRideStatement(
       }))
       .sort((a, b) => a.date.localeCompare(b.date)),
   };
+}
+
+// ── Rental Gears ─────────────────────────────────────────────────────────
+
+export async function getRentalGearsData() {
+  const user = await requireRevenueAccess();
+  return loadRentalGearsData(user.diveCenterId);
+}
+
+export async function saveRentalGearRecord(
+  id: string | null,
+  date: string,
+  equipment: string,
+  company: string,
+  quantity: number,
+  rate: number,
+  status: string,
+  remarks: string,
+): Promise<{ error?: string }> {
+  const trimmedEquipment = equipment.trim();
+  const trimmedCompany = company.trim();
+  if (!date || !trimmedEquipment || !trimmedCompany) {
+    return { error: "Date, equipment, and company are required." };
+  }
+
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const total = quantity * rate;
+  const payload = {
+    dive_center_id: user.diveCenterId,
+    date,
+    equipment: trimmedEquipment,
+    company: trimmedCompany,
+    quantity,
+    rate,
+    total_amount: total,
+    status,
+    balance: isSettledStatus(status) ? 0 : total,
+    remarks: remarks.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = id
+    ? await supabase.from("rental_gear_records").update(payload).eq("id", id).eq("dive_center_id", user.diveCenterId)
+    : await supabase.from("rental_gear_records").insert(payload);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
+}
+
+export async function updateRentalGearStatus(id: string, status: string): Promise<{ error?: string }> {
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const { data: existing } = await supabase
+    .from("rental_gear_records")
+    .select("total_amount")
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId)
+    .single();
+
+  const { error } = await supabase
+    .from("rental_gear_records")
+    .update({
+      status,
+      balance: isSettledStatus(status) ? 0 : safeNum(existing?.total_amount),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
 }

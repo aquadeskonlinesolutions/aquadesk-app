@@ -544,3 +544,52 @@ export async function loadJoinRideData(diveCenterId: string): Promise<JoinRideDa
     })),
   };
 }
+
+// ── Rental Gears ─────────────────────────────────────────────────────────
+//
+// Same all-time-cards / date-filtered-table split as Join Ride, and for the
+// same reason — "still to collect" / "still to pay" is a current-balance
+// concern, not something that should disappear from view just because it
+// falls outside the selected date range.
+
+export type RentalGearRecord = {
+  id: string;
+  date: string;
+  equipment: string;
+  company: string | null;
+  quantity: number;
+  rate: number;
+  totalAmount: number;
+  status: string;
+  balance: number;
+  remarks: string | null;
+};
+
+export type RentalGearsData = {
+  records: RentalGearRecord[];
+};
+
+export async function loadRentalGearsData(diveCenterId: string): Promise<RentalGearsData> {
+  const supabase = await createClient();
+
+  const { data: records } = await supabase
+    .from("rental_gear_records")
+    .select("id, date, equipment, company, quantity, rate, total_amount, status, balance, remarks")
+    .eq("dive_center_id", diveCenterId)
+    .order("date", { ascending: false });
+
+  return {
+    records: (records ?? []).map((r) => ({
+      id: r.id,
+      date: r.date,
+      equipment: r.equipment,
+      company: r.company,
+      quantity: r.quantity ?? 0,
+      rate: safeNum(r.rate),
+      totalAmount: safeNum(r.total_amount),
+      status: r.status,
+      balance: safeNum(r.balance),
+      remarks: r.remarks,
+    })),
+  };
+}
