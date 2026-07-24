@@ -56,13 +56,6 @@ export type ExchangeRate = {
   is_active: boolean;
 };
 
-export type GovtFee = {
-  id: string;
-  fee_name: string;
-  amount: number;
-  is_active: boolean;
-};
-
 export type PricingData = {
   pricingMode: PricingMode;
   hasOwnerPassword: boolean;
@@ -73,7 +66,6 @@ export type PricingData = {
   equipmentRentalRates: EquipmentRentalRate[];
   surcharges: Surcharges;
   exchangeRates: ExchangeRate[];
-  govtFees: GovtFee[];
 };
 
 export async function loadPricingData(diveCenterId: string): Promise<PricingData> {
@@ -88,7 +80,6 @@ export async function loadPricingData(diveCenterId: string): Promise<PricingData
     { data: equipmentRentalRates },
     { data: surchargeRows },
     { data: exchangeRates },
-    { data: govtFees },
   ] = await Promise.all([
     supabase
       .from("dive_centers")
@@ -129,11 +120,6 @@ export async function loadPricingData(diveCenterId: string): Promise<PricingData
       .select("id, currency_code, rate_to_php, is_active")
       .eq("dive_center_id", diveCenterId)
       .order("currency_code"),
-    supabase
-      .from("govt_fees")
-      .select("id, fee_name, amount, is_active")
-      .eq("dive_center_id", diveCenterId)
-      .order("fee_name"),
   ]);
 
   const cardRow = (surchargeRows ?? []).find((r) => r.surcharge_type === "card");
@@ -154,7 +140,6 @@ export async function loadPricingData(diveCenterId: string): Promise<PricingData
       online: Math.round((onlineRow?.rate ?? 0) * 100 * 10000) / 10000,
     },
     exchangeRates: exchangeRates ?? [],
-    govtFees: govtFees ?? [],
   };
 }
 

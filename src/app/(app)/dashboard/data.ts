@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { safeNum, getPaidAmount } from "@/lib/payments";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -34,42 +35,12 @@ function manilaDayBoundsUtcIso(dateStr: string) {
   };
 }
 
-function safeNum(v: unknown): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
 function formatCertLevel(level: string): string {
   if (level === "none") return "No cert on file";
   return level
     .split("_")
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(" ");
-}
-
-function getPaidAmount(payment: {
-  total_collected: number | null;
-  total_paid: number | null;
-  cash_amount: number | null;
-  card_amount: number | null;
-  online_amount: number | null;
-  card_surcharge_amount: number | null;
-  online_surcharge_amount: number | null;
-} | undefined): number {
-  if (!payment) return 0;
-  const positive = (v: unknown) => {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  };
-  return (
-    positive(payment.total_collected) ??
-    positive(payment.total_paid) ??
-    safeNum(payment.cash_amount) +
-      safeNum(payment.card_amount) +
-      safeNum(payment.online_amount) +
-      safeNum(payment.card_surcharge_amount) +
-      safeNum(payment.online_surcharge_amount)
-  );
 }
 
 export type ActiveDiverRow = {
@@ -271,12 +242,16 @@ export type Alert = {
   linkText?: string;
 };
 
-// Two alert types from the old live app have no equivalent yet in this
-// schema and are deliberately not reproduced here — see KNOWN_GAPS.md:
-// "government fees not logged" (no daily govt-fee log table, only a rate
-// table) and "another boat joined us today" (no signal captured at
-// schedule-creation time for that direction). Both depend on data entry
-// that belongs to the Scheduling/Reports pages, not built yet.
+// One alert type from the old live app has no equivalent yet in this
+// schema and is deliberately not reproduced here — see KNOWN_GAPS.md:
+// "another boat joined us today" (no signal captured at schedule-creation
+// time for that direction). Depends on data entry that belongs to the
+// Scheduling page, not built yet.
+//
+// "Government fees not logged" was skipped for the same reason until the
+// Reports build (see database/006_govt_fees_daily_log.sql) — govt_fees is
+// now the real daily log the live app always expected, so this alert is
+// restored.
 async function loadAlerts(
   supabase: Supabase,
   diveCenterId: string,
@@ -366,6 +341,34 @@ async function loadAlerts(
         icon: "💰",
         title: `${overdueCount} overdue bill${overdueCount > 1 ? "s" : ""}`,
         desc: "Divers with unsettled bills for 3 or more days",
+      });
+    }
+  }
+
+  const { data: completedToday } = await supabase
+    .from("activities")
+    .select("id")
+    .eq("dive_center_id", diveCenterId)
+    .eq("status", "completed")
+    .eq("date", todayStr)
+    .limit(1);
+
+  if ((completedToday ?? []).length > 0) {
+    const { data: govtFeesToday } = await supabase
+      .from("govt_fees")
+      .select("id")
+      .eq("dive_center_id", diveCenterId)
+      .eq("date", todayStr)
+      .limit(1);
+
+    if (!govtFeesToday || govtFeesToday.length === 0) {
+      alerts.push({
+        type: "info",
+        icon: "🤿",
+        title: "Great dives today!",
+        desc: "Just a heads up — government fees for today aren't logged yet.",
+        link: "/reports?tab=govtfees",
+        linkText: "Log them here →",
       });
     }
   }

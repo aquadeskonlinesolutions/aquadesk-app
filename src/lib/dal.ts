@@ -67,6 +67,18 @@ export async function requireOwner(): Promise<CurrentUser> {
   return user;
 }
 
+// Reports is revenue-centric end to end (money in/out, commissions, join-ride
+// balances) — matches the blueprint's stated permission ("Hidden unless
+// can_view_revenue"), not the live app's partial-tab-visibility version of
+// this page.
+export async function requireRevenueAccess(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (user.role !== "owner" && !user.canViewRevenue) {
+    redirect("/dashboard");
+  }
+  return user;
+}
+
 export type CurrentPlatformAdmin = {
   id: string;
   userId: string;

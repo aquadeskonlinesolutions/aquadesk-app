@@ -1,20 +1,22 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/dal";
-import { PagePlaceholder } from "@/components/PagePlaceholder";
+import { requireRevenueAccess } from "@/lib/dal";
+import { loadOverviewData } from "./data";
+import { ReportsClient } from "./ReportsClient";
+
+function currentMonthRange(): { from: string; to: string } {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const from = `${y}-${pad(m + 1)}-01`;
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  const to = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
+  return { from, to };
+}
 
 export default async function ReportsPage() {
-  const user = await getCurrentUser();
+  const user = await requireRevenueAccess();
+  const { from, to } = currentMonthRange();
+  const overview = await loadOverviewData(user.diveCenterId, from, to);
 
-  // Optimistic UI check only — the real enforcement is the RLS revenue gate
-  // on expenses/commissions/rental-gear/join-ride tables (Stage 1a).
-  if (user.role !== "owner" && !user.canViewRevenue) {
-    redirect("/dashboard");
-  }
-
-  return (
-    <PagePlaceholder
-      title="Reports"
-      description="Revenue, expenses, commissions, and join-ride statements."
-    />
-  );
+  return <ReportsClient initialDateFrom={from} initialDateTo={to} initialOverview={overview} />;
 }

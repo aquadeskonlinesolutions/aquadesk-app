@@ -8,7 +8,6 @@ import { EquipmentRentalSection } from "./EquipmentRentalSection";
 import { OtherChargesSection } from "./OtherChargesSection";
 import { SurchargesSection } from "./SurchargesSection";
 import { ExchangeRatesSection } from "./ExchangeRatesSection";
-import { GovtFeesSection } from "./GovtFeesSection";
 
 export default async function SettingsPricingPage() {
   const user = await requireOwner();
@@ -29,7 +28,6 @@ export default async function SettingsPricingPage() {
       <OtherChargesSection charges={data.otherCharges} />
       <SurchargesSection surcharges={data.surcharges} />
       <ExchangeRatesSection rates={data.exchangeRates} />
-      <GovtFeesSection fees={data.govtFees} />
     </div>
   );
 }

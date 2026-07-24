@@ -1,0 +1,127 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { getOverviewData } from "./actions";
+import { OverviewTab } from "./OverviewTab";
+import type { OverviewData } from "./data";
+
+const TABS = [
+  { key: "overview", label: "Overview" },
+  { key: "staff", label: "Staff Activity Summary" },
+  { key: "join", label: "Join Ride" },
+  { key: "rentals", label: "Rental Gears" },
+  { key: "expenses", label: "Expenses" },
+  { key: "settlement", label: "Settlement" },
+  { key: "govtfees", label: "Government Fees" },
+  { key: "audit", label: "Billing Audit" },
+] as const;
+
+function formatLabel(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+}
+
+export function ReportsClient({
+  initialDateFrom,
+  initialDateTo,
+  initialOverview,
+}: {
+  initialDateFrom: string;
+  initialDateTo: string;
+  initialOverview: OverviewData;
+}) {
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("overview");
+  const [dateFrom, setDateFrom] = useState(initialDateFrom);
+  const [dateTo, setDateTo] = useState(initialDateTo);
+  const [appliedFrom, setAppliedFrom] = useState(initialDateFrom);
+  const [appliedTo, setAppliedTo] = useState(initialDateTo);
+  const [overview, setOverview] = useState(initialOverview);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function applyDateRange() {
+    if (!dateFrom || !dateTo) {
+      setError("Please select both From and To dates.");
+      return;
+    }
+    if (dateFrom > dateTo) {
+      setError("From date must be before or equal to To date.");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const data = await getOverviewData(dateFrom, dateTo);
+      setOverview(data);
+      setAppliedFrom(dateFrom);
+      setAppliedTo(dateTo);
+    });
+  }
+
+  return (
+    <div>
+      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
+        <div>
+          <h1 className="font-display text-3xl text-navy mb-1">Reports</h1>
+          <p className="text-gray-600 text-sm">
+            Your dive center story, staff activity, government fees, join rides, and rentals.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="text-xs font-extrabold uppercase tracking-wide text-gray-500">
+            From
+          </label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
+          />
+          <label className="text-xs font-extrabold uppercase tracking-wide text-gray-500">
+            To
+          </label>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
+          />
+          <button
+            onClick={applyDateRange}
+            disabled={pending}
+            className="px-4 py-2 bg-navy text-white text-sm font-medium rounded-lg hover:bg-navy-dark transition-colors disabled:opacity-60"
+          >
+            {pending ? "Loading…" : "Apply"}
+          </button>
+        </div>
+      </div>
+      {error && <div className="mb-4 text-sm text-red">{error}</div>}
+
+      <div className="flex gap-1.5 flex-wrap bg-white border border-gray-200 rounded-2xl p-1.5 mb-5 shadow-sm">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-colors ${
+              tab === t.key ? "bg-navy text-white" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "overview" ? (
+        <OverviewTab
+          data={overview}
+          dateFromLabel={formatLabel(appliedFrom)}
+          dateToLabel={formatLabel(appliedTo)}
+        />
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+          {TABS.find((t) => t.key === tab)?.label} — not built yet.
+        </div>
+      )}
+    </div>
+  );
+}
