@@ -7,13 +7,31 @@ import {
   getJoinRideData,
   getRentalGearsData,
   getExpensesData,
+  getSettlementData,
 } from "./actions";
 import { OverviewTab } from "./OverviewTab";
 import { StaffTab } from "./StaffTab";
 import { JoinRideTab } from "./JoinRideTab";
 import { RentalGearsTab } from "./RentalGearsTab";
 import { ExpensesTab } from "./ExpensesTab";
-import type { OverviewData, StaffActivityData, JoinRideData, RentalGearsData, ExpensesData } from "./data";
+import { SettlementTab } from "./SettlementTab";
+import type {
+  OverviewData,
+  StaffActivityData,
+  JoinRideData,
+  RentalGearsData,
+  ExpensesData,
+  SettlementData,
+} from "./data";
+
+function todayManila(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -57,6 +75,8 @@ export function ReportsClient({
   const [rentalLoading, setRentalLoading] = useState(false);
   const [expensesData, setExpensesData] = useState<ExpensesData | null>(null);
   const [expensesLoading, setExpensesLoading] = useState(false);
+  const [settlementData, setSettlementData] = useState<SettlementData | null>(null);
+  const [settlementLoading, setSettlementLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -116,6 +136,12 @@ export function ReportsClient({
       getExpensesData(appliedFrom, appliedTo)
         .then(setExpensesData)
         .finally(() => setExpensesLoading(false));
+    }
+    if (key === "settlement" && !settlementData && !settlementLoading) {
+      setSettlementLoading(true);
+      getSettlementData(todayManila())
+        .then(setSettlementData)
+        .finally(() => setSettlementLoading(false));
     }
   }
 
@@ -235,11 +261,22 @@ export function ReportsClient({
         )}
       </div>
 
+      <div className={tab === "settlement" ? "" : "hidden"}>
+        {settlementData ? (
+          <SettlementTab data={settlementData} />
+        ) : (
+          <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+            {settlementLoading ? "Loading…" : "No data yet."}
+          </div>
+        )}
+      </div>
+
       {tab !== "overview" &&
         tab !== "staff" &&
         tab !== "join" &&
         tab !== "rentals" &&
-        tab !== "expenses" && (
+        tab !== "expenses" &&
+        tab !== "settlement" && (
           <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
             {TABS.find((t) => t.key === tab)?.label} — not built yet.
           </div>

@@ -10,6 +10,7 @@ import {
   loadJoinRideData,
   loadRentalGearsData,
   loadExpensesData,
+  loadSettlementData,
   type JoinRideDirection,
 } from "./data";
 
@@ -431,4 +432,11 @@ export async function deleteExpenseRecord(id: string): Promise<{ error?: string 
   if (error) return { error: error.message };
   revalidatePath("/reports");
   return {};
+}
+
+// ── Settlement ───────────────────────────────────────────────────────────
+
+export async function getSettlementData(date: string) {
+  const user = await requireRevenueAccess();
+  return loadSettlementData(user.diveCenterId, date);
 }

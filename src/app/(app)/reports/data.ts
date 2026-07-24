@@ -608,6 +608,146 @@ export type ExpensesData = {
   uncategorizedAmount: number;
 };
 
+// ── Settlement ───────────────────────────────────────────────────────────
+//
+// A single-date cash-drawer reconciliation, not a date-range report — one
+// row per payment collected that day (plus deposit rows, highlighted, with
+// their totals zeroed since a deposit isn't "collected" revenue yet) and a
+// grand-total footer. "Closed By" resolves through invoice_emails.sent_by →
+// users.full_name, taking the most recently sent invoice per visit.
+
+export type SettlementRow = {
+  date: string;
+  diverName: string;
+  closedBy: string;
+  cashPHP: number;
+  foreign: string;
+  foreignPHP: number;
+  card: number;
+  cardSurcharge: number;
+  online: number;
+  onlineSurcharge: number;
+  totalCollected: number;
+  isDeposit: boolean;
+};
+
+export type SettlementData = {
+  diveCenterName: string;
+  date: string;
+  rows: SettlementRow[];
+};
+
+export async function loadSettlementData(diveCenterId: string, date: string): Promise<SettlementData> {
+  const supabase = await createClient();
+  const dayStart = `${date}T00:00:00`;
+  const dayEnd = `${date}T23:59:59`;
+
+  const [{ data: dc }, { data: paymentsRaw }, { data: depositsRaw }] = await Promise.all([
+    supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
+    supabase
+      .from("payments")
+      .select(
+        "paid_at, created_at, diver_id, visit_id, cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount, total_collected",
+      )
+      .eq("dive_center_id", diveCenterId)
+      .gte("paid_at", dayStart)
+      .lte("paid_at", dayEnd)
+      .order("paid_at", { ascending: true }),
+    supabase
+      .from("deposits")
+      .select("deposit_date, diver_id, amount, method, received_by")
+      .eq("dive_center_id", diveCenterId)
+      .eq("deposit_date", date)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  const payments = paymentsRaw ?? [];
+  const deposits = depositsRaw ?? [];
+
+  const diverIds = [...new Set([...payments.map((p) => p.diver_id), ...deposits.map((d) => d.diver_id)].filter(Boolean))];
+  const visitIds = [...new Set(payments.map((p) => p.visit_id).filter(Boolean))];
+
+  const [{ data: diversData }, { data: invoiceEmails }] = await Promise.all([
+    diverIds.length
+      ? supabase.from("divers").select("id, first_name, last_name").in("id", diverIds)
+      : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string }[] }),
+    visitIds.length
+      ? supabase
+          .from("invoice_emails")
+          .select("visit_id, sent_by")
+          .in("visit_id", visitIds)
+          .order("sent_at", { ascending: false })
+      : Promise.resolve({ data: [] as { visit_id: string; sent_by: string | null }[] }),
+  ]);
+
+  const diverMap = new Map(
+    (diversData ?? []).map((d) => [d.id, `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim() || "—"]),
+  );
+
+  const senderIds = [...new Set((invoiceEmails ?? []).map((ie) => ie.sent_by).filter((id): id is string => !!id))];
+  const { data: usersData } = senderIds.length
+    ? await supabase.from("users").select("id, full_name").in("id", senderIds)
+    : { data: [] as { id: string; full_name: string }[] };
+  const userMap = new Map((usersData ?? []).map((u) => [u.id, u.full_name]));
+
+  // Most recently sent invoice per visit resolves "Closed By" — invoiceEmails
+  // is already ordered sent_at desc, so the first hit per visit_id wins.
+  const closedByMap = new Map<string, string>();
+  (invoiceEmails ?? []).forEach((ie) => {
+    if (!closedByMap.has(ie.visit_id)) {
+      closedByMap.set(ie.visit_id, (ie.sent_by && userMap.get(ie.sent_by)) || "—");
+    }
+  });
+
+  const paymentRows: SettlementRow[] = payments.map((p) => {
+    const foreignPHP =
+      p.cash_amount_foreign != null && p.cash_exchange_rate != null
+        ? safeNum(p.cash_amount_foreign) * safeNum(p.cash_exchange_rate)
+        : 0;
+    const foreign =
+      p.cash_amount_foreign != null && p.cash_currency_code
+        ? `${safeNum(p.cash_amount_foreign).toLocaleString()} ${p.cash_currency_code} × ₱${safeNum(p.cash_exchange_rate).toLocaleString()}`
+        : "";
+    return {
+      date: String(p.paid_at ?? p.created_at ?? "").slice(0, 10),
+      diverName: diverMap.get(p.diver_id) ?? "—",
+      closedBy: closedByMap.get(p.visit_id) ?? "—",
+      cashPHP: safeNum(p.cash_amount),
+      foreign,
+      foreignPHP,
+      card: safeNum(p.card_amount),
+      cardSurcharge: safeNum(p.card_surcharge_amount),
+      online: safeNum(p.online_amount),
+      onlineSurcharge: safeNum(p.online_surcharge_amount),
+      totalCollected: safeNum(p.total_collected),
+      isDeposit: false,
+    };
+  });
+
+  const depositRows: SettlementRow[] = deposits.map((d) => ({
+    date: String(d.deposit_date),
+    diverName: diverMap.get(d.diver_id) ?? "—",
+    closedBy: d.received_by || "—",
+    cashPHP: d.method === "cash" ? safeNum(d.amount) : 0,
+    foreign: "",
+    foreignPHP: 0,
+    card: d.method === "card" ? safeNum(d.amount) : 0,
+    cardSurcharge: 0,
+    online: d.method === "online" ? safeNum(d.amount) : 0,
+    onlineSurcharge: 0,
+    totalCollected: 0,
+    isDeposit: true,
+  }));
+
+  const rows = [...paymentRows, ...depositRows].sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    diveCenterName: dc?.name ?? "Dive Center",
+    date,
+    rows,
+  };
+}
+
 export async function loadExpensesData(
   diveCenterId: string,
   dateFrom: string,
