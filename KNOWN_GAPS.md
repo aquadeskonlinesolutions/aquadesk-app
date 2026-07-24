@@ -60,3 +60,20 @@ concern (logo upload needs its own Storage bucket + policies, same class
 of setup as the cert-card bucket in `003_cert_card_storage.sql`). Flagging
 so it doesn't get lost — a dive center will eventually want to update its
 name, phone, or logo, and there's currently nowhere in the app to do that.
+
+### Boat Manifest: no offline support
+
+The blueprint's page map (`aquadesk-rebuild-blueprint-v1.md`, Stage 1b)
+describes Boat Manifest as "offline-cacheable" — boats are often at sea
+with no signal. This rebuild's version (`src/app/(app)/boat-manifest/`)
+has no service worker, cache strategy, or offline queueing at all — a
+plain server-rendered page like every other page in the app.
+
+Not built because the live app's own `boat-manifest.html` doesn't
+actually implement any offline support either (checked directly — it's a
+plain page, same as this rebuild), so there's no behavioral reference to
+match, and adding real offline support (service worker registration,
+what to cache, how edits made offline get synced later) is an
+architecture decision affecting the whole app's build, not something to
+improvise into one page. Flagging since the blueprint calls it out
+explicitly as a requirement this page doesn't meet yet.

@@ -10,10 +10,12 @@ export default async function AppLayout({
   const user = await getCurrentUser();
 
   return (
-    <div className="flex min-h-screen bg-off-white">
-      <Sidebar user={user} />
+    <div className="flex min-h-screen bg-off-white print:block">
+      <div className="print:hidden">
+        <Sidebar user={user} />
+      </div>
       <div className="flex-1 flex flex-col">
-        <header className="h-16 shrink-0 bg-white border-b border-gray-200 flex items-center justify-end px-6">
+        <header className="h-16 shrink-0 bg-white border-b border-gray-200 flex items-center justify-end px-6 print:hidden">
           <form action={signOut}>
             <button
               type="submit"
@@ -23,7 +25,7 @@ export default async function AppLayout({
             </button>
           </form>
         </header>
-        <main className="flex-1 p-8">{children}</main>
+        <main className="flex-1 p-8 print:p-0">{children}</main>
       </div>
     </div>
   );
