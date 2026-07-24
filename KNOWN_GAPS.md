@@ -41,3 +41,22 @@ revisited once those pages define how the underlying data gets captured.
 
 Both are commented in `data.ts` above `loadAlerts()`. Revisit when
 Scheduling/Reports are built — don't guess a workaround before then.
+
+### Settings: no page for dive center profile (name/address/phone/logo)
+
+The live app's Settings had a "Profile" tab (dive center name, email,
+phone, address, logo upload, subscription status display, plus the
+insurance fields). The new app's 5-tab Settings structure (Pricing &
+Rates, Staff Access, Waiver & Registration, Equipment, Integrations —
+all now built) has no tab that covers this at all. The insurance fields
+found a home in Integrations; the rest (name/email/phone/address/logo)
+currently has no edit path anywhere after initial creation via the
+`/office` platform admin console.
+
+Not fixed now because it wasn't part of the 5-tab scope the user asked
+for and adding it means a real design call (a 6th tab? fold into an
+existing one? does it need its own page outside Settings?) plus a new
+concern (logo upload needs its own Storage bucket + policies, same class
+of setup as the cert-card bucket in `003_cert_card_storage.sql`). Flagging
+so it doesn't get lost — a dive center will eventually want to update its
+name, phone, or logo, and there's currently nowhere in the app to do that.
