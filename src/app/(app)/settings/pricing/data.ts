@@ -56,6 +56,13 @@ export type ExchangeRate = {
   is_active: boolean;
 };
 
+export type CommissionRates = {
+  divemasterRatePerDive: number;
+  ratioBonusEnabled: boolean;
+  ratioBonusExtraRate: number;
+  joinRideRatePerDiverPerDive: number;
+};
+
 export type PricingData = {
   pricingMode: PricingMode;
   hasOwnerPassword: boolean;
@@ -66,6 +73,7 @@ export type PricingData = {
   equipmentRentalRates: EquipmentRentalRate[];
   surcharges: Surcharges;
   exchangeRates: ExchangeRate[];
+  commissionRates: CommissionRates;
 };
 
 export async function loadPricingData(diveCenterId: string): Promise<PricingData> {
@@ -83,7 +91,9 @@ export async function loadPricingData(diveCenterId: string): Promise<PricingData
   ] = await Promise.all([
     supabase
       .from("dive_centers")
-      .select("pricing_mode, owner_unlock_hash")
+      .select(
+        "pricing_mode, owner_unlock_hash, divemaster_rate_per_dive, ratio_bonus_enabled, ratio_bonus_extra_rate, join_ride_rate_per_diver_per_dive",
+      )
       .eq("id", diveCenterId)
       .single(),
     supabase
@@ -140,6 +150,12 @@ export async function loadPricingData(diveCenterId: string): Promise<PricingData
       online: Math.round((onlineRow?.rate ?? 0) * 100 * 10000) / 10000,
     },
     exchangeRates: exchangeRates ?? [],
+    commissionRates: {
+      divemasterRatePerDive: Number(dc?.divemaster_rate_per_dive ?? 0),
+      ratioBonusEnabled: !!dc?.ratio_bonus_enabled,
+      ratioBonusExtraRate: Number(dc?.ratio_bonus_extra_rate ?? 0),
+      joinRideRatePerDiverPerDive: Number(dc?.join_ride_rate_per_diver_per_dive ?? 0),
+    },
   };
 }
 

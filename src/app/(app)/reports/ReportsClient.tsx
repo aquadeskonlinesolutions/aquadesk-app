@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { getOverviewData } from "./actions";
+import { getOverviewData, getStaffActivityData } from "./actions";
 import { OverviewTab } from "./OverviewTab";
-import type { OverviewData } from "./data";
+import { StaffTab } from "./StaffTab";
+import type { OverviewData, StaffActivityData } from "./data";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -37,6 +38,8 @@ export function ReportsClient({
   const [appliedFrom, setAppliedFrom] = useState(initialDateFrom);
   const [appliedTo, setAppliedTo] = useState(initialDateTo);
   const [overview, setOverview] = useState(initialOverview);
+  const [staffData, setStaffData] = useState<StaffActivityData | null>(null);
+  const [staffLoading, setStaffLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -55,7 +58,20 @@ export function ReportsClient({
       setOverview(data);
       setAppliedFrom(dateFrom);
       setAppliedTo(dateTo);
+      if (staffData) {
+        setStaffData(await getStaffActivityData(dateFrom, dateTo));
+      }
     });
+  }
+
+  function selectTab(key: (typeof TABS)[number]["key"]) {
+    setTab(key);
+    if (key === "staff" && !staffData && !staffLoading) {
+      setStaffLoading(true);
+      getStaffActivityData(appliedFrom, appliedTo)
+        .then(setStaffData)
+        .finally(() => setStaffLoading(false));
+    }
   }
 
   return (
@@ -101,7 +117,7 @@ export function ReportsClient({
         {TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => selectTab(t.key)}
             className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-colors ${
               tab === t.key ? "bg-navy text-white" : "text-gray-600 hover:bg-gray-100"
             }`}
@@ -117,6 +133,14 @@ export function ReportsClient({
           dateFromLabel={formatLabel(appliedFrom)}
           dateToLabel={formatLabel(appliedTo)}
         />
+      ) : tab === "staff" ? (
+        staffData ? (
+          <StaffTab key={`${appliedFrom}|${appliedTo}`} data={staffData} />
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+            {staffLoading ? "Loading…" : "No data yet."}
+          </div>
+        )
       ) : (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
           {TABS.find((t) => t.key === tab)?.label} — not built yet.

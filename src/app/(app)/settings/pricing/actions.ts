@@ -443,3 +443,27 @@ export async function addCustomCurrency(currencyCode: string, rateToPhp: number)
   if (error) return fail(error.message);
   return ok();
 }
+
+// ── STAFF COMMISSION & JOIN RIDE RATES ──────────────────────────────────
+
+export async function saveCommissionRates(
+  divemasterRatePerDive: number,
+  ratioBonusEnabled: boolean,
+  ratioBonusExtraRate: number,
+  joinRideRatePerDiverPerDive: number,
+) {
+  const user = await requireOwner();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("dive_centers")
+    .update({
+      divemaster_rate_per_dive: divemasterRatePerDive,
+      ratio_bonus_enabled: ratioBonusEnabled,
+      ratio_bonus_extra_rate: ratioBonusExtraRate,
+      join_ride_rate_per_diver_per_dive: joinRideRatePerDiverPerDive,
+    })
+    .eq("id", user.diveCenterId);
+  if (error) return fail(error.message);
+  return ok();
+}

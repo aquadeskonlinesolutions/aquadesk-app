@@ -58,10 +58,6 @@ export type OverviewData = {
   expenseCategoryTotals: { name: string; amount: number }[];
 };
 
-function periodMonth(dateFrom: string): string {
-  return dateFrom.slice(0, 7);
-}
-
 export async function loadOverviewData(
   diveCenterId: string,
   dateFrom: string,
@@ -110,7 +106,8 @@ export async function loadOverviewData(
       .from("staff_commission_records")
       .select("status, commission_amount")
       .eq("dive_center_id", diveCenterId)
-      .eq("period_month", periodMonth(dateFrom)),
+      .gte("activity_date", dateFrom)
+      .lte("activity_date", dateTo),
     supabase
       .from("expenses")
       .select("amount, category, custom_category")
@@ -218,7 +215,7 @@ export async function loadOverviewData(
     .filter((r) => r.direction === "we_joined_another_boat" && r.status !== "paid")
     .reduce((s, r) => s + (r.balance != null ? safeNum(r.balance) : safeNum(r.total_amount)), 0);
 
-  // ── Staff commissions (current calendar month only, matching the live app) ─
+  // ── Staff commissions (scoped to the selected date range, per-line-item) ──
   const commissions = commissionRecords ?? [];
   const commissionsPaid = commissions
     .filter((r) => r.status === "paid")
@@ -279,5 +276,202 @@ export async function loadOverviewData(
     },
     topSites,
     expenseCategoryTotals,
+  };
+}
+
+// ── Staff Activity Summary ──────────────────────────────────────────────
+//
+// Commission quantities need an "actual dive count", not a diver headcount:
+// `activities` has one row per diver per dive, so a boat of 5 divers on one
+// dive produces 5 rows sharing the same staff/date/site. Reconciling that
+// back to "how many dives did this guide actually lead" needs the same
+// row-count/diver-count heuristic the live app used (see CLAUDE.md) — that
+// part of the live app's complexity is inherent to the schema, not just
+// messy legacy data. What the live app *didn't* have was a reliable way to
+// tell a course activity from a fun dive, so it fell back to guessing from
+// several loosely-related text fields. Here that's a clean lookup via
+// `visits.experience_type`, which every activity's visit inherits.
+//
+// Unlike the live app (one paid/unpaid status per staff per calendar
+// month), each dive-group or course-group here is its own persisted line
+// item keyed by its real activity date — that's what lets a secretary mark
+// an arbitrary date range "paid" without touching entries outside it.
+
+export type LeaderCommissionRow = {
+  key: string;
+  staffName: string;
+  date: string;
+  site: string;
+  dives: number;
+  divers: number;
+  rate: number;
+  bonusAmount: number;
+  amount: number;
+  status: "unpaid" | "paid";
+};
+
+export type EducatorCommissionRow = {
+  key: string;
+  staffName: string;
+  date: string;
+  course: string;
+  students: number;
+  amount: number;
+  status: "unpaid" | "paid";
+};
+
+export type StaffActivityData = {
+  divemasterRatePerDive: number;
+  ratioBonusEnabled: boolean;
+  ratioBonusExtraRate: number;
+  leaderRows: LeaderCommissionRow[];
+  educatorRows: EducatorCommissionRow[];
+};
+
+function splitSiteEntries(site: string | null): string[] {
+  const parts = String(site ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length ? parts : ["Unnamed"];
+}
+
+export async function loadStaffActivityData(
+  diveCenterId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<StaffActivityData> {
+  const supabase = await createClient();
+
+  const [{ data: dc }, { data: activitiesInRange }, { data: commissionRecords }] = await Promise.all([
+    supabase
+      .from("dive_centers")
+      .select("divemaster_rate_per_dive, ratio_bonus_enabled, ratio_bonus_extra_rate")
+      .eq("id", diveCenterId)
+      .single(),
+    supabase
+      .from("activities")
+      .select("diver_id, visit_id, date, dive_site, staff_name, status, schedule_id")
+      .eq("dive_center_id", diveCenterId)
+      .gte("date", dateFrom)
+      .lte("date", dateTo),
+    supabase
+      .from("staff_commission_records")
+      .select("staff_name, commission_group, title, activity_date, rate, bonus_amount, commission_amount, status")
+      .eq("dive_center_id", diveCenterId)
+      .gte("activity_date", dateFrom)
+      .lte("activity_date", dateTo),
+  ]);
+
+  const divemasterRatePerDive = Number(dc?.divemaster_rate_per_dive ?? 0);
+  const ratioBonusEnabled = !!dc?.ratio_bonus_enabled;
+  const ratioBonusExtraRate = Number(dc?.ratio_bonus_extra_rate ?? 0);
+
+  const completed = (activitiesInRange ?? []).filter((a) => a.status === "completed");
+  const visitIds = [...new Set(completed.map((a) => a.visit_id))];
+
+  const { data: visitsData } = visitIds.length
+    ? await supabase.from("visits").select("id, experience_type, course_rate_id").in("id", visitIds)
+    : { data: [] as { id: string; experience_type: string; course_rate_id: string | null }[] };
+
+  const courseRateIds = [
+    ...new Set((visitsData ?? []).map((v) => v.course_rate_id).filter((id): id is string => !!id)),
+  ];
+  const { data: courseRatesData } = courseRateIds.length
+    ? await supabase.from("course_rates").select("id, course_name").in("id", courseRateIds)
+    : { data: [] as { id: string; course_name: string }[] };
+
+  const visitMap = new Map((visitsData ?? []).map((v) => [v.id, v]));
+  const courseNameMap = new Map((courseRatesData ?? []).map((c) => [c.id, c.course_name]));
+
+  type FunGroup = { staffName: string; date: string; label: string; divers: Set<string>; rows: number };
+  type CourseGroup = { staffName: string; date: string; title: string; divers: Set<string> };
+  const funGroups = new Map<string, FunGroup>();
+  const courseGroups = new Map<string, CourseGroup>();
+
+  completed.forEach((a) => {
+    const staffName = a.staff_name?.trim() || "Unassigned";
+    const date = a.date;
+    const visit = visitMap.get(a.visit_id);
+    if (visit?.experience_type === "dive_course") {
+      const title = (visit.course_rate_id && courseNameMap.get(visit.course_rate_id)) || "Course";
+      const key = `${staffName}|${date}|${title}`;
+      const g = courseGroups.get(key) ?? { staffName, date, title, divers: new Set<string>() };
+      g.divers.add(a.diver_id);
+      courseGroups.set(key, g);
+    } else {
+      const label = a.dive_site?.trim() || "Unnamed";
+      const key = `${staffName}|${date}|${a.schedule_id ?? "manual"}|${label}`;
+      const g = funGroups.get(key) ?? { staffName, date, label, divers: new Set<string>(), rows: 0 };
+      g.divers.add(a.diver_id);
+      g.rows += 1;
+      funGroups.set(key, g);
+    }
+  });
+
+  const commissions = commissionRecords ?? [];
+  function findExisting(group: "dive_leader" | "dive_educator", staffName: string, title: string, date: string) {
+    return commissions.find(
+      (r) =>
+        r.commission_group === group &&
+        r.staff_name === staffName &&
+        r.title === title &&
+        r.activity_date === date,
+    );
+  }
+
+  const leaderRows: LeaderCommissionRow[] = [...funGroups.values()]
+    .map((g) => {
+      const diverCount = Math.max(1, g.divers.size);
+      const rowBased = Math.max(1, Math.round(g.rows / diverCount));
+      const entryBased = Math.max(1, splitSiteEntries(g.label).length);
+      const dives = Math.max(rowBased, entryBased);
+      const divers = g.divers.size;
+
+      const existing = findExisting("dive_leader", g.staffName, g.label, g.date);
+      const rate = existing ? safeNum(existing.rate) : divemasterRatePerDive;
+      const bonusAmount = existing
+        ? safeNum(existing.bonus_amount)
+        : ratioBonusEnabled && divers > 4
+          ? ratioBonusExtraRate
+          : 0;
+
+      return {
+        key: `dive_leader|${g.staffName}|${g.date}|${g.label}`,
+        staffName: g.staffName,
+        date: g.date,
+        site: g.label,
+        dives,
+        divers,
+        rate,
+        bonusAmount,
+        amount: dives * rate + bonusAmount,
+        status: (existing?.status as "unpaid" | "paid") ?? "unpaid",
+      };
+    })
+    .sort((a, b) => a.staffName.localeCompare(b.staffName) || a.date.localeCompare(b.date));
+
+  const educatorRows: EducatorCommissionRow[] = [...courseGroups.values()]
+    .map((g) => {
+      const students = Math.max(1, g.divers.size);
+      const existing = findExisting("dive_educator", g.staffName, g.title, g.date);
+      return {
+        key: `dive_educator|${g.staffName}|${g.date}|${g.title}`,
+        staffName: g.staffName,
+        date: g.date,
+        course: g.title,
+        students,
+        amount: existing ? safeNum(existing.commission_amount) : 0,
+        status: (existing?.status as "unpaid" | "paid") ?? "unpaid",
+      };
+    })
+    .sort((a, b) => a.staffName.localeCompare(b.staffName) || a.date.localeCompare(b.date));
+
+  return {
+    divemasterRatePerDive,
+    ratioBonusEnabled,
+    ratioBonusExtraRate,
+    leaderRows,
+    educatorRows,
   };
 }
