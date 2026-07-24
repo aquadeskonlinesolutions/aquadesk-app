@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireRevenueAccess } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
-import { loadOverviewData, loadStaffActivityData } from "./data";
+import { safeNum } from "@/lib/payments";
+import { loadOverviewData, loadStaffActivityData, loadJoinRideData, type JoinRideDirection } from "./data";
 
 export async function getOverviewData(dateFrom: string, dateTo: string) {
   const user = await requireRevenueAccess();
@@ -122,4 +123,172 @@ export async function saveInstructorCommission(
 
   revalidatePath("/reports");
   return { status, amount };
+}
+
+// ── Join Ride ────────────────────────────────────────────────────────────
+
+export async function getJoinRideData() {
+  const user = await requireRevenueAccess();
+  return loadJoinRideData(user.diveCenterId);
+}
+
+function isSettledStatus(status: string): boolean {
+  return status === "collected" || status === "paid";
+}
+
+export async function saveJoinRideRecord(
+  id: string | null,
+  direction: JoinRideDirection,
+  date: string,
+  company: string,
+  numberOfDivers: number,
+  numberOfDives: number,
+  diveSites: string,
+  remarks: string,
+  status: string,
+): Promise<{ error?: string }> {
+  const trimmedCompany = company.trim();
+  if (!date || !trimmedCompany) return { error: "Date and company are required." };
+
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const { data: dc } = await supabase
+    .from("dive_centers")
+    .select("join_ride_rate_per_diver_per_dive")
+    .eq("id", user.diveCenterId)
+    .single();
+  const rate = safeNum(dc?.join_ride_rate_per_diver_per_dive);
+  const total = numberOfDivers * numberOfDives * rate;
+
+  const payload = {
+    dive_center_id: user.diveCenterId,
+    direction,
+    date,
+    company: trimmedCompany,
+    number_of_divers: numberOfDivers,
+    number_of_dives: numberOfDives,
+    dive_sites: diveSites.trim() || null,
+    total_amount: total,
+    status,
+    balance: isSettledStatus(status) ? 0 : total,
+    remarks: remarks.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = id
+    ? await supabase.from("join_ride_records").update(payload).eq("id", id).eq("dive_center_id", user.diveCenterId)
+    : await supabase.from("join_ride_records").insert(payload);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
+}
+
+export async function updateJoinRideStatus(id: string, status: string): Promise<{ error?: string }> {
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const { data: existing } = await supabase
+    .from("join_ride_records")
+    .select("total_amount")
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId)
+    .single();
+
+  const { error } = await supabase
+    .from("join_ride_records")
+    .update({
+      status,
+      balance: isSettledStatus(status) ? 0 : safeNum(existing?.total_amount),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
+}
+
+export type StatementLineItem = {
+  date: string;
+  diveSites: string | null;
+  numberOfDivers: number;
+  numberOfDives: number;
+  totalAmount: number;
+};
+
+export async function generateJoinRideStatement(
+  company: string,
+  dateFrom: string,
+  dateTo: string,
+  status: "to_collect" | "statement_printed",
+  preparedBy: string,
+): Promise<{
+  error?: string;
+  statementId?: string;
+  lineItems?: StatementLineItem[];
+  total?: number;
+}> {
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const { data: matching } = await supabase
+    .from("join_ride_records")
+    .select("id, date, dive_sites, number_of_divers, number_of_dives, total_amount")
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("direction", "joined_our_boat")
+    .eq("company", company)
+    .eq("status", status)
+    .gte("date", dateFrom)
+    .lte("date", dateTo);
+
+  if (!matching || matching.length === 0) {
+    return { error: "No matching records for this company, date range, and status." };
+  }
+
+  const total = matching.reduce((s, r) => s + safeNum(r.total_amount), 0);
+
+  const { data: statement, error: stmtError } = await supabase
+    .from("join_ride_statements")
+    .insert({
+      dive_center_id: user.diveCenterId,
+      company,
+      date_from: dateFrom,
+      date_to: dateTo,
+      total_amount: total,
+      status: "statement_printed",
+      prepared_by: preparedBy,
+      printed_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  if (stmtError) return { error: stmtError.message };
+
+  const ids = matching.map((r) => r.id);
+  const { error: updError } = await supabase
+    .from("join_ride_records")
+    .update({
+      status: "statement_printed",
+      statement_id: statement.id,
+      updated_at: new Date().toISOString(),
+    })
+    .in("id", ids);
+  if (updError) return { error: updError.message };
+
+  revalidatePath("/reports");
+  return {
+    statementId: statement.id,
+    total,
+    lineItems: matching
+      .map((r) => ({
+        date: r.date,
+        diveSites: r.dive_sites,
+        numberOfDivers: r.number_of_divers ?? 0,
+        numberOfDives: r.number_of_dives ?? 0,
+        totalAmount: safeNum(r.total_amount),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+  };
 }

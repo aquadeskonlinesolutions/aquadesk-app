@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { getOverviewData, getStaffActivityData } from "./actions";
+import { getOverviewData, getStaffActivityData, getJoinRideData } from "./actions";
 import { OverviewTab } from "./OverviewTab";
 import { StaffTab } from "./StaffTab";
-import type { OverviewData, StaffActivityData } from "./data";
+import { JoinRideTab } from "./JoinRideTab";
+import type { OverviewData, StaffActivityData, JoinRideData } from "./data";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -27,10 +28,12 @@ export function ReportsClient({
   initialDateFrom,
   initialDateTo,
   initialOverview,
+  currentUserName,
 }: {
   initialDateFrom: string;
   initialDateTo: string;
   initialOverview: OverviewData;
+  currentUserName: string;
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("overview");
   const [dateFrom, setDateFrom] = useState(initialDateFrom);
@@ -40,6 +43,8 @@ export function ReportsClient({
   const [overview, setOverview] = useState(initialOverview);
   const [staffData, setStaffData] = useState<StaffActivityData | null>(null);
   const [staffLoading, setStaffLoading] = useState(false);
+  const [joinData, setJoinData] = useState<JoinRideData | null>(null);
+  const [joinLoading, setJoinLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -72,11 +77,17 @@ export function ReportsClient({
         .then(setStaffData)
         .finally(() => setStaffLoading(false));
     }
+    if (key === "join" && !joinData && !joinLoading) {
+      setJoinLoading(true);
+      getJoinRideData()
+        .then(setJoinData)
+        .finally(() => setJoinLoading(false));
+    }
   }
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
+      <div className="print:hidden flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-3xl text-navy mb-1">Reports</h1>
           <p className="text-gray-600 text-sm">
@@ -111,9 +122,9 @@ export function ReportsClient({
           </button>
         </div>
       </div>
-      {error && <div className="mb-4 text-sm text-red">{error}</div>}
+      {error && <div className="print:hidden mb-4 text-sm text-red">{error}</div>}
 
-      <div className="flex gap-1.5 flex-wrap bg-white border border-gray-200 rounded-2xl p-1.5 mb-5 shadow-sm">
+      <div className="print:hidden flex gap-1.5 flex-wrap bg-white border border-gray-200 rounded-2xl p-1.5 mb-5 shadow-sm">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -127,22 +138,50 @@ export function ReportsClient({
         ))}
       </div>
 
-      {tab === "overview" ? (
+      {/*
+        Tabs with their own client-side state (Staff, Join Ride) stay mounted
+        once loaded instead of being conditionally unmounted on tab switch —
+        their mutation handlers patch local state directly rather than
+        round-tripping through this parent's staffData/joinData, so an
+        unmount+remount on tab switch would silently revert to whatever
+        snapshot was last fetched here, discarding anything saved since.
+        Visibility is toggled with `hidden` instead.
+      */}
+      <div className={tab === "overview" ? "print:hidden" : "hidden"}>
         <OverviewTab
           data={overview}
           dateFromLabel={formatLabel(appliedFrom)}
           dateToLabel={formatLabel(appliedTo)}
         />
-      ) : tab === "staff" ? (
-        staffData ? (
+      </div>
+
+      <div className={tab === "staff" ? "print:hidden" : "hidden"}>
+        {staffData ? (
           <StaffTab key={`${appliedFrom}|${appliedTo}`} data={staffData} />
         ) : (
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
             {staffLoading ? "Loading…" : "No data yet."}
           </div>
-        )
-      ) : (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+        )}
+      </div>
+
+      <div className={tab === "join" ? "" : "hidden"}>
+        {joinData ? (
+          <JoinRideTab
+            data={joinData}
+            appliedFrom={appliedFrom}
+            appliedTo={appliedTo}
+            currentUserName={currentUserName}
+          />
+        ) : (
+          <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+            {joinLoading ? "Loading…" : "No data yet."}
+          </div>
+        )}
+      </div>
+
+      {tab !== "overview" && tab !== "staff" && tab !== "join" && (
+        <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
           {TABS.find((t) => t.key === tab)?.label} — not built yet.
         </div>
       )}

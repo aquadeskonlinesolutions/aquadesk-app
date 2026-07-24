@@ -18,5 +18,12 @@ export default async function ReportsPage() {
   const { from, to } = currentMonthRange();
   const overview = await loadOverviewData(user.diveCenterId, from, to);
 
-  return <ReportsClient initialDateFrom={from} initialDateTo={to} initialOverview={overview} />;
+  return (
+    <ReportsClient
+      initialDateFrom={from}
+      initialDateTo={to}
+      initialOverview={overview}
+      currentUserName={user.fullName}
+    />
+  );
 }

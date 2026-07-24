@@ -475,3 +475,72 @@ export async function loadStaffActivityData(
     educatorRows,
   };
 }
+
+// ── Join Ride ────────────────────────────────────────────────────────────
+//
+// Cards are all-time balances (not date-range scoped), matching Overview's
+// existing "Open Diver Bills" precedent — outstanding to-collect/to-pay
+// money is a current-state concern, not something you'd want to lose sight
+// of just because it fell outside the selected period. The records table
+// itself is filtered by the applied date range, client-side, from the same
+// unbounded fetch — no need to round-trip to the server on every date
+// change since this table isn't expected to be huge.
+
+export type JoinRideDirection = "joined_our_boat" | "we_joined_another_boat";
+
+export type JoinRideRecord = {
+  id: string;
+  direction: JoinRideDirection;
+  date: string;
+  company: string;
+  numberOfDivers: number;
+  numberOfDives: number;
+  diveSites: string | null;
+  totalAmount: number;
+  status: string;
+  balance: number;
+  remarks: string | null;
+};
+
+export type JoinRideData = {
+  diveCenterName: string;
+  joinRideRatePerDiverPerDive: number;
+  records: JoinRideRecord[];
+};
+
+export async function loadJoinRideData(diveCenterId: string): Promise<JoinRideData> {
+  const supabase = await createClient();
+
+  const [{ data: dc }, { data: records }] = await Promise.all([
+    supabase
+      .from("dive_centers")
+      .select("name, join_ride_rate_per_diver_per_dive")
+      .eq("id", diveCenterId)
+      .single(),
+    supabase
+      .from("join_ride_records")
+      .select(
+        "id, direction, date, company, number_of_divers, number_of_dives, dive_sites, total_amount, status, balance, remarks",
+      )
+      .eq("dive_center_id", diveCenterId)
+      .order("date", { ascending: false }),
+  ]);
+
+  return {
+    diveCenterName: dc?.name ?? "Dive Center",
+    joinRideRatePerDiverPerDive: Number(dc?.join_ride_rate_per_diver_per_dive ?? 0),
+    records: (records ?? []).map((r) => ({
+      id: r.id,
+      direction: r.direction as JoinRideDirection,
+      date: r.date,
+      company: r.company,
+      numberOfDivers: r.number_of_divers ?? 0,
+      numberOfDives: r.number_of_dives ?? 0,
+      diveSites: r.dive_sites,
+      totalAmount: safeNum(r.total_amount),
+      status: r.status,
+      balance: safeNum(r.balance),
+      remarks: r.remarks,
+    })),
+  };
+}
