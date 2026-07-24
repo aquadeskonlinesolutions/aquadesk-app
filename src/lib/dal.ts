@@ -56,6 +56,17 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
   };
 });
 
+// Every Settings Server Action re-checks this — the settings/layout.tsx
+// redirect is optimistic UI, not the enforcement boundary (RLS's owner-write
+// policies on the settings-tier tables are).
+export async function requireOwner(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (user.role !== "owner") {
+    redirect("/dashboard");
+  }
+  return user;
+}
+
 export type CurrentPlatformAdmin = {
   id: string;
   userId: string;
