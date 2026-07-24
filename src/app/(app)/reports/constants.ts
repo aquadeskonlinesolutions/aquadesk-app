@@ -15,3 +15,22 @@ export const EQUIPMENT_SUGGESTIONS = [
   "Mask",
   "Computer",
 ];
+
+// Matches the `expense_category` Postgres enum exactly (database/001_schema_and_rls.sql).
+// Shared between the server-only data loader (category label lookup) and the
+// client form (select options) — a pure constant, safe for both.
+export const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
+  fuel: "Fuel",
+  boat_maintenance: "Boat Maintenance",
+  equipment_maintenance: "Equipment Maintenance",
+  compressor_fill_station: "Compressor / Fill Station",
+  staff_meals: "Staff Meals",
+  food_expenses: "Food Expenses",
+  office_supplies: "Office Supplies",
+  utilities: "Utilities",
+  licenses_permits: "Licenses & Permits",
+  marketing: "Marketing",
+  repairs: "Repairs",
+  other: "Other",
+  uncategorized: "Uncategorized",
+};

@@ -1,12 +1,19 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { getOverviewData, getStaffActivityData, getJoinRideData, getRentalGearsData } from "./actions";
+import {
+  getOverviewData,
+  getStaffActivityData,
+  getJoinRideData,
+  getRentalGearsData,
+  getExpensesData,
+} from "./actions";
 import { OverviewTab } from "./OverviewTab";
 import { StaffTab } from "./StaffTab";
 import { JoinRideTab } from "./JoinRideTab";
 import { RentalGearsTab } from "./RentalGearsTab";
-import type { OverviewData, StaffActivityData, JoinRideData, RentalGearsData } from "./data";
+import { ExpensesTab } from "./ExpensesTab";
+import type { OverviewData, StaffActivityData, JoinRideData, RentalGearsData, ExpensesData } from "./data";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -48,6 +55,8 @@ export function ReportsClient({
   const [joinLoading, setJoinLoading] = useState(false);
   const [rentalData, setRentalData] = useState<RentalGearsData | null>(null);
   const [rentalLoading, setRentalLoading] = useState(false);
+  const [expensesData, setExpensesData] = useState<ExpensesData | null>(null);
+  const [expensesLoading, setExpensesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -62,13 +71,23 @@ export function ReportsClient({
     }
     setError(null);
     startTransition(async () => {
-      const data = await getOverviewData(dateFrom, dateTo);
-      setOverview(data);
+      // Fetch everything first, then apply every setState together in one
+      // synchronous batch at the end — StaffTab/ExpensesTab remount on a
+      // `key` tied to appliedFrom/appliedTo, so if setAppliedFrom/To ever
+      // committed in an earlier batch than setStaffData/setExpensesData,
+      // the remount would grab whatever those still held (stale, since the
+      // fresh fetch hadn't resolved yet) and the later state update would
+      // land on an already-initialized instance's ignored initial value.
+      const [overviewResult, staffResult, expensesResult] = await Promise.all([
+        getOverviewData(dateFrom, dateTo),
+        staffData ? getStaffActivityData(dateFrom, dateTo) : Promise.resolve(null),
+        expensesData ? getExpensesData(dateFrom, dateTo) : Promise.resolve(null),
+      ]);
+      setOverview(overviewResult);
+      if (staffResult) setStaffData(staffResult);
+      if (expensesResult) setExpensesData(expensesResult);
       setAppliedFrom(dateFrom);
       setAppliedTo(dateTo);
-      if (staffData) {
-        setStaffData(await getStaffActivityData(dateFrom, dateTo));
-      }
     });
   }
 
@@ -91,6 +110,12 @@ export function ReportsClient({
       getRentalGearsData()
         .then(setRentalData)
         .finally(() => setRentalLoading(false));
+    }
+    if (key === "expenses" && !expensesData && !expensesLoading) {
+      setExpensesLoading(true);
+      getExpensesData(appliedFrom, appliedTo)
+        .then(setExpensesData)
+        .finally(() => setExpensesLoading(false));
     }
   }
 
@@ -148,13 +173,14 @@ export function ReportsClient({
       </div>
 
       {/*
-        Tabs with their own client-side state (Staff, Join Ride) stay mounted
-        once loaded instead of being conditionally unmounted on tab switch —
-        their mutation handlers patch local state directly rather than
-        round-tripping through this parent's staffData/joinData, so an
-        unmount+remount on tab switch would silently revert to whatever
-        snapshot was last fetched here, discarding anything saved since.
-        Visibility is toggled with `hidden` instead.
+        Tabs with their own client-side state (Staff, Join Ride, Rental
+        Gears, Expenses) stay mounted once loaded instead of being
+        conditionally unmounted on tab switch — their mutation handlers
+        patch local state directly rather than round-tripping through this
+        parent's staffData/joinData/etc, so an unmount+remount on tab
+        switch would silently revert to whatever snapshot was last fetched
+        here, discarding anything saved since. Visibility is toggled with
+        `hidden` instead.
       */}
       <div className={tab === "overview" ? "print:hidden" : "hidden"}>
         <OverviewTab
@@ -199,11 +225,25 @@ export function ReportsClient({
         )}
       </div>
 
-      {tab !== "overview" && tab !== "staff" && tab !== "join" && tab !== "rentals" && (
-        <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
-          {TABS.find((t) => t.key === tab)?.label} — not built yet.
-        </div>
-      )}
+      <div className={tab === "expenses" ? "print:hidden" : "hidden"}>
+        {expensesData ? (
+          <ExpensesTab key={`${appliedFrom}|${appliedTo}`} data={expensesData} appliedFrom={appliedFrom} appliedTo={appliedTo} />
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+            {expensesLoading ? "Loading…" : "No data yet."}
+          </div>
+        )}
+      </div>
+
+      {tab !== "overview" &&
+        tab !== "staff" &&
+        tab !== "join" &&
+        tab !== "rentals" &&
+        tab !== "expenses" && (
+          <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+            {TABS.find((t) => t.key === tab)?.label} — not built yet.
+          </div>
+        )}
     </div>
   );
 }

@@ -1,22 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { safeNum, getPaidAmount } from "@/lib/payments";
-
-const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
-  fuel: "Fuel",
-  boat_maintenance: "Boat Maintenance",
-  equipment_maintenance: "Equipment Maintenance",
-  compressor_fill_station: "Compressor / Fill Station",
-  staff_meals: "Staff Meals",
-  food_expenses: "Food Expenses",
-  office_supplies: "Office Supplies",
-  utilities: "Utilities",
-  licenses_permits: "Licenses & Permits",
-  marketing: "Marketing",
-  repairs: "Repairs",
-  other: "Other",
-  uncategorized: "Uncategorized",
-};
+import { EXPENSE_CATEGORY_LABELS } from "./constants";
 
 function splitDiveSites(site: string | null): string[] {
   const parts = String(site ?? "")
@@ -24,6 +9,14 @@ function splitDiveSites(site: string | null): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
   return parts.length ? parts : ["Unnamed"];
+}
+
+function expenseGroupLabel(category: string, customCategory: string | null): string {
+  if (category === "other") {
+    const custom = customCategory?.trim();
+    return custom ? `Other – ${custom}` : "Other (unspecified)";
+  }
+  return EXPENSE_CATEGORY_LABELS[category] ?? "Uncategorized";
 }
 
 export type SiteActivity = { name: string; count: number };
@@ -229,12 +222,7 @@ export async function loadOverviewData(
   const expenseTotal = expenses.reduce((s, r) => s + safeNum(r.amount), 0);
   const expenseCatMap = new Map<string, number>();
   expenses.forEach((r) => {
-    const label =
-      r.category === "other"
-        ? r.custom_category?.trim()
-          ? `Other – ${r.custom_category.trim()}`
-          : "Other (unspecified)"
-        : (EXPENSE_CATEGORY_LABELS[r.category] ?? "Uncategorized");
+    const label = expenseGroupLabel(r.category, r.custom_category);
     expenseCatMap.set(label, (expenseCatMap.get(label) ?? 0) + safeNum(r.amount));
   });
   const expenseCategoryTotals = [...expenseCatMap.entries()]
@@ -591,5 +579,77 @@ export async function loadRentalGearsData(diveCenterId: string): Promise<RentalG
       balance: safeNum(r.balance),
       remarks: r.remarks,
     })),
+  };
+}
+
+// ── Expenses ─────────────────────────────────────────────────────────────
+//
+// Unlike Join Ride / Rental Gears, this is a plain log with no pending-
+// balance concept — every figure here is meant to be read within the
+// selected period, so (matching the live app) the fetch itself is date-
+// range scoped server-side rather than fetched once unbounded. Expenses
+// can also accumulate far more rows over a dive center's lifetime than
+// occasional rental/join-ride transactions, so this scales better too.
+
+export type ExpenseRecord = {
+  id: string;
+  date: string;
+  category: string;
+  customCategory: string | null;
+  amount: number;
+  paidBy: string | null;
+  notes: string | null;
+};
+
+export type ExpensesData = {
+  records: ExpenseRecord[];
+  categoryTotals: { name: string; amount: number }[];
+  totalAmount: number;
+  uncategorizedAmount: number;
+};
+
+export async function loadExpensesData(
+  diveCenterId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<ExpensesData> {
+  const supabase = await createClient();
+
+  const { data: rows } = await supabase
+    .from("expenses")
+    .select("id, date, category, custom_category, amount, paid_by, notes")
+    .eq("dive_center_id", diveCenterId)
+    .gte("date", dateFrom)
+    .lte("date", dateTo)
+    .order("date", { ascending: false });
+
+  const records: ExpenseRecord[] = (rows ?? []).map((r) => ({
+    id: r.id,
+    date: r.date,
+    category: r.category,
+    customCategory: r.custom_category,
+    amount: safeNum(r.amount),
+    paidBy: r.paid_by,
+    notes: r.notes,
+  }));
+
+  const categoryMap = new Map<string, number>();
+  let uncategorizedAmount = 0;
+  records.forEach((r) => {
+    const label = expenseGroupLabel(r.category, r.customCategory);
+    categoryMap.set(label, (categoryMap.get(label) ?? 0) + r.amount);
+    if (label === "Uncategorized" || label === "Other (unspecified)") {
+      uncategorizedAmount += r.amount;
+    }
+  });
+  const categoryTotals = [...categoryMap.entries()]
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount);
+
+  return {
+    records,
+    categoryTotals,
+    totalAmount: records.reduce((s, r) => s + r.amount, 0),
+    uncategorizedAmount,
   };
 }

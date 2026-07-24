@@ -9,6 +9,7 @@ import {
   loadStaffActivityData,
   loadJoinRideData,
   loadRentalGearsData,
+  loadExpensesData,
   type JoinRideDirection,
 } from "./data";
 
@@ -367,6 +368,63 @@ export async function updateRentalGearStatus(id: string, status: string): Promis
       balance: isSettledStatus(status) ? 0 : safeNum(existing?.total_amount),
       updated_at: new Date().toISOString(),
     })
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
+}
+
+// ── Expenses ─────────────────────────────────────────────────────────────
+
+export async function getExpensesData(dateFrom: string, dateTo: string) {
+  const user = await requireRevenueAccess();
+  return loadExpensesData(user.diveCenterId, dateFrom, dateTo);
+}
+
+export async function saveExpenseRecord(
+  id: string | null,
+  date: string,
+  category: string,
+  customCategory: string,
+  amount: number,
+  paidBy: string,
+  notes: string,
+): Promise<{ error?: string }> {
+  if (!date) return { error: "Date is required." };
+  if (!(amount > 0)) return { error: "Amount must be greater than 0." };
+
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const payload = {
+    dive_center_id: user.diveCenterId,
+    date,
+    category,
+    custom_category: category === "other" ? customCategory.trim() || null : null,
+    amount,
+    paid_by: paidBy.trim() || null,
+    notes: notes.trim() || null,
+    created_by: user.id,
+  };
+
+  const { error } = id
+    ? await supabase.from("expenses").update(payload).eq("id", id).eq("dive_center_id", user.diveCenterId)
+    : await supabase.from("expenses").insert(payload);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
+}
+
+export async function deleteExpenseRecord(id: string): Promise<{ error?: string }> {
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("expenses")
+    .delete()
     .eq("id", id)
     .eq("dive_center_id", user.diveCenterId);
 
