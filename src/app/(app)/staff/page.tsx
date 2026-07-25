@@ -1,10 +1,20 @@
-import { PagePlaceholder } from "@/components/PagePlaceholder";
+import { getCurrentUser } from "@/lib/dal";
+import { loadStaffPageData } from "./data";
+import { StaffClient } from "./StaffClient";
 
-export default function StaffPage() {
+export default async function StaffPage() {
+  const user = await getCurrentUser();
+  const isOwner = user.role === "owner";
+  const data = await loadStaffPageData(user.diveCenterId, isOwner);
+
   return (
-    <PagePlaceholder
-      title="Staff"
-      description="Staff roster, roles, and positions."
+    <StaffClient
+      diveCenterId={user.diveCenterId}
+      isOwner={isOwner}
+      roster={data.roster}
+      certifications={data.certifications}
+      unlinkedSecretaries={data.unlinkedSecretaries}
+      crewTokenToday={data.crewTokenToday}
     />
   );
 }
