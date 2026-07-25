@@ -1,4 +1,4 @@
-export const BOAT_MODE_LABELS: Record<string, string> = {
+const BOAT_MODE_LABELS: Record<string, string> = {
   own_boat: "Own Boat",
   join_ride: "Join Ride",
   rental: "Rental",
