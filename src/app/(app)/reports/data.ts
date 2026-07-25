@@ -793,3 +793,54 @@ export async function loadExpensesData(
     uncategorizedAmount,
   };
 }
+
+// ── Government Fees ─────────────────────────────────────────────────────
+//
+// Date-range scoped like Expenses (the live app's govt-fees log reads the
+// same shared From/To picker via its monthStart()/monthEnd() helpers,
+// which are just aliases for those two inputs — not a separate range).
+// Schema was originally shaped wrong (a rate-config table) and fixed in
+// migration 006 to the live app's real daily-log shape; see that file's
+// comment for the full story.
+
+export type GovtFeeType = "Marine Fee" | "Shark Fee" | "Other Fee";
+
+export type GovtFeeRecord = {
+  id: string;
+  date: string;
+  feeType: GovtFeeType;
+  rate: number;
+  divers: number;
+  total: number;
+};
+
+export type GovtFeesData = {
+  records: GovtFeeRecord[];
+};
+
+export async function loadGovtFeesData(
+  diveCenterId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<GovtFeesData> {
+  const supabase = await createClient();
+
+  const { data: rows } = await supabase
+    .from("govt_fees")
+    .select("id, date, fee_type, rate, divers, total")
+    .eq("dive_center_id", diveCenterId)
+    .gte("date", dateFrom)
+    .lte("date", dateTo)
+    .order("date", { ascending: true });
+
+  return {
+    records: (rows ?? []).map((r) => ({
+      id: r.id,
+      date: r.date,
+      feeType: r.fee_type as GovtFeeType,
+      rate: safeNum(r.rate),
+      divers: r.divers ?? 0,
+      total: safeNum(r.total),
+    })),
+  };
+}

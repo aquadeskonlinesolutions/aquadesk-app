@@ -11,7 +11,9 @@ import {
   loadRentalGearsData,
   loadExpensesData,
   loadSettlementData,
+  loadGovtFeesData,
   type JoinRideDirection,
+  type GovtFeeType,
 } from "./data";
 
 export async function getOverviewData(dateFrom: string, dateTo: string) {
@@ -439,4 +441,58 @@ export async function deleteExpenseRecord(id: string): Promise<{ error?: string 
 export async function getSettlementData(date: string) {
   const user = await requireRevenueAccess();
   return loadSettlementData(user.diveCenterId, date);
+}
+
+// ── Government Fees ─────────────────────────────────────────────────────
+
+export async function getGovtFeesData(dateFrom: string, dateTo: string) {
+  const user = await requireRevenueAccess();
+  return loadGovtFeesData(user.diveCenterId, dateFrom, dateTo);
+}
+
+export type GovtFeeDraftRow = {
+  date: string;
+  feeType: GovtFeeType;
+  rate: number;
+  divers: number;
+};
+
+// Bulk-inserts only newly added (unsaved) rows in one call, matching the
+// live app's "add several rows, then Save All" flow — total is always
+// server-computed from rate × divers, never trusted from the client.
+export async function saveGovtFeeRows(rows: GovtFeeDraftRow[]): Promise<{ error?: string }> {
+  if (rows.length === 0) return {};
+
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const inserts = rows.map((r) => ({
+    dive_center_id: user.diveCenterId,
+    date: r.date,
+    fee_type: r.feeType,
+    rate: r.rate,
+    divers: r.divers,
+    total: r.rate * r.divers,
+  }));
+
+  const { error } = await supabase.from("govt_fees").insert(inserts);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
+}
+
+export async function deleteGovtFeeRecord(id: string): Promise<{ error?: string }> {
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("govt_fees")
+    .delete()
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
 }

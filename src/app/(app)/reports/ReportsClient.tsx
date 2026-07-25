@@ -8,6 +8,7 @@ import {
   getRentalGearsData,
   getExpensesData,
   getSettlementData,
+  getGovtFeesData,
 } from "./actions";
 import { OverviewTab } from "./OverviewTab";
 import { StaffTab } from "./StaffTab";
@@ -15,6 +16,7 @@ import { JoinRideTab } from "./JoinRideTab";
 import { RentalGearsTab } from "./RentalGearsTab";
 import { ExpensesTab } from "./ExpensesTab";
 import { SettlementTab } from "./SettlementTab";
+import { GovtFeesTab } from "./GovtFeesTab";
 import type {
   OverviewData,
   StaffActivityData,
@@ -22,6 +24,7 @@ import type {
   RentalGearsData,
   ExpensesData,
   SettlementData,
+  GovtFeesData,
 } from "./data";
 
 function todayManila(): string {
@@ -77,6 +80,8 @@ export function ReportsClient({
   const [expensesLoading, setExpensesLoading] = useState(false);
   const [settlementData, setSettlementData] = useState<SettlementData | null>(null);
   const [settlementLoading, setSettlementLoading] = useState(false);
+  const [govtFeesData, setGovtFeesData] = useState<GovtFeesData | null>(null);
+  const [govtFeesLoading, setGovtFeesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -92,20 +97,23 @@ export function ReportsClient({
     setError(null);
     startTransition(async () => {
       // Fetch everything first, then apply every setState together in one
-      // synchronous batch at the end — StaffTab/ExpensesTab remount on a
-      // `key` tied to appliedFrom/appliedTo, so if setAppliedFrom/To ever
-      // committed in an earlier batch than setStaffData/setExpensesData,
-      // the remount would grab whatever those still held (stale, since the
-      // fresh fetch hadn't resolved yet) and the later state update would
-      // land on an already-initialized instance's ignored initial value.
-      const [overviewResult, staffResult, expensesResult] = await Promise.all([
+      // synchronous batch at the end — StaffTab/ExpensesTab/GovtFeesTab
+      // remount on a `key` tied to appliedFrom/appliedTo, so if
+      // setAppliedFrom/To ever committed in an earlier batch than
+      // setStaffData/setExpensesData/setGovtFeesData, the remount would
+      // grab whatever those still held (stale, since the fresh fetch
+      // hadn't resolved yet) and the later state update would land on an
+      // already-initialized instance's ignored initial value.
+      const [overviewResult, staffResult, expensesResult, govtFeesResult] = await Promise.all([
         getOverviewData(dateFrom, dateTo),
         staffData ? getStaffActivityData(dateFrom, dateTo) : Promise.resolve(null),
         expensesData ? getExpensesData(dateFrom, dateTo) : Promise.resolve(null),
+        govtFeesData ? getGovtFeesData(dateFrom, dateTo) : Promise.resolve(null),
       ]);
       setOverview(overviewResult);
       if (staffResult) setStaffData(staffResult);
       if (expensesResult) setExpensesData(expensesResult);
+      if (govtFeesResult) setGovtFeesData(govtFeesResult);
       setAppliedFrom(dateFrom);
       setAppliedTo(dateTo);
     });
@@ -142,6 +150,12 @@ export function ReportsClient({
       getSettlementData(todayManila())
         .then(setSettlementData)
         .finally(() => setSettlementLoading(false));
+    }
+    if (key === "govtfees" && !govtFeesData && !govtFeesLoading) {
+      setGovtFeesLoading(true);
+      getGovtFeesData(appliedFrom, appliedTo)
+        .then(setGovtFeesData)
+        .finally(() => setGovtFeesLoading(false));
     }
   }
 
@@ -271,12 +285,28 @@ export function ReportsClient({
         )}
       </div>
 
+      <div className={tab === "govtfees" ? "print:hidden" : "hidden"}>
+        {govtFeesData ? (
+          <GovtFeesTab
+            key={`${appliedFrom}|${appliedTo}`}
+            data={govtFeesData}
+            appliedFrom={appliedFrom}
+            appliedTo={appliedTo}
+          />
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
+            {govtFeesLoading ? "Loading…" : "No data yet."}
+          </div>
+        )}
+      </div>
+
       {tab !== "overview" &&
         tab !== "staff" &&
         tab !== "join" &&
         tab !== "rentals" &&
         tab !== "expenses" &&
-        tab !== "settlement" && (
+        tab !== "settlement" &&
+        tab !== "govtfees" && (
           <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
             {TABS.find((t) => t.key === tab)?.label} — not built yet.
           </div>
