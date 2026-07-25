@@ -199,14 +199,17 @@ export type ExistingPayment = {
   cardAmount: number;
   onlineAmount: number;
   discount: number;
-  isPaid: boolean;
 };
 
+// `payments.is_paid` isn't fetched — BillSummary (the only reader of this
+// type) only ever renders while the visit is still open, and checkout
+// (the only thing that sets is_paid = true) closes the visit in the same
+// transaction, so a fetched value would always read false here anyway.
 export async function loadExistingPayment(visitId: string): Promise<ExistingPayment | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("payments")
-    .select("cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, online_amount, discount, is_paid")
+    .select("cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, online_amount, discount")
     .eq("visit_id", visitId)
     .maybeSingle();
 
@@ -219,7 +222,6 @@ export async function loadExistingPayment(visitId: string): Promise<ExistingPaym
     cardAmount: Number(data.card_amount) || 0,
     onlineAmount: Number(data.online_amount) || 0,
     discount: Number(data.discount) || 0,
-    isPaid: data.is_paid,
   };
 }
 
@@ -344,16 +346,6 @@ export async function loadCourseRates(diveCenterId: string): Promise<CourseRateO
   return (data ?? []).map((c) => ({ id: c.id, courseName: c.course_name, rate: Number(c.rate) || 0 }));
 }
 
-export async function loadPricingMode(diveCenterId: string): Promise<"package" | "tier" | null> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("dive_centers")
-    .select("pricing_mode")
-    .eq("id", diveCenterId)
-    .maybeSingle();
-  return (data?.pricing_mode as "package" | "tier" | null) ?? null;
-}
-
 // ── Visits + Activities ─────────────────────────────────────────────────
 
 export type Visit = {
@@ -363,7 +355,6 @@ export type Visit = {
   visitEnd: string | null;
   visitStatus: "open" | "closed" | "voided";
   isActive: boolean;
-  isPaid: boolean;
   invoiceCount: number;
   courseRateId: string | null;
   courseName: string | null;
@@ -400,7 +391,7 @@ export async function loadLatestVisit(diverId: string, diveCenterId: string): Pr
   const { data } = await supabase
     .from("visits")
     .select(
-      "id, experience_type, visit_start, visit_end, visit_status, is_active, is_paid, invoice_count, course_rate_id",
+      "id, experience_type, visit_start, visit_end, visit_status, is_active, invoice_count, course_rate_id",
     )
     .eq("diver_id", diverId)
     .eq("dive_center_id", diveCenterId)
@@ -422,7 +413,6 @@ export async function loadLatestVisit(diverId: string, diveCenterId: string): Pr
     visitEnd: data.visit_end,
     visitStatus: data.visit_status,
     isActive: data.is_active,
-    isPaid: data.is_paid,
     invoiceCount: data.invoice_count ?? 0,
     courseRateId: data.course_rate_id,
     courseName: course?.course_name ?? null,

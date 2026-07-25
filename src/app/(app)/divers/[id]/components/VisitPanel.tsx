@@ -281,7 +281,6 @@ export function VisitPanel({
           visitEnd: null,
           visitStatus: "open",
           isActive: true,
-          isPaid: false,
           invoiceCount: 0,
           courseRateId: courseRateId ?? null,
           courseName: course?.courseName ?? null,
