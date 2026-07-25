@@ -1,15 +1,58 @@
-import { PagePlaceholder } from "@/components/PagePlaceholder";
+import { notFound } from "next/navigation";
+import { getCurrentUser } from "@/lib/dal";
+import {
+  loadDiverDetail,
+  loadDiverNotes,
+  loadEquipmentRentalRates,
+  loadLatestVisit,
+  loadActivities,
+  loadCourseRates,
+  loadDeposits,
+  loadExistingPayment,
+  loadPaymentConfig,
+  loadInvoiceForVisit,
+  loadDiverRegistrations,
+} from "./data";
+import { createClient } from "@/lib/supabase/server";
+import { DiverDetailClient } from "./DiverDetailClient";
 
-export default async function DiverDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function DiverDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const user = await getCurrentUser();
+  const diver = await loadDiverDetail(id, user.diveCenterId);
+
+  if (!diver) notFound();
+
+  const supabase = await createClient();
+  const [notes, rentalItems, visit, courseRates, paymentConfig, dc, registrations] = await Promise.all([
+    loadDiverNotes(id),
+    loadEquipmentRentalRates(user.diveCenterId),
+    loadLatestVisit(id, user.diveCenterId),
+    loadCourseRates(user.diveCenterId),
+    loadPaymentConfig(user.diveCenterId),
+    supabase.from("dive_centers").select("name").eq("id", user.diveCenterId).single(),
+    loadDiverRegistrations(id),
+  ]);
+  const [activities, deposits, existingPayment] = visit
+    ? await Promise.all([loadActivities(visit.id), loadDeposits(visit.id), loadExistingPayment(visit.id)])
+    : [[], [], null];
+  const invoice = visit && visit.visitStatus === "closed" ? await loadInvoiceForVisit(visit.id) : null;
+
   return (
-    <PagePlaceholder
-      title={`Diver ${id}`}
-      description="Registration detail, charges, and payments for one diver."
+    <DiverDetailClient
+      initialDiver={diver}
+      initialNotes={notes}
+      isOwner={user.role === "owner"}
+      rentalItems={rentalItems}
+      initialVisit={visit}
+      initialActivities={activities}
+      courseRates={courseRates}
+      initialDeposits={deposits}
+      existingPayment={existingPayment}
+      paymentConfig={paymentConfig}
+      initialInvoice={invoice}
+      diveCenterName={dc.data?.name ?? "Dive Center"}
+      registrations={registrations}
     />
   );
 }

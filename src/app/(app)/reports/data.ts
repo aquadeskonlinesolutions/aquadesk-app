@@ -852,11 +852,11 @@ export async function loadGovtFeesData(
 // here). "Flagged" = a visit with more than one invoice ever sent for it —
 // a sign charges may have changed after a bill was already closed. Every
 // invoice's totals/line-items are read from `invoice_emails.invoice_snapshot`
-// (a jsonb capture taken at send time), with the same defensive multi-name
-// field fallbacks the live app uses (`grand_total ?? grandTotal ?? total`) —
-// there's no rebuild-side invoice/checkout flow yet (that's part of the
-// not-yet-built Divers page) to pin an exact snapshot shape against, so this
-// stays a best-effort read until that flow exists and settles the real shape.
+// (a jsonb capture taken at send time). The real shape is now confirmed —
+// Diver Detail's checkoutVisit action (src/app/(app)/divers/[id]/actions.ts)
+// is the only writer, and it always writes `grand_total` (snake_case) — the
+// old defensive `grandTotal`/`total` fallback keys were guesses against the
+// pre-Diver-Detail unknown shape and are now dead, removed below.
 
 export type AuditInvoiceRow = {
   id: string;
@@ -953,7 +953,7 @@ export async function loadBillingAuditData(diveCenterId: string): Promise<Billin
 
   const invoices: AuditInvoiceRow[] = invoiceEmails.map((inv) => {
     const snap = (inv.invoice_snapshot ?? {}) as Record<string, unknown>;
-    const total = safeNum(snap.grand_total ?? snap.grandTotal ?? snap.total ?? 0);
+    const total = safeNum(snap.grand_total);
     return {
       id: inv.id,
       visitId: inv.visit_id,

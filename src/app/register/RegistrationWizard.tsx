@@ -433,6 +433,7 @@ export function RegistrationWizard({
       waiver_opened: true,
       waiver_signature_url: form.signatureDataUrl,
       duplicate_email_flag: isDuplicateEmail,
+      is_minor: isMinor,
     };
 
     const { data: result, error } = await supabase.rpc("submit_diver_registration", {
