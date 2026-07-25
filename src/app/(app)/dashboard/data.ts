@@ -168,7 +168,8 @@ async function loadBoats(
       .from("schedules")
       .select("id, boat_id, departure_time, is_joiner, joiner_boat_name")
       .eq("dive_center_id", diveCenterId)
-      .eq("schedule_date", todayStr),
+      .eq("schedule_date", todayStr)
+      .eq("cancelled", false),
   ]);
 
   const schedules = schedulesToday ?? [];
@@ -379,6 +380,7 @@ async function loadAlerts(
     .eq("dive_center_id", diveCenterId)
     .eq("schedule_date", todayStr)
     .eq("is_joiner", true)
+    .eq("cancelled", false)
     .limit(1);
 
   if ((joinedBoatSchedules ?? []).length > 0) {

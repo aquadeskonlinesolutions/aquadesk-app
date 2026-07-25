@@ -47,6 +47,7 @@ export async function loadTripsForDate(
       .eq("dive_center_id", diveCenterId)
       .eq("schedule_date", date)
       .eq("is_joiner", false)
+      .eq("cancelled", false)
       .order("departure_time"),
     supabase.from("boats").select("id, name").eq("dive_center_id", diveCenterId),
     supabase
