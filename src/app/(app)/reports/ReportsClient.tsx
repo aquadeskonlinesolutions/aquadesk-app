@@ -9,6 +9,7 @@ import {
   getExpensesData,
   getSettlementData,
   getGovtFeesData,
+  getBillingAuditData,
 } from "./actions";
 import { OverviewTab } from "./OverviewTab";
 import { StaffTab } from "./StaffTab";
@@ -17,6 +18,7 @@ import { RentalGearsTab } from "./RentalGearsTab";
 import { ExpensesTab } from "./ExpensesTab";
 import { SettlementTab } from "./SettlementTab";
 import { GovtFeesTab } from "./GovtFeesTab";
+import { BillingAuditTab } from "./BillingAuditTab";
 import type {
   OverviewData,
   StaffActivityData,
@@ -25,6 +27,7 @@ import type {
   ExpensesData,
   SettlementData,
   GovtFeesData,
+  BillingAuditData,
 } from "./data";
 
 function todayManila(): string {
@@ -82,6 +85,8 @@ export function ReportsClient({
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [govtFeesData, setGovtFeesData] = useState<GovtFeesData | null>(null);
   const [govtFeesLoading, setGovtFeesLoading] = useState(false);
+  const [auditData, setAuditData] = useState<BillingAuditData | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -156,6 +161,12 @@ export function ReportsClient({
       getGovtFeesData(appliedFrom, appliedTo)
         .then(setGovtFeesData)
         .finally(() => setGovtFeesLoading(false));
+    }
+    if (key === "audit" && !auditData && !auditLoading) {
+      setAuditLoading(true);
+      getBillingAuditData()
+        .then(setAuditData)
+        .finally(() => setAuditLoading(false));
     }
   }
 
@@ -300,17 +311,15 @@ export function ReportsClient({
         )}
       </div>
 
-      {tab !== "overview" &&
-        tab !== "staff" &&
-        tab !== "join" &&
-        tab !== "rentals" &&
-        tab !== "expenses" &&
-        tab !== "settlement" &&
-        tab !== "govtfees" && (
+      <div className={tab === "audit" ? "" : "hidden"}>
+        {auditData ? (
+          <BillingAuditTab data={auditData} />
+        ) : (
           <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
-            {TABS.find((t) => t.key === tab)?.label} — not built yet.
+            {auditLoading ? "Loading…" : "No data yet."}
           </div>
         )}
+      </div>
     </div>
   );
 }

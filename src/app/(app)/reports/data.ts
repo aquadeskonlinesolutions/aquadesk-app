@@ -844,3 +844,158 @@ export async function loadGovtFeesData(
     })),
   };
 }
+
+// ── Billing Audit ────────────────────────────────────────────────────────
+//
+// Unbounded, not date-range scoped (the live app loads all of it once and
+// caches with an `auditLoaded` flag, same shape as Join Ride/Rental Gears
+// here). "Flagged" = a visit with more than one invoice ever sent for it —
+// a sign charges may have changed after a bill was already closed. Every
+// invoice's totals/line-items are read from `invoice_emails.invoice_snapshot`
+// (a jsonb capture taken at send time), with the same defensive multi-name
+// field fallbacks the live app uses (`grand_total ?? grandTotal ?? total`) —
+// there's no rebuild-side invoice/checkout flow yet (that's part of the
+// not-yet-built Divers page) to pin an exact snapshot shape against, so this
+// stays a best-effort read until that flow exists and settles the real shape.
+
+export type AuditInvoiceRow = {
+  id: string;
+  visitId: string;
+  diverId: string;
+  diverName: string;
+  diverEmail: string;
+  diverNationality: string | null;
+  sentAt: string;
+  closedBy: string;
+  totalBilled: number;
+  snapshot: Record<string, unknown>;
+};
+
+export type AuditFlaggedVisit = {
+  visitId: string;
+  diverId: string;
+  diverName: string;
+  diverEmail: string;
+  invoiceCount: number;
+  invoices: AuditInvoiceRow[];
+};
+
+export type AuditUnlockLog = {
+  id: string;
+  label: string;
+  unlockedBy: string;
+  unlockedAt: string;
+  notes: string;
+};
+
+export type BillingAuditData = {
+  diveCenterName: string;
+  flagged: AuditFlaggedVisit[];
+  invoices: AuditInvoiceRow[];
+  unlocks: AuditUnlockLog[];
+};
+
+export async function loadBillingAuditData(diveCenterId: string): Promise<BillingAuditData> {
+  const supabase = await createClient();
+
+  const [{ data: dc }, { data: visitsRaw }, { data: invoiceEmailsRaw }, { data: unlockLogsRaw }] = await Promise.all([
+    supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
+    supabase
+      .from("visits")
+      .select("id, diver_id, invoice_count")
+      .eq("dive_center_id", diveCenterId)
+      .gt("invoice_count", 0),
+    supabase
+      .from("invoice_emails")
+      .select("id, visit_id, diver_id, sent_at, sent_by, invoice_snapshot")
+      .eq("dive_center_id", diveCenterId)
+      .order("sent_at", { ascending: false }),
+    supabase
+      .from("audit_logs")
+      .select("id, performed_by, target_id, notes, created_at")
+      .eq("dive_center_id", diveCenterId)
+      .eq("action", "bill_unlocked")
+      .order("created_at", { ascending: false }),
+  ]);
+
+  const visits = visitsRaw ?? [];
+  const invoiceEmails = invoiceEmailsRaw ?? [];
+  const unlockLogs = unlockLogsRaw ?? [];
+
+  const diverIds = [...new Set([...visits.map((v) => v.diver_id), ...invoiceEmails.map((i) => i.diver_id)].filter(Boolean))];
+  const userIds = [
+    ...new Set(
+      [...invoiceEmails.map((i) => i.sent_by), ...unlockLogs.map((l) => l.performed_by)].filter(
+        (id): id is string => !!id,
+      ),
+    ),
+  ];
+
+  const [{ data: diversData }, { data: usersData }] = await Promise.all([
+    diverIds.length
+      ? supabase.from("divers").select("id, first_name, last_name, email, nationality").in("id", diverIds)
+      : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string; email: string | null; nationality: string | null }[] }),
+    userIds.length
+      ? supabase.from("users").select("id, full_name").in("id", userIds)
+      : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
+  ]);
+
+  const diverMap = new Map((diversData ?? []).map((d) => [d.id, d]));
+  const userMap = new Map((usersData ?? []).map((u) => [u.id, u.full_name]));
+
+  function diverName(id: string): string {
+    const d = diverMap.get(id);
+    return d ? `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim() || "Unknown Diver" : "Unknown Diver";
+  }
+  function diverEmail(id: string): string {
+    return diverMap.get(id)?.email || "—";
+  }
+
+  const invoices: AuditInvoiceRow[] = invoiceEmails.map((inv) => {
+    const snap = (inv.invoice_snapshot ?? {}) as Record<string, unknown>;
+    const total = safeNum(snap.grand_total ?? snap.grandTotal ?? snap.total ?? 0);
+    return {
+      id: inv.id,
+      visitId: inv.visit_id,
+      diverId: inv.diver_id,
+      diverName: diverName(inv.diver_id),
+      diverEmail: diverEmail(inv.diver_id),
+      diverNationality: diverMap.get(inv.diver_id)?.nationality ?? null,
+      sentAt: inv.sent_at,
+      closedBy: (inv.sent_by && userMap.get(inv.sent_by)) || "—",
+      totalBilled: total,
+      snapshot: snap,
+    };
+  });
+
+  const invoicesByVisit = new Map<string, AuditInvoiceRow[]>();
+  invoices.forEach((inv) => {
+    const list = invoicesByVisit.get(inv.visitId) ?? [];
+    list.push(inv);
+    invoicesByVisit.set(inv.visitId, list);
+  });
+
+  const flagged: AuditFlaggedVisit[] = visits
+    .filter((v) => (v.invoice_count ?? 0) > 1)
+    .map((v) => ({
+      visitId: v.id,
+      diverId: v.diver_id,
+      diverName: diverName(v.diver_id),
+      diverEmail: diverEmail(v.diver_id),
+      invoiceCount: v.invoice_count ?? 0,
+      invoices: invoicesByVisit.get(v.id) ?? [],
+    }));
+
+  const unlocks: AuditUnlockLog[] = unlockLogs.map((log) => {
+    const notes = log.notes || "—";
+    return {
+      id: log.id,
+      label: notes.split("—")[0]?.trim() || notes,
+      unlockedBy: (log.performed_by && userMap.get(log.performed_by)) || "—",
+      unlockedAt: log.created_at,
+      notes,
+    };
+  });
+
+  return { diveCenterName: dc?.name ?? "Dive Center", flagged, invoices, unlocks };
+}

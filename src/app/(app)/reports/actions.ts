@@ -12,6 +12,7 @@ import {
   loadExpensesData,
   loadSettlementData,
   loadGovtFeesData,
+  loadBillingAuditData,
   type JoinRideDirection,
   type GovtFeeType,
 } from "./data";
@@ -495,4 +496,11 @@ export async function deleteGovtFeeRecord(id: string): Promise<{ error?: string 
   if (error) return { error: error.message };
   revalidatePath("/reports");
   return {};
+}
+
+// ── Billing Audit ────────────────────────────────────────────────────────
+
+export async function getBillingAuditData() {
+  const user = await requireRevenueAccess();
+  return loadBillingAuditData(user.diveCenterId);
 }
