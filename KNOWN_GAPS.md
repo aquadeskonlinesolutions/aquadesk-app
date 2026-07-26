@@ -11,6 +11,27 @@ would require. Remove the entry once it's resolved.
 
 ## Open
 
+### Send Invoice: real delivery only works to the Resend account's own email
+
+Wired up 2026-07-26 — `sendInvoice` (`divers/[id]/actions.ts`) now
+actually sends via Resend instead of just marking the invoice sent.
+Uses a **test/isolated Resend account**, deliberately separate from the
+live app's already-connected one (`RESEND_API_KEY` in `.env.local`), and
+Resend's shared `onboarding@resend.dev` sender since no custom domain is
+verified yet.
+
+**Real limitation, not a bug**: Resend's shared test sender can only
+deliver to the Resend account's own signup email address — confirmed by
+the actual Resend API error when trying to send to any other recipient.
+This means invoices can't actually reach real divers' inboxes yet. To
+fix: verify a domain in Resend (a subdomain of `aquadesk.online` was
+the agreed plan, to avoid touching the live app's Resend/domain setup
+at all — see the 2026-07-26 session write-up in `CLAUDE.md`), add the
+DNS records it asks for, then update `RESEND_FROM_EMAIL` in
+`.env.local` to an address on that subdomain. No code changes needed
+for that part — `src/lib/email/resend.ts` already reads the from-address
+from the env var.
+
 ### Boat Manifest: no offline support
 
 The blueprint's page map (`aquadesk-rebuild-blueprint-v1.md`, Stage 1b)

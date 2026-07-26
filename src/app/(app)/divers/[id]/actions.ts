@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { autoPriceCourseMode, autoPricePackageMode, autoPriceTierMode, getChargeCadence } from "./pricing";
 import { computePaymentBreakdown, type PaymentInput } from "./billing";
 import { loadPaymentConfig, loadInvoiceForVisit } from "./data";
+import { buildInvoiceEmailHtml } from "./invoiceEmailHtml";
+import { getResendClient, RESEND_FROM_EMAIL } from "@/lib/email/resend";
 
 export type ProfileFormFields = {
   firstName: string;
@@ -638,12 +640,49 @@ export async function checkoutVisit(
 }
 
 // Explicit, separate, user-clicked action — checkout never sends an email
-// itself. Actual delivery is a TODO: wire to Resend once the user sets up
-// an account; for now this only marks the invoice as sent in the data
-// model, matching the agreed scope for this phase.
+// itself. Sends via Resend (a test/isolated Resend account for now, not the
+// live app's connected one — see RESEND_API_KEY in .env.local), and only
+// marks the invoice as sent once the email actually goes out successfully.
 export async function sendInvoice(diverId: string, invoiceEmailId: string): Promise<{ error?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
+
+  const [{ data: invoice }, { data: diver }, { data: dc }] = await Promise.all([
+    supabase
+      .from("invoice_emails")
+      .select("invoice_snapshot")
+      .eq("id", invoiceEmailId)
+      .eq("dive_center_id", user.diveCenterId)
+      .single(),
+    supabase.from("divers").select("email, first_name, last_name").eq("id", diverId).single(),
+    supabase.from("dive_centers").select("name").eq("id", user.diveCenterId).single(),
+  ]);
+
+  if (!invoice) return { error: "Invoice not found." };
+  if (!diver?.email) return { error: "This diver has no email address on file." };
+
+  const html = buildInvoiceEmailHtml({
+    diveCenterName: dc?.name ?? "AquaDesk",
+    snapshot: (invoice.invoice_snapshot ?? {}) as Record<string, unknown>,
+  });
+
+  const resend = getResendClient();
+  const { error: sendError } = await resend.emails.send({
+    from: RESEND_FROM_EMAIL,
+    to: diver.email,
+    subject: `Your invoice from ${dc?.name ?? "AquaDesk"}`,
+    html,
+  });
+
+  if (sendError) {
+    await supabase
+      .from("invoice_emails")
+      .update({ email_delivery_status: "failed" })
+      .eq("id", invoiceEmailId)
+      .eq("dive_center_id", user.diveCenterId);
+    revalidatePath(`/divers/${diverId}`);
+    return { error: `Could not send invoice email: ${sendError.message}` };
+  }
 
   const { error } = await supabase
     .from("invoice_emails")
