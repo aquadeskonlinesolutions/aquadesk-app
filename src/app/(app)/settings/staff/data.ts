@@ -42,17 +42,7 @@ export type StaffPageData = {
   roster: StaffMember[];
   certifications: StaffCertification[];
   unlinkedSecretaries: UnlinkedSecretary[];
-  crewTokenToday: string | null;
 };
-
-function todayManila(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 
 function mapStaff(row: Record<string, unknown>): StaffMember {
   return {
@@ -77,56 +67,29 @@ function mapStaff(row: Record<string, unknown>): StaffMember {
   };
 }
 
-// RLS already restricts which staff rows come back (owner sees every row
-// in the dive center, a secretary only sees their own linked row) — this
-// query doesn't need to branch on role itself, only the unlinked-secretary
-// picker below is owner-only functionality.
-export async function loadStaffPageData(
-  diveCenterId: string,
-  isOwner: boolean,
-): Promise<StaffPageData> {
+// Settings is owner-only at the layout level, so unlike the old top-level
+// Staff page this never needs to branch on role — every caller here is an
+// owner. Secretary self-view (a rebuild-only addition with no live-app
+// precedent) was dropped when this moved into Settings, per the user's
+// explicit choice to match the live app exactly.
+export async function loadStaffPageData(diveCenterId: string): Promise<StaffPageData> {
   const supabase = await createClient();
 
-  const [{ data: staffRows }, { data: certRows }, { data: dc }] = await Promise.all([
-    supabase
-      .from("staff")
-      .select("*")
-      .eq("dive_center_id", diveCenterId)
-      .order("first_name"),
+  const [{ data: staffRows }, { data: certRows }, { data: secretaries }, { data: linkedStaff }] = await Promise.all([
+    supabase.from("staff").select("*").eq("dive_center_id", diveCenterId).order("first_name"),
     supabase
       .from("staff_certifications")
       .select("id, staff_id, cert_name, expiry_date")
       .eq("dive_center_id", diveCenterId)
       .order("expiry_date"),
-    supabase
-      .from("dive_centers")
-      .select("staff_token, staff_token_date")
-      .eq("id", diveCenterId)
-      .single(),
+    supabase.from("users").select("id, full_name, email").eq("dive_center_id", diveCenterId).eq("role", "secretary"),
+    supabase.from("staff").select("user_id").eq("dive_center_id", diveCenterId).not("user_id", "is", null),
   ]);
 
-  let unlinkedSecretaries: UnlinkedSecretary[] = [];
-  if (isOwner) {
-    const [{ data: secretaries }, { data: linkedStaff }] = await Promise.all([
-      supabase
-        .from("users")
-        .select("id, full_name, email")
-        .eq("dive_center_id", diveCenterId)
-        .eq("role", "secretary"),
-      supabase
-        .from("staff")
-        .select("user_id")
-        .eq("dive_center_id", diveCenterId)
-        .not("user_id", "is", null),
-    ]);
-    const linkedIds = new Set((linkedStaff ?? []).map((s) => s.user_id));
-    unlinkedSecretaries = (secretaries ?? [])
-      .filter((s) => !linkedIds.has(s.id))
-      .map((s) => ({ id: s.id, fullName: s.full_name, email: s.email }));
-  }
-
-  const crewTokenToday =
-    dc?.staff_token && dc?.staff_token_date === todayManila() ? dc.staff_token : null;
+  const linkedIds = new Set((linkedStaff ?? []).map((s) => s.user_id));
+  const unlinkedSecretaries = (secretaries ?? [])
+    .filter((s) => !linkedIds.has(s.id))
+    .map((s) => ({ id: s.id, fullName: s.full_name, email: s.email }));
 
   return {
     roster: (staffRows ?? []).map(mapStaff),
@@ -137,6 +100,5 @@ export async function loadStaffPageData(
       expiryDate: c.expiry_date,
     })),
     unlinkedSecretaries,
-    crewTokenToday,
   };
 }

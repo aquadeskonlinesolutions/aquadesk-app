@@ -13,14 +13,15 @@ function expiryBadge(expiryDate: string | null): { label: string; className: str
   return null;
 }
 
+// Settings > Staff is owner-only at the layout level, so unlike the old
+// top-level Staff page this never needs an isOwner prop — every caller
+// here can add/remove certifications.
 export function CertificationsSection({
   staffId,
   certifications,
-  isOwner,
 }: {
   staffId: string;
   certifications: StaffCertification[];
-  isOwner: boolean;
 }) {
   const [certName, setCertName] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
@@ -67,58 +68,48 @@ export function CertificationsSection({
                 className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
               >
                 <div className="font-medium text-navy flex-1">{c.certName}</div>
-                <div className="text-gray-600">
-                  {c.expiryDate ? `Expires ${c.expiryDate}` : "No expiry"}
-                </div>
+                <div className="text-gray-600">{c.expiryDate ? `Expires ${c.expiryDate}` : "No expiry"}</div>
                 {badge && (
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.className}`}>
                     {badge.label}
                   </span>
                 )}
-                {isOwner && (
-                  <button
-                    onClick={() => remove(c.id)}
-                    disabled={pending}
-                    className="text-xs text-red hover:underline"
-                  >
-                    Remove
-                  </button>
-                )}
+                <button onClick={() => remove(c.id)} disabled={pending} className="text-xs text-red hover:underline">
+                  Remove
+                </button>
               </div>
             );
           })}
         </div>
       )}
 
-      {isOwner && (
-        <div className="flex flex-wrap items-end gap-2">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Certification Name</label>
-            <input
-              value={certName}
-              onChange={(e) => setCertName(e.target.value)}
-              placeholder="e.g. PADI Divemaster"
-              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Expiry Date</label>
-            <input
-              type="date"
-              value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
-              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
-            />
-          </div>
-          <button
-            onClick={add}
-            disabled={pending}
-            className="px-3 py-1.5 bg-teal text-white text-xs font-medium rounded-md hover:bg-teal-mid disabled:opacity-60"
-          >
-            + Add
-          </button>
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Certification Name</label>
+          <input
+            value={certName}
+            onChange={(e) => setCertName(e.target.value)}
+            placeholder="e.g. PADI Divemaster"
+            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+          />
         </div>
-      )}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Expiry Date</label>
+          <input
+            type="date"
+            value={expiryDate}
+            onChange={(e) => setExpiryDate(e.target.value)}
+            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+          />
+        </div>
+        <button
+          onClick={add}
+          disabled={pending}
+          className="px-3 py-1.5 bg-teal text-white text-xs font-medium rounded-md hover:bg-teal-mid disabled:opacity-60"
+        >
+          + Add
+        </button>
+      </div>
     </div>
   );
 }

@@ -345,7 +345,7 @@ export default async function DashboardPage() {
               </div>
             </div>
             <Link
-              href="/divers"
+              href="/diver-form"
               className="text-sm font-medium text-teal hover:text-navy transition-colors"
             >
               View all →

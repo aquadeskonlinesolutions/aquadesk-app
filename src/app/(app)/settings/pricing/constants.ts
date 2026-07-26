@@ -19,8 +19,6 @@ export const DEFAULT_CHARGES: { name: string; subType: string | null }[] = [
   { name: "Shark Fee", subType: null },
   { name: "Fuel Charge — Medium", subType: "medium" },
   { name: "Fuel Charge — High", subType: "high" },
-  { name: "Dive Computer", subType: null },
-  { name: "Torch", subType: null },
 ];
 
 export const DEFAULT_EQUIPMENT_ITEMS = [

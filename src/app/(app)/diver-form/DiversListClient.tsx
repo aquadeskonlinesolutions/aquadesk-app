@@ -47,7 +47,7 @@ export function DiversListClient({
     <div className="grid gap-5">
       <div className="print:hidden flex items-start justify-between mb-1 gap-4 flex-wrap">
         <div>
-          <h1 className="font-display text-3xl text-navy mb-1">Divers</h1>
+          <h1 className="font-display text-3xl text-navy mb-1">Diver Form</h1>
           <p className="text-gray-600 text-sm">Search every diver on file, or open a recent registration.</p>
         </div>
         <Link
@@ -113,7 +113,7 @@ export function DiversListClient({
                     <td className="px-4 py-3 text-gray-600">{fmtDate(d.latestArrivalDate)}</td>
                     <td className="px-4 py-3">
                       <Link
-                        href={`/divers/${d.id}`}
+                        href={`/diver-form/${d.id}`}
                         className="inline-block px-3.5 py-1.5 bg-navy text-white text-xs font-medium rounded-md hover:bg-navy-dark transition-colors whitespace-nowrap"
                       >
                         Open

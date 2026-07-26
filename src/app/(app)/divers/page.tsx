@@ -1,10 +1,22 @@
 import { getCurrentUser } from "@/lib/dal";
-import { loadRecentDivers } from "./data";
-import { DiversListClient } from "./DiversListClient";
+import { loadCourseRateOptions } from "./data";
+import { DiversClient } from "./DiversClient";
 
-export default async function DiversPage() {
+export default async function DiversPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string; date?: string }>;
+}) {
   const user = await getCurrentUser();
-  const initialDivers = await loadRecentDivers(user.diveCenterId);
+  const params = await searchParams;
+  const courseRates = await loadCourseRateOptions(user.diveCenterId);
 
-  return <DiversListClient diveCenterId={user.diveCenterId} initialDivers={initialDivers} />;
+  return (
+    <DiversClient
+      initialMode={params.mode === "equipment" ? "equipment" : "group"}
+      initialEquipmentDate={params.date ?? null}
+      courseRates={courseRates}
+      diveCenterId={user.diveCenterId}
+    />
+  );
 }

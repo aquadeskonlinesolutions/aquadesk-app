@@ -2,11 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createStaffMember, updateStaffMember, type StaffFormFields } from "../actions";
-import {
-  POSITION_OPTIONS,
-  EMPLOYMENT_STATUS_OPTIONS,
-  RELATIONSHIP_OPTIONS,
-} from "../constants";
+import { POSITION_OPTIONS, EMPLOYMENT_STATUS_OPTIONS, RELATIONSHIP_OPTIONS } from "../constants";
 import type { StaffMember, UnlinkedSecretary } from "../data";
 
 function emptyForm(): StaffFormFields {
@@ -215,9 +211,7 @@ export function StaffFormModal({
 
           {form.position === "secretary" && (
             <div className="border-t border-gray-200 pt-4">
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Linked Secretary Login
-              </label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Linked Secretary Login</label>
               <select
                 value={form.linkedUserId}
                 onChange={(e) => setForm({ ...form, linkedUserId: e.target.value })}
@@ -231,9 +225,7 @@ export function StaffFormModal({
                 ))}
               </select>
               <p className="text-xs text-gray-400 mt-1">
-                Linking lets this secretary see their own staff profile
-                (read-only) on this page. Secretary logins themselves are
-                created on Settings &gt; Staff Access.
+                Secretary logins themselves are created on Settings &gt; Staff Access.
               </p>
             </div>
           )}

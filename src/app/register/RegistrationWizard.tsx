@@ -337,7 +337,9 @@ export function RegistrationWizard({
     }
     if (n === 5) {
       if (!form.certLevel) e.push("Certification level is required.");
-      if (!form.loggedDives.trim()) e.push("Logged dives is required (enter 0 if none).");
+      if (form.certLevel && form.certLevel !== "None" && !form.loggedDives.trim()) {
+        e.push("Logged dives is required (enter 0 if none).");
+      }
       if (form.certLevel && form.certLevel !== "None" && !form.lastDiveDate) {
         e.push("Last dive date is required for certified divers.");
       }
@@ -933,17 +935,31 @@ export function RegistrationWizard({
                   </label>
                   <div>
                     <label className={labelClass}>
-                      Upload your certification card{" "}
+                      Certification card photo{" "}
                       <span className="text-gray-400 font-normal">(optional)</span>
                     </label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setField("certCardFile", e.target.files?.[0] ?? null)}
-                      className="text-sm"
-                    />
-                    {form.certCardFile && (
-                      <p className="text-xs text-gray-500 mt-1">{form.certCardFile.name}</p>
+                    {form.certCardFile ? (
+                      <div className="flex items-center gap-2 border border-gray-200 rounded-card px-3 py-2 text-sm">
+                        <span className="text-teal">✓</span>
+                        <span className="flex-1 truncate">{form.certCardFile.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setField("certCardFile", null)}
+                          className="text-red text-xs font-medium hover:underline shrink-0"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-card cursor-pointer hover:bg-gray-50">
+                        📷 Take or upload a photo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => setField("certCardFile", e.target.files?.[0] ?? null)}
+                          className="hidden"
+                        />
+                      </label>
                     )}
                   </div>
                 </>

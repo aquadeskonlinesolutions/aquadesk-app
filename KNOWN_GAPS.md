@@ -11,9 +11,40 @@ would require. Remove the entry once it's resolved.
 
 ## Open
 
+### Divers > Group Management: no "Review & Apply Charges" bulk billing
+
+The live app's `divers.html` has a bulk group-billing flow (`openBulkReview`,
+`applyChargesForGroupDiver`) — pick a date range, review every group
+member's activities/running bill, and bulk-compute+write per-activity
+charges (dive-rate tiers, package prices, course prices, fuel/marine/
+shark/nitrox/15L, equipment rental) across the whole group at once,
+including a "which rate are we charging?" stepper for package-mode
+ambiguous site groupings (persisted to `visit_rate_selections`).
+
+Not built in the 2026-07-26 Divers-page rebuild — the new Group
+Management tab (`src/app/(app)/divers/components/GroupManagementTab.tsx`)
+covers group creation, the member card drill-down, and push-to-schedule,
+but not this bulk-pricing review. It's a large, genuinely separate
+feature (the same size class as the Diver Detail pricing engine already
+built at `diver-form/[id]/pricing.ts`) — scoped out to keep the
+nav/Staff/Scheduling fix to a reasonable size, not because it's
+low-value. Per-diver pricing via Diver Detail's existing Auto-Price flow
+still works for every group member individually in the meantime.
+
+### Settings > Staff: no unlinked-secretary banner on the Staff Access side
+
+Carried over from the pre-move gap below (still unresolved, just at a
+new path): `settings/staff/components/StaffFormModal.tsx` lets an owner
+pick an existing secretary login to link when editing a Staff row, but
+there's no reverse-direction banner on `settings/staff-access/` itself
+flagging "this secretary has no staff row yet" with a one-click create,
+like the live app's Access tab has.
+
 ### Send Invoice: real delivery only works to the Resend account's own email
 
-Wired up 2026-07-26 — `sendInvoice` (`divers/[id]/actions.ts`) now
+Wired up 2026-07-26 — `sendInvoice` (`diver-form/[id]/actions.ts`, moved
+from `divers/[id]/actions.ts` later the same day when `/divers` became
+the new triage-tool page) now
 actually sends via Resend instead of just marking the invoice sent.
 Uses a **test/isolated Resend account**, deliberately separate from the
 live app's already-connected one (`RESEND_API_KEY` in `.env.local`), and
@@ -78,22 +109,15 @@ visit creation — no code path to change it afterward. Found in the same
 2026-07-26 audit pass; not built since it needs the same lock-rule
 logic ported deliberately, not improvised.
 
-### Settings: no Waiver/Medical Questions preview, no staff-record reconciliation
+### Settings: no Waiver/Medical Questions preview
 
-Two separate Settings gaps found in the same audit pass:
-
-- The live app's Waiver tab has a "Preview" button for both the waiver
-  text and medical questions, rendering a modal showing how they'll
-  appear on the registration form. `WaiverEditorSection.tsx`/
-  `MedicalQuestionsSection.tsx` are Save-only, no preview.
-- The live app's Access tab reconciles a `staff` row (position =
-  Secretary) with no linked login — shows a "no login account linked
-  yet" banner and a one-click "Create Login," and keeps `staff.is_active`
-  in sync when `users.is_active` is toggled. This rebuild's
-  `SecretaryAccountsSection`/`staff-access/actions.ts` only reads/writes
-  `users` rows — no handling of an unlinked `staff` row, and toggling
-  active status doesn't touch a linked `staff` row (the Staff page
-  handles the *reverse* linking direction instead).
+The live app's Waiver tab has a "Preview" button for both the waiver
+text and medical questions, rendering a modal showing how they'll
+appear on the registration form. `WaiverEditorSection.tsx`/
+`MedicalQuestionsSection.tsx` are Save-only, no preview. (The related
+staff-record-reconciliation gap this entry used to also cover is now
+tracked separately above, under Settings > Staff, since Staff moved
+out from under a top-level nav item into Settings on 2026-07-26.)
 
 ### Login: no "remember me" or password-strength meter
 

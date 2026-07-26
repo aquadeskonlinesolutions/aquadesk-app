@@ -15,7 +15,7 @@ export const EMPLOYMENT_STATUS_LABELS: Record<string, string> = {
 
 export const EMPLOYMENT_STATUS_OPTIONS = Object.entries(EMPLOYMENT_STATUS_LABELS);
 
-// Same list as divers/[id]/constants.ts — deliberately duplicated, not
-// shared, matching this codebase's established small-helper duplication
-// precedent (peso(), todayManila(), etc.).
+// Same list as divers/[id]/constants.ts and the old staff/constants.ts —
+// deliberately duplicated, not shared, matching this codebase's established
+// small-helper duplication precedent.
 export const RELATIONSHIP_OPTIONS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Other"];

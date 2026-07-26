@@ -78,7 +78,7 @@ export function DiverDetailClient({
   return (
     <div className="grid gap-5">
       <div className="print:hidden">
-        <Link href="/divers" className="text-sm text-gray-500 hover:text-navy">
+        <Link href="/diver-form" className="text-sm text-gray-500 hover:text-navy">
           ← Back to Divers
         </Link>
       </div>

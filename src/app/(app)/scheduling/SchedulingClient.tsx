@@ -8,7 +8,6 @@ import { TripListPanel } from "./components/TripListPanel";
 import { TripBuilderPanel } from "./components/TripBuilderPanel";
 import { DiverAssignmentPanel } from "./components/DiverAssignmentPanel";
 import { ConfirmPanel } from "./components/ConfirmPanel";
-import { GroupsPanel } from "./components/GroupsPanel";
 
 export function SchedulingClient({
   diveCenterId,
@@ -31,7 +30,6 @@ export function SchedulingClient({
   const [trips, setTrips] = useState(initialTrips);
   const [selected, setSelected] = useState<string | "new" | null>(null);
   const [diverSaveVersion, setDiverSaveVersion] = useState(0);
-  const [showGroups, setShowGroups] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function changeDate(newDate: string) {
@@ -59,12 +57,6 @@ export function SchedulingClient({
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowGroups((v) => !v)}
-            className="px-4 py-2 border border-gray-300 text-navy text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            Groups
-          </button>
-          <button
             onClick={() => setSelected("new")}
             className="px-4 py-2 bg-navy text-white text-sm font-medium rounded-lg hover:bg-navy-dark transition-colors"
           >
@@ -72,8 +64,6 @@ export function SchedulingClient({
           </button>
         </div>
       </div>
-
-      {showGroups && <GroupsPanel onClose={() => setShowGroups(false)} />}
 
       <DaySelector date={date} onChange={changeDate} />
 

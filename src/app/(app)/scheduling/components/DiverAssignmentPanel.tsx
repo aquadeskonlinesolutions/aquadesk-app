@@ -18,6 +18,7 @@ import {
   saveTripDiverAssignments,
   getTripDetail,
   getDayAssignmentsForWarnings,
+  getReadyPoolDivers,
   type DiverAssignmentInput,
 } from "../actions";
 import { EXPERIENCE_TYPE_LABELS } from "../constants";
@@ -51,6 +52,7 @@ export function DiverAssignmentPanel({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<DiverPickResult[]>([]);
   const [groups, setGroups] = useState<GroupOption[]>([]);
+  const [readyPool, setReadyPool] = useState<DiverPickResult[]>([]);
   const [pendingTag, setPendingTag] = useState<DiverPickResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function DiverAssignmentPanel({
   useEffect(() => {
     getTripDetail(scheduleId).then((d) => setBoatId(d?.boatId ?? null));
     getDayAssignmentsForWarnings(scheduleDate, scheduleId).then(setDayContext);
+    getReadyPoolDivers(scheduleDate, scheduleId).then(setReadyPool);
   }, [scheduleId, scheduleDate]);
 
   useEffect(() => {
@@ -239,6 +242,41 @@ export function DiverAssignmentPanel({
             </div>
           )}
         </div>
+
+        {(() => {
+          const assignedIds = new Set(assignments.map((a) => a.diverId));
+          const poolToShow = readyPool.filter((r) => !assignedIds.has(r.id));
+          if (poolToShow.length === 0) return null;
+          return (
+            <div className="grid gap-2">
+              <div className="text-xs font-medium text-gray-500">
+                Ready divers ({poolToShow.length}) — tagged today via the Divers page
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {poolToShow.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => addCandidates([r])}
+                    className="text-left border border-gray-200 rounded-lg px-2.5 py-2 text-xs hover:bg-off-white"
+                  >
+                    <div className="font-medium text-navy">
+                      {r.firstName} {r.lastName}
+                    </div>
+                    <div className="text-gray-400">
+                      {r.certificationLevel}
+                      {r.groupName ? ` · ${r.groupName}` : ""}
+                    </div>
+                    {r.alreadyScheduledToday && (
+                      <div className="text-amber-700 bg-amber-100 rounded px-1 mt-1 inline-block">
+                        Already on another trip
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {loaded && assignments.length > 0 && (
           <WarningsBanner

@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import type { ScheduleDiverRow, TripDetail, StaffOption } from "../data";
-import { getScheduleDivers, getTripDetail, markBoatReturned } from "../actions";
+import {
+  getScheduleDivers,
+  getTripDetail,
+  markBoatReturned,
+  getCrewTokenToday,
+  generateCrewToken,
+} from "../actions";
 
 export function ConfirmPanel({
   scheduleId,
@@ -21,12 +26,25 @@ export function ConfirmPanel({
   const [fuelLiters, setFuelLiters] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[] | null>(null);
+  const [crewToken, setCrewToken] = useState<string | null>(null);
+  const [tokenPending, startTokenTransition] = useTransition();
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
     getTripDetail(scheduleId).then(setDetail);
     getScheduleDivers(scheduleId).then(setDivers);
   }, [scheduleId, refreshKey]);
+
+  useEffect(() => {
+    getCrewTokenToday().then(setCrewToken);
+  }, []);
+
+  function generateToken() {
+    startTokenTransition(async () => {
+      const res = await generateCrewToken();
+      if (res.token) setCrewToken(res.token);
+    });
+  }
 
   if (!detail) return null;
 
@@ -64,11 +82,22 @@ export function ConfirmPanel({
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
-      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-navy">Confirm</div>
-        <Link href="/staff" className="text-xs text-teal hover:underline">
-          Get today&apos;s crew code →
-        </Link>
+        <div className="flex items-center gap-2 text-xs">
+          {crewToken ? (
+            <span className="font-mono font-semibold text-navy bg-off-white px-2 py-1 rounded">{crewToken}</span>
+          ) : (
+            <span className="text-gray-400">No crew code today</span>
+          )}
+          <button
+            onClick={generateToken}
+            disabled={tokenPending}
+            className="text-teal hover:underline disabled:opacity-60"
+          >
+            {tokenPending ? "…" : crewToken ? "Regenerate" : "Generate"}
+          </button>
+        </div>
       </div>
 
       <div className="p-4 grid gap-3">

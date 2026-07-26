@@ -11,16 +11,13 @@ import {
   loadGroupMembersForAssignment,
   loadScheduleDivers,
   loadDayAssignmentsForWarnings,
-  loadAllGroups,
-  checkGroupDeletionBlockers,
+  loadReadyPool,
   type TripSummary,
   type TripDetail,
   type DiverPickResult,
   type GroupOption,
   type ScheduleDiverRow,
   type DayAssignment,
-  type GroupListItem,
-  type GroupDeletionBlocker,
 } from "./data";
 
 export async function getTripsForDate(date: string): Promise<TripSummary[]> {
@@ -469,95 +466,46 @@ export async function markBoatReturned(
   return skippedDivers.length > 0 ? { skippedDivers } : {};
 }
 
-export async function getAllGroups(): Promise<GroupListItem[]> {
+// Group CRUD moved to the Divers page (src/app/(app)/divers/actions.ts) —
+// that's the live app's real home for group management, not Scheduling.
+
+export async function getReadyPoolDivers(scheduleDate: string, excludeScheduleId: string | null): Promise<DiverPickResult[]> {
   const user = await getCurrentUser();
-  return loadAllGroups(user.diveCenterId);
+  return loadReadyPool(user.diveCenterId, scheduleDate, excludeScheduleId);
 }
 
-export async function createRegistrationLinkGroup(input: {
-  groupName: string;
-  leaderName: string;
-  arrivalDate: string;
-  departureDate: string;
-  expectedCount: string;
-  notes: string;
-}): Promise<{ error?: string; groupId?: string; registrationLink?: string }> {
-  const user = await getCurrentUser();
-  if (!input.groupName.trim()) return fail("Group name is required.");
-  const supabase = await createClient();
+// ── Crew code — moved here from Staff (the live app generates the crew
+// code from scheduling.html, not a roster page; staff.html only ever
+// reads it). Fresh copy of the same generate_daily_staff_token RPC call
+// Staff's own action used, per this codebase's no-cross-page-action-
+// imports convention.
 
-  const { data, error } = await supabase
-    .from("groups")
-    .insert({
-      dive_center_id: user.diveCenterId,
-      group_name: input.groupName.trim(),
-      leader_name: input.leaderName.trim() || null,
-      arrival_date: input.arrivalDate || null,
-      departure_date: input.departureDate || null,
-      expected_count: input.expectedCount.trim() ? Number(input.expectedCount) : null,
-      notes: input.notes.trim() || null,
-      is_active: true,
-    })
-    .select("id")
+function todayManila(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+export async function getCrewTokenToday(): Promise<string | null> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const { data: dc } = await supabase
+    .from("dive_centers")
+    .select("staff_token, staff_token_date")
+    .eq("id", user.diveCenterId)
     .single();
-
-  if (error) return fail(error.message);
-  revalidatePath("/scheduling");
-  return {
-    groupId: data.id,
-    registrationLink: `/register?dc=${user.diveCenterId}&group=${data.id}`,
-  };
+  return dc?.staff_token && dc.staff_token_date === todayManila() ? dc.staff_token : null;
 }
 
-export async function createAdHocGroup(
-  groupName: string,
-  diverIds: string[],
-): Promise<{ error?: string; groupId?: string }> {
-  const user = await getCurrentUser();
-  if (!groupName.trim()) return fail("Group name is required.");
-  if (diverIds.length < 2) return fail("Select at least 2 divers.");
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from("groups")
-    .insert({ dive_center_id: user.diveCenterId, group_name: groupName.trim(), is_active: true })
-    .select("id")
-    .single();
-  if (error) return fail(error.message);
-
-  const { error: updateError } = await supabase
-    .from("divers")
-    .update({ group_id: data.id })
-    .in("id", diverIds)
-    .eq("dive_center_id", user.diveCenterId);
-  if (updateError) return fail(updateError.message);
-
-  revalidatePath("/scheduling");
-  return { groupId: data.id };
-}
-
-export async function getGroupDeletionBlockers(groupId: string): Promise<GroupDeletionBlocker[]> {
-  const user = await getCurrentUser();
-  return checkGroupDeletionBlockers(user.diveCenterId, groupId);
-}
-
-export async function deleteGroup(groupId: string): Promise<{ error?: string }> {
+export async function generateCrewToken(): Promise<{ error?: string; token?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
-
-  const blockers = await checkGroupDeletionBlockers(user.diveCenterId, groupId);
-  if (blockers.length > 0) {
-    return fail(
-      `Can't delete — ${blockers.map((b) => `${b.diverName} (${b.reasons.join(", ")})`).join("; ")}.`,
-    );
-  }
-
-  const { error } = await supabase
-    .from("groups")
-    .delete()
-    .eq("id", groupId)
-    .eq("dive_center_id", user.diveCenterId);
-  if (error) return fail(error.message);
-  revalidatePath("/scheduling");
-  return ok();
+  const { data, error } = await supabase.rpc("generate_daily_staff_token", {
+    p_dive_center_id: user.diveCenterId,
+  });
+  if (error) return { error: error.message };
+  return { token: data as string };
 }

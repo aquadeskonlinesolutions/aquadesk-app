@@ -104,7 +104,7 @@ export function DiversTable({ divers }: { divers: ActiveDiverRow[] }) {
                   </td>
                   <td className="px-4 py-3">
                     <Link
-                      href={`/divers/${d.id}`}
+                      href={`/diver-form/${d.id}`}
                       className="inline-block px-3.5 py-1.5 bg-navy text-white text-xs font-medium rounded-md hover:bg-navy-dark transition-colors whitespace-nowrap"
                     >
                       Open Form

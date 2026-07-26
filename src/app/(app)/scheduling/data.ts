@@ -424,90 +424,27 @@ export async function loadDayAssignmentsForWarnings(
   }));
 }
 
-export type GroupListItem = {
-  id: string;
-  groupName: string;
-  leaderName: string | null;
-  arrivalDate: string | null;
-  departureDate: string | null;
-  expectedCount: number | null;
-  memberCount: number;
-};
-
-export async function loadAllGroups(diveCenterId: string): Promise<GroupListItem[]> {
+// Every diver with an open, unpaid visit today, not yet assigned to this
+// trip — the real "readiness" signal (see the Divers page's push-to-
+// schedule action). Matches the live app's card-grid pool
+// (divers.html/scheduling.html's phaseOneLooseDivers), shown alongside
+// the existing name search rather than replacing it.
+export async function loadReadyPool(
+  diveCenterId: string,
+  scheduleDate: string,
+  excludeScheduleId: string | null,
+): Promise<DiverPickResult[]> {
   const supabase = await createClient();
-  const { data: groups } = await supabase
-    .from("groups")
-    .select("id, group_name, leader_name, arrival_date, departure_date, expected_count")
+  const { data: openVisits } = await supabase
+    .from("visits")
+    .select("diver_id")
     .eq("dive_center_id", diveCenterId)
     .eq("is_active", true)
-    .order("group_name");
+    .eq("visit_status", "open")
+    .eq("is_paid", false);
 
-  const { data: members } = await supabase
-    .from("divers")
-    .select("group_id")
-    .eq("dive_center_id", diveCenterId)
-    .not("group_id", "is", null);
-
-  const countByGroup = new Map<string, number>();
-  (members ?? []).forEach((m) => {
-    if (!m.group_id) return;
-    countByGroup.set(m.group_id, (countByGroup.get(m.group_id) ?? 0) + 1);
-  });
-
-  return (groups ?? []).map((g) => ({
-    id: g.id,
-    groupName: g.group_name,
-    leaderName: g.leader_name,
-    arrivalDate: g.arrival_date,
-    departureDate: g.departure_date,
-    expectedCount: g.expected_count,
-    memberCount: countByGroup.get(g.id) ?? 0,
-  }));
-}
-
-export type GroupDeletionBlocker = { diverName: string; reasons: string[] };
-
-export async function checkGroupDeletionBlockers(
-  diveCenterId: string,
-  groupId: string,
-): Promise<GroupDeletionBlocker[]> {
-  const supabase = await createClient();
-  const { data: members } = await supabase
-    .from("divers")
-    .select("id, first_name, last_name")
-    .eq("group_id", groupId);
-
-  const memberIds = (members ?? []).map((m) => m.id);
-  if (memberIds.length === 0) return [];
-
-  const [{ data: scheduleRows }, { data: openVisits }, { data: activityRows }] = await Promise.all([
-    supabase.from("schedule_divers").select("diver_id").eq("dive_center_id", diveCenterId).in("diver_id", memberIds),
-    supabase
-      .from("visits")
-      .select("diver_id")
-      .in("diver_id", memberIds)
-      .eq("is_active", true)
-      .eq("visit_status", "open")
-      .eq("is_paid", false),
-    supabase.from("activities").select("diver_id").eq("dive_center_id", diveCenterId).in("diver_id", memberIds),
-  ]);
-
-  const scheduledIds = new Set((scheduleRows ?? []).map((r) => r.diver_id));
-  const openUnpaidIds = new Set((openVisits ?? []).map((r) => r.diver_id));
-  const activityIds = new Set((activityRows ?? []).map((r) => r.diver_id));
-
-  const blockers: GroupDeletionBlocker[] = [];
-  for (const m of members ?? []) {
-    const reasons: string[] = [];
-    if (scheduledIds.has(m.id)) reasons.push("assigned to a trip");
-    if (openUnpaidIds.has(m.id)) reasons.push("has an open unpaid visit");
-    if (activityIds.has(m.id)) reasons.push("has billing activity on file");
-    if (reasons.length > 0) {
-      blockers.push({ diverName: `${m.first_name} ${m.last_name}`, reasons });
-    }
-  }
-  return blockers;
+  const diverIds = [...new Set((openVisits ?? []).map((v) => v.diver_id))];
+  return buildDiverPickResults(supabase, diveCenterId, diverIds, scheduleDate, excludeScheduleId);
 }
 
 export async function loadTripDetail(

@@ -61,7 +61,7 @@ export async function saveDiverProfile(
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -81,7 +81,7 @@ export async function acknowledgeMedical(diverId: string): Promise<{ error?: str
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -112,7 +112,7 @@ export async function addDiverNote(diverId: string, note: string): Promise<{ err
   });
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -129,7 +129,7 @@ export async function deleteDiverNote(diverId: string, noteId: string): Promise<
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -171,7 +171,7 @@ export async function saveDiverEquipment(
   // equipment_requested items against equipment_rental_rates (by name +
   // per_dive/per_day cadence, same shape as the other_charges lookups
   // already built) is real, scoped-out follow-up work, not done here.
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -200,7 +200,7 @@ export async function createVisit(
     .single();
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return { visitId: data.id };
 }
 
@@ -221,7 +221,7 @@ export async function addActivityRow(
   });
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -270,7 +270,7 @@ export async function saveActivityRow(
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -285,7 +285,7 @@ export async function deleteActivityRow(diverId: string, activityId: string): Pr
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -407,7 +407,7 @@ export async function voidVisit(diverId: string, visitId: string): Promise<{ err
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -454,7 +454,7 @@ export async function savePaymentOnly(
   );
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -482,7 +482,7 @@ export async function addDeposit(
   });
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -634,7 +634,7 @@ export async function checkoutVisit(
     .update({ invoice_count: (currentVisit?.invoice_count ?? 0) + 1 })
     .eq("id", visitId);
 
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   revalidatePath("/reports");
   return { invoiceId: invoice.id };
 }
@@ -680,7 +680,7 @@ export async function sendInvoice(diverId: string, invoiceEmailId: string): Prom
       .update({ email_delivery_status: "failed" })
       .eq("id", invoiceEmailId)
       .eq("dive_center_id", user.diveCenterId);
-    revalidatePath(`/divers/${diverId}`);
+    revalidatePath(`/diver-form/${diverId}`);
     return { error: `Could not send invoice email: ${sendError.message}` };
   }
 
@@ -695,7 +695,7 @@ export async function sendInvoice(diverId: string, invoiceEmailId: string): Prom
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return { error: error.message };
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   return {};
 }
 
@@ -750,7 +750,7 @@ export async function unlockBill(
   });
   if (logError) return { error: logError.message };
 
-  revalidatePath(`/divers/${diverId}`);
+  revalidatePath(`/diver-form/${diverId}`);
   revalidatePath("/reports");
   return {};
 }

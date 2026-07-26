@@ -1,12 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, requireOwner } from "@/lib/dal";
+import { requireOwner } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import type { StaffPosition, EmploymentStatus } from "./data";
 
 function ok() {
-  revalidatePath("/staff");
+  revalidatePath("/settings/staff");
   return { error: undefined };
 }
 function fail(message: string) {
@@ -128,19 +128,4 @@ export async function deleteCertification(certId: string) {
     .eq("dive_center_id", user.diveCenterId);
   if (error) return fail(error.message);
   return ok();
-}
-
-// Not owner-gated — any authenticated tenant user (owner or secretary) can
-// trigger this, matching the old app's secretary-driven "open Scheduling,
-// get a code" flow. Scheduling will call the same generate_daily_staff_token
-// RPC later instead of re-implementing token generation.
-export async function generateCrewToken(): Promise<{ error?: string; token?: string }> {
-  const user = await getCurrentUser();
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("generate_daily_staff_token", {
-    p_dive_center_id: user.diveCenterId,
-  });
-  if (error) return { error: error.message };
-  revalidatePath("/staff");
-  return { token: data as string };
 }
