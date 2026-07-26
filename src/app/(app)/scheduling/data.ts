@@ -19,6 +19,7 @@ export type BoatOption = {
   name: string;
   capacity: number | null;
   fuelType: string | null;
+  captain: string | null;
 };
 
 export type DiveSiteOption = {
@@ -106,7 +107,7 @@ export async function loadBoatOptions(diveCenterId: string): Promise<BoatOption[
   const supabase = await createClient();
   const { data } = await supabase
     .from("boats")
-    .select("id, name, capacity, fuel_type")
+    .select("id, name, capacity, fuel_type, captain")
     .eq("dive_center_id", diveCenterId)
     .eq("is_active", true)
     .order("name");
@@ -116,6 +117,7 @@ export async function loadBoatOptions(diveCenterId: string): Promise<BoatOption[
     name: b.name,
     capacity: b.capacity,
     fuelType: b.fuel_type,
+    captain: b.captain,
   }));
 }
 
@@ -236,76 +238,6 @@ async function buildDiverPickResults(
   });
 }
 
-export async function searchDiversForAssignment(
-  diveCenterId: string,
-  query: string,
-  scheduleDate: string,
-  excludeScheduleId: string | null,
-): Promise<DiverPickResult[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("divers")
-    .select("id")
-    .eq("dive_center_id", diveCenterId)
-    .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
-    .limit(20);
-
-  return buildDiverPickResults(
-    supabase,
-    diveCenterId,
-    (data ?? []).map((d) => d.id),
-    scheduleDate,
-    excludeScheduleId,
-  );
-}
-
-export type GroupOption = { id: string; groupName: string; memberCount: number };
-
-export async function loadActiveGroups(diveCenterId: string): Promise<GroupOption[]> {
-  const supabase = await createClient();
-  const { data: groups } = await supabase
-    .from("groups")
-    .select("id, group_name")
-    .eq("dive_center_id", diveCenterId)
-    .eq("is_active", true)
-    .order("group_name");
-
-  const { data: members } = await supabase
-    .from("divers")
-    .select("group_id")
-    .eq("dive_center_id", diveCenterId)
-    .not("group_id", "is", null);
-
-  const countByGroup = new Map<string, number>();
-  (members ?? []).forEach((m) => {
-    if (!m.group_id) return;
-    countByGroup.set(m.group_id, (countByGroup.get(m.group_id) ?? 0) + 1);
-  });
-
-  return (groups ?? []).map((g) => ({
-    id: g.id,
-    groupName: g.group_name,
-    memberCount: countByGroup.get(g.id) ?? 0,
-  }));
-}
-
-export async function loadGroupMembersForAssignment(
-  diveCenterId: string,
-  groupId: string,
-  scheduleDate: string,
-  excludeScheduleId: string | null,
-): Promise<DiverPickResult[]> {
-  const supabase = await createClient();
-  const { data } = await supabase.from("divers").select("id").eq("group_id", groupId);
-  return buildDiverPickResults(
-    supabase,
-    diveCenterId,
-    (data ?? []).map((d) => d.id),
-    scheduleDate,
-    excludeScheduleId,
-  );
-}
-
 export type ScheduleDiverRow = {
   diverId: string;
   firstName: string;
@@ -313,6 +245,7 @@ export type ScheduleDiverRow = {
   certificationLevel: string;
   nitroxCertified: boolean;
   staffId: string | null;
+  sourceClipId: string | null;
   experienceType: "fun_diving" | "dive_course" | null;
   is15L: boolean;
   nitroxRequested: boolean;
@@ -325,7 +258,7 @@ export async function loadScheduleDivers(
   const supabase = await createClient();
   const { data: rows } = await supabase
     .from("schedule_divers")
-    .select("diver_id, staff_id, experience_type, is_15l, nitrox_requested")
+    .select("diver_id, staff_id, source_clip_id, experience_type, is_15l, nitrox_requested")
     .eq("dive_center_id", diveCenterId)
     .eq("schedule_id", scheduleId);
 
@@ -349,12 +282,22 @@ export async function loadScheduleDivers(
         certificationLevel: d.certification_level,
         nitroxCertified: d.nitrox_certified,
         staffId: r.staff_id,
+        sourceClipId: r.source_clip_id,
         experienceType: r.experience_type,
         is15L: r.is_15l,
         nitroxRequested: r.nitrox_requested,
       },
     ];
   });
+}
+
+// All clips for a date (feeds Phase 2's "+ Add Team" picker — the caller
+// filters out members already placed on the trip card being edited, purely
+// client-side, since a brand-new unsaved trip has no schedule_id yet to
+// query placement against).
+export async function loadClipsForDate(diveCenterId: string, scheduleDate: string): Promise<Clip[]> {
+  const supabase = await createClient();
+  return fetchClipsRaw(supabase, diveCenterId, scheduleDate);
 }
 
 export type StaffOption = { id: string; fullName: string; position: string };
@@ -375,26 +318,21 @@ export async function loadStaffOptions(diveCenterId: string): Promise<StaffOptio
   }));
 }
 
-export type CourseRateOption = { id: string; courseName: string; rate: number };
-
-export async function loadCourseRateOptions(diveCenterId: string): Promise<CourseRateOption[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("course_rates")
-    .select("id, course_name, rate")
-    .eq("dive_center_id", diveCenterId)
-    .eq("is_active", true)
-    .order("course_name");
-
-  return (data ?? []).map((c) => ({ id: c.id, courseName: c.course_name, rate: Number(c.rate) }));
-}
-
-export type DayAssignment = { diverId: string; staffId: string | null; boatId: string | null };
+// scheduleId is included so each TripCard can filter out its own
+// assignments client-side — a shared whole-day fetch (one query) rather
+// than a separate excluded-self query per card, but still avoiding the
+// "warns about double-booking against itself" bug that a naive whole-day
+// list (with no way to identify which trip a row belongs to) would cause.
+export type DayAssignment = {
+  diverId: string;
+  staffId: string | null;
+  boatId: string | null;
+  scheduleId: string;
+};
 
 export async function loadDayAssignmentsForWarnings(
   diveCenterId: string,
   scheduleDate: string,
-  excludeScheduleId: string | null,
 ): Promise<DayAssignment[]> {
   const supabase = await createClient();
 
@@ -405,22 +343,21 @@ export async function loadDayAssignmentsForWarnings(
     .eq("schedule_date", scheduleDate)
     .eq("cancelled", false);
 
-  const otherScheduleIds = (schedules ?? [])
-    .filter((s) => !excludeScheduleId || s.id !== excludeScheduleId)
-    .map((s) => s.id);
-  if (otherScheduleIds.length === 0) return [];
+  const scheduleIds = (schedules ?? []).map((s) => s.id);
+  if (scheduleIds.length === 0) return [];
 
   const boatByScheduleId = new Map((schedules ?? []).map((s) => [s.id, s.boat_id]));
 
   const { data: rows } = await supabase
     .from("schedule_divers")
     .select("diver_id, staff_id, schedule_id")
-    .in("schedule_id", otherScheduleIds);
+    .in("schedule_id", scheduleIds);
 
   return (rows ?? []).map((r) => ({
     diverId: r.diver_id,
     staffId: r.staff_id,
     boatId: boatByScheduleId.get(r.schedule_id) ?? null,
+    scheduleId: r.schedule_id,
   }));
 }
 
@@ -445,6 +382,210 @@ export async function loadReadyPool(
 
   const diverIds = [...new Set((openVisits ?? []).map((v) => v.diver_id))];
   return buildDiverPickResults(supabase, diveCenterId, diverIds, scheduleDate, excludeScheduleId);
+}
+
+// ── Phase 1: loose divers + suggested team clips ──────────────────────────
+// Mirrors scheduling.html's Phase 1 exactly: a "clip" is a saved staff +
+// diver(s) grouping (schedule_team_clips/schedule_team_clip_divers, both
+// already RLS'd from Stage 1a, unused by any writer until now). Loose
+// divers = the ready pool (open+unpaid visit today) minus anyone already
+// clipped, excluded for the day, or already assigned to a trip today.
+
+export type ClipMember = {
+  diverId: string;
+  firstName: string;
+  lastName: string;
+  certificationLevel: string;
+  nitroxCertified: boolean;
+  groupId: string | null;
+  groupName: string | null;
+  excluded: boolean;
+};
+
+export type Clip = {
+  id: string;
+  staffId: string | null;
+  staffName: string;
+  isFreelancer: boolean;
+  source: "manual" | "returned" | "carryover";
+  carryForward: boolean;
+  members: ClipMember[];
+};
+
+export async function loadExcludedDiverIds(diveCenterId: string, date: string): Promise<Set<string>> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("schedule_day_diver_exclusions")
+    .select("diver_id")
+    .eq("dive_center_id", diveCenterId)
+    .eq("schedule_date", date);
+  return new Set((data ?? []).map((r) => r.diver_id));
+}
+
+async function fetchClipsRaw(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  diveCenterId: string,
+  date: string,
+): Promise<Clip[]> {
+  const { data: clipRows } = await supabase
+    .from("schedule_team_clips")
+    .select("id, staff_id, staff_name, is_freelancer, source, carry_forward")
+    .eq("dive_center_id", diveCenterId)
+    .eq("schedule_date", date)
+    .order("created_at");
+  if (!clipRows || clipRows.length === 0) return [];
+
+  const clipIds = clipRows.map((c) => c.id);
+  const { data: memberRows } = await supabase
+    .from("schedule_team_clip_divers")
+    .select("clip_id, diver_id, excluded_on_date")
+    .in("clip_id", clipIds);
+
+  const diverIds = [...new Set((memberRows ?? []).map((m) => m.diver_id))];
+  const { data: divers } = diverIds.length
+    ? await supabase
+        .from("divers")
+        .select("id, first_name, last_name, certification_level, nitrox_certified, group_id")
+        .in("id", diverIds)
+    : { data: [] };
+  const groupIds = [...new Set((divers ?? []).map((d) => d.group_id).filter(Boolean))] as string[];
+  const { data: groups } = groupIds.length
+    ? await supabase.from("groups").select("id, group_name").in("id", groupIds)
+    : { data: [] };
+  const groupNameById = new Map((groups ?? []).map((g) => [g.id, g.group_name]));
+  const diverById = new Map((divers ?? []).map((d) => [d.id, d]));
+
+  const membersByClip = new Map<string, ClipMember[]>();
+  (memberRows ?? []).forEach((m) => {
+    const d = diverById.get(m.diver_id);
+    if (!d) return;
+    const list = membersByClip.get(m.clip_id) ?? [];
+    list.push({
+      diverId: d.id,
+      firstName: d.first_name,
+      lastName: d.last_name,
+      certificationLevel: d.certification_level,
+      nitroxCertified: d.nitrox_certified,
+      groupId: d.group_id,
+      groupName: d.group_id ? (groupNameById.get(d.group_id) ?? null) : null,
+      excluded: m.excluded_on_date,
+    });
+    membersByClip.set(m.clip_id, list);
+  });
+
+  return clipRows.map((c) => ({
+    id: c.id,
+    staffId: c.staff_id,
+    staffName: c.staff_name,
+    isFreelancer: c.is_freelancer,
+    source: c.source as Clip["source"],
+    carryForward: c.carry_forward,
+    members: membersByClip.get(c.id) ?? [],
+  }));
+}
+
+// Real write-back, matching scheduling.html's carryOverLatestSharedClips —
+// looks back (bounded, like the live app's 80-row limit) for the most
+// recent earlier date with carry-forward-eligible clips and copies that
+// whole date's clips forward, dropping any diver no longer schedulable
+// (no open, unpaid visit today).
+async function carryOverLatestSharedClips(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  diveCenterId: string,
+  date: string,
+  userId: string,
+): Promise<void> {
+  const { data: prior } = await supabase
+    .from("schedule_team_clips")
+    .select("id, schedule_date, staff_id, staff_name, is_freelancer")
+    .eq("dive_center_id", diveCenterId)
+    .lt("schedule_date", date)
+    .neq("carry_forward", false)
+    .order("schedule_date", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(80);
+  if (!prior || prior.length === 0) return;
+
+  const latestDate = prior[0].schedule_date;
+  const sourceClips = prior.filter((c) => c.schedule_date === latestDate);
+  const sourceClipIds = sourceClips.map((c) => c.id);
+
+  const { data: sourceMembers } = await supabase
+    .from("schedule_team_clip_divers")
+    .select("clip_id, diver_id")
+    .in("clip_id", sourceClipIds)
+    .eq("excluded_on_date", false);
+
+  const memberDiverIds = [...new Set((sourceMembers ?? []).map((m) => m.diver_id))];
+  const { data: openVisitRows } = memberDiverIds.length
+    ? await supabase
+        .from("visits")
+        .select("diver_id")
+        .eq("dive_center_id", diveCenterId)
+        .eq("is_active", true)
+        .eq("visit_status", "open")
+        .eq("is_paid", false)
+        .in("diver_id", memberDiverIds)
+    : { data: [] };
+  const stillSchedulable = new Set((openVisitRows ?? []).map((r) => r.diver_id));
+
+  for (const c of sourceClips) {
+    const members = (sourceMembers ?? []).filter((m) => m.clip_id === c.id && stillSchedulable.has(m.diver_id));
+    if (members.length === 0) continue;
+
+    const { data: newClip } = await supabase
+      .from("schedule_team_clips")
+      .insert({
+        dive_center_id: diveCenterId,
+        schedule_date: date,
+        staff_id: c.staff_id,
+        staff_name: c.staff_name,
+        is_freelancer: c.is_freelancer,
+        source: "carryover",
+        carry_forward: true,
+        created_by: userId,
+      })
+      .select("id")
+      .single();
+    if (!newClip) continue;
+
+    await supabase.from("schedule_team_clip_divers").insert(
+      members.map((m) => ({
+        dive_center_id: diveCenterId,
+        clip_id: newClip.id,
+        diver_id: m.diver_id,
+        excluded_on_date: false,
+      })),
+    );
+  }
+}
+
+export type PhaseOneData = {
+  clips: Clip[];
+  looseDivers: DiverPickResult[];
+  excludedDivers: DiverPickResult[];
+};
+
+export async function loadPhaseOneData(diveCenterId: string, date: string, userId: string): Promise<PhaseOneData> {
+  const supabase = await createClient();
+
+  let clips = await fetchClipsRaw(supabase, diveCenterId, date);
+  if (clips.length === 0) {
+    await carryOverLatestSharedClips(supabase, diveCenterId, date, userId);
+    clips = await fetchClipsRaw(supabase, diveCenterId, date);
+  }
+
+  const excludedSet = await loadExcludedDiverIds(diveCenterId, date);
+  const readyPool = await loadReadyPool(diveCenterId, date, null);
+  const clippedIds = new Set(
+    clips.flatMap((c) => c.members.filter((m) => !m.excluded).map((m) => m.diverId)),
+  );
+  const looseDivers = readyPool.filter(
+    (d) => !clippedIds.has(d.id) && !excludedSet.has(d.id) && !d.alreadyScheduledToday,
+  );
+  const excludedDivers = readyPool.filter((d) => excludedSet.has(d.id));
+
+  return { clips, looseDivers, excludedDivers };
 }
 
 export async function loadTripDetail(

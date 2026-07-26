@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getPaidAmount } from "@/lib/payments";
+import { isDiverActive, isGroupActive } from "./visibility";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -15,8 +16,10 @@ export type DiverCard = {
   medicalFlag: boolean;
   medicalAcknowledged: boolean;
   arrivalDate: string | null;
+  departureDate: string | null;
   alreadyInScheduling: boolean;
   billClosed: boolean;
+  billFullyClosed: boolean;
   billClosedAt: string | null;
   // Group-member view (showBilling=true equivalent): a per-day breakdown.
   dayBreakdown: { date: string; total: number }[];
@@ -42,7 +45,7 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
       .in("id", diverIds),
     supabase
       .from("diver_registrations")
-      .select("diver_id, arrival_date, medical_flag, created_at")
+      .select("diver_id, arrival_date, departure_date, medical_flag, created_at")
       .in("diver_id", diverIds)
       .order("created_at", { ascending: false }),
     supabase
@@ -58,11 +61,18 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
     : { data: [] };
   const groupNameById = new Map((groups ?? []).map((g) => [g.id, g.group_name]));
 
-  // Most recent registration per diver (for arrival date + medical flag).
-  const latestRegByDiver = new Map<string, { arrival_date: string | null; medical_flag: boolean }>();
+  // Most recent registration per diver (for arrival/departure date + medical flag).
+  const latestRegByDiver = new Map<
+    string,
+    { arrival_date: string | null; departure_date: string | null; medical_flag: boolean }
+  >();
   (registrations ?? []).forEach((r) => {
     if (!latestRegByDiver.has(r.diver_id)) {
-      latestRegByDiver.set(r.diver_id, { arrival_date: r.arrival_date, medical_flag: !!r.medical_flag });
+      latestRegByDiver.set(r.diver_id, {
+        arrival_date: r.arrival_date,
+        departure_date: r.departure_date,
+        medical_flag: !!r.medical_flag,
+      });
     }
   });
 
@@ -120,6 +130,11 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
 
     const alreadyInScheduling = !!visit && visit.isActive && visit.status === "open" && !visit.isPaid;
     const billClosed = !!visit && visit.status === "closed";
+    // Mirrors the live app's billIsFullyClosed(): no open visit AND some
+    // closed/paid record exists. A diver with no visit at all (never
+    // actually processed) is NOT fully closed — matches divers.html's
+    // isVisible(), which keeps such a diver visible indefinitely.
+    const billFullyClosed = !alreadyInScheduling && billClosed;
 
     return {
       id: d.id,
@@ -132,8 +147,10 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
       medicalFlag: !!reg?.medical_flag,
       medicalAcknowledged: !!d.medical_acknowledged,
       arrivalDate: reg?.arrival_date ?? null,
+      departureDate: reg?.departure_date ?? null,
       alreadyInScheduling,
       billClosed,
+      billFullyClosed,
       billClosedAt: billClosed ? (payment?.paid_at ?? null) : null,
       dayBreakdown,
       totalDives: nonCancelled.length,
@@ -144,15 +161,34 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
   });
 }
 
+// Matches divers.html's isIndividualCandidate: ungrouped AND currently
+// active (isVisible). Both the default/recent list and explicit search
+// scope to this — the live app's candidate filter doesn't distinguish
+// "browsing" from "searching," it's the same Individual Management pool.
+function filterActiveIndividualCards(cards: DiverCard[]): DiverCard[] {
+  return cards.filter(
+    (c) =>
+      !c.groupId &&
+      isDiverActive({
+        arrivalDate: c.arrivalDate,
+        departureDate: c.departureDate,
+        hasOpenVisit: c.alreadyInScheduling,
+        billFullyClosed: c.billFullyClosed,
+      }),
+  );
+}
+
 export async function loadRecentDiverCards(diveCenterId: string): Promise<DiverCard[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("divers")
     .select("id")
     .eq("dive_center_id", diveCenterId)
+    .is("group_id", null)
     .order("created_at", { ascending: false })
-    .limit(20);
-  return buildDiverCards(supabase, diveCenterId, (data ?? []).map((d) => d.id));
+    .limit(50);
+  const cards = await buildDiverCards(supabase, diveCenterId, (data ?? []).map((d) => d.id));
+  return filterActiveIndividualCards(cards).slice(0, 20);
 }
 
 export async function searchDiverCards(diveCenterId: string, query: string): Promise<DiverCard[]> {
@@ -164,7 +200,8 @@ export async function searchDiverCards(diveCenterId: string, query: string): Pro
     .is("group_id", null)
     .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,accommodation.ilike.%${query}%`)
     .limit(30);
-  return buildDiverCards(supabase, diveCenterId, (data ?? []).map((d) => d.id));
+  const cards = await buildDiverCards(supabase, diveCenterId, (data ?? []).map((d) => d.id));
+  return filterActiveIndividualCards(cards);
 }
 
 export type GroupSummary = {
@@ -177,33 +214,69 @@ export type GroupSummary = {
   memberCount: number;
 };
 
+// Only currently-active groups show up here, matching divers.html's
+// groupIsVisible(): a group with members is active iff any member is
+// active (isDiverActive); an empty group is active iff today falls within
+// arrival-1..departure (or has no arrival date at all).
 export async function loadGroups(diveCenterId: string): Promise<GroupSummary[]> {
   const supabase = await createClient();
-  const [{ data: groups }, { data: members }] = await Promise.all([
+  const [{ data: groups }, { data: memberRows }] = await Promise.all([
     supabase
       .from("groups")
       .select("id, group_name, leader_name, arrival_date, departure_date, expected_count")
       .eq("dive_center_id", diveCenterId)
       .eq("is_active", true)
       .order("created_at", { ascending: false }),
-    supabase.from("divers").select("group_id").eq("dive_center_id", diveCenterId).not("group_id", "is", null),
+    supabase.from("divers").select("id, group_id").eq("dive_center_id", diveCenterId).not("group_id", "is", null),
   ]);
 
-  const countByGroup = new Map<string, number>();
-  (members ?? []).forEach((m) => {
+  const memberIdsByGroup = new Map<string, string[]>();
+  (memberRows ?? []).forEach((m) => {
     if (!m.group_id) return;
-    countByGroup.set(m.group_id, (countByGroup.get(m.group_id) ?? 0) + 1);
+    const list = memberIdsByGroup.get(m.group_id) ?? [];
+    list.push(m.id);
+    memberIdsByGroup.set(m.group_id, list);
   });
 
-  return (groups ?? []).map((g) => ({
-    id: g.id,
-    groupName: g.group_name,
-    leaderName: g.leader_name,
-    arrivalDate: g.arrival_date,
-    departureDate: g.departure_date,
-    expectedCount: g.expected_count,
-    memberCount: countByGroup.get(g.id) ?? 0,
-  }));
+  const allMemberIds = (memberRows ?? []).map((m) => m.id);
+  const memberCards = await buildDiverCards(supabase, diveCenterId, allMemberIds);
+  const memberCardById = new Map(memberCards.map((c) => [c.id, c]));
+
+  return (groups ?? [])
+    .map((g) => {
+      const memberIds = memberIdsByGroup.get(g.id) ?? [];
+      const members = memberIds.flatMap((id) => {
+        const c = memberCardById.get(id);
+        return c
+          ? [
+              {
+                arrivalDate: c.arrivalDate,
+                departureDate: c.departureDate,
+                hasOpenVisit: c.alreadyInScheduling,
+                billFullyClosed: c.billFullyClosed,
+              },
+            ]
+          : [];
+      });
+      const active = isGroupActive(
+        { arrivalDate: g.arrival_date, departureDate: g.departure_date },
+        members,
+      );
+      return {
+        active,
+        summary: {
+          id: g.id,
+          groupName: g.group_name,
+          leaderName: g.leader_name,
+          arrivalDate: g.arrival_date,
+          departureDate: g.departure_date,
+          expectedCount: g.expected_count,
+          memberCount: memberIds.length,
+        } satisfies GroupSummary,
+      };
+    })
+    .filter((g) => g.active)
+    .map((g) => g.summary);
 }
 
 export async function loadGroupMemberCards(diveCenterId: string, groupId: string): Promise<DiverCard[]> {

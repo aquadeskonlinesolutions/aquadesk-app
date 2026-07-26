@@ -6,18 +6,16 @@ import { createClient } from "@/lib/supabase/server";
 import {
   loadTripsForDate,
   loadTripDetail,
-  searchDiversForAssignment,
-  loadActiveGroups,
-  loadGroupMembersForAssignment,
   loadScheduleDivers,
+  loadClipsForDate,
   loadDayAssignmentsForWarnings,
-  loadReadyPool,
+  loadPhaseOneData,
   type TripSummary,
   type TripDetail,
-  type DiverPickResult,
-  type GroupOption,
   type ScheduleDiverRow,
   type DayAssignment,
+  type PhaseOneData,
+  type Clip,
 } from "./data";
 
 export async function getTripsForDate(date: string): Promise<TripSummary[]> {
@@ -30,41 +28,14 @@ export async function getTripDetail(scheduleId: string): Promise<TripDetail | nu
   return loadTripDetail(user.diveCenterId, scheduleId);
 }
 
-export async function searchDivers(
-  query: string,
-  scheduleDate: string,
-  excludeScheduleId: string | null,
-): Promise<DiverPickResult[]> {
-  const user = await getCurrentUser();
-  if (query.trim().length < 2) return [];
-  return searchDiversForAssignment(user.diveCenterId, query.trim(), scheduleDate, excludeScheduleId);
-}
-
-export async function getActiveGroups(): Promise<GroupOption[]> {
-  const user = await getCurrentUser();
-  return loadActiveGroups(user.diveCenterId);
-}
-
-export async function getGroupMembers(
-  groupId: string,
-  scheduleDate: string,
-  excludeScheduleId: string | null,
-): Promise<DiverPickResult[]> {
-  const user = await getCurrentUser();
-  return loadGroupMembersForAssignment(user.diveCenterId, groupId, scheduleDate, excludeScheduleId);
-}
-
 export async function getScheduleDivers(scheduleId: string): Promise<ScheduleDiverRow[]> {
   const user = await getCurrentUser();
   return loadScheduleDivers(user.diveCenterId, scheduleId);
 }
 
-export async function getDayAssignmentsForWarnings(
-  scheduleDate: string,
-  excludeScheduleId: string | null,
-): Promise<DayAssignment[]> {
+export async function getDayAssignmentsForWarnings(scheduleDate: string): Promise<DayAssignment[]> {
   const user = await getCurrentUser();
-  return loadDayAssignmentsForWarnings(user.diveCenterId, scheduleDate, excludeScheduleId);
+  return loadDayAssignmentsForWarnings(user.diveCenterId, scheduleDate);
 }
 
 function ok() {
@@ -223,20 +194,21 @@ export async function cancelTrip(scheduleId: string): Promise<{ error?: string }
   return ok();
 }
 
-export type DiverAssignmentInput = {
-  diverId: string;
-  openVisitId: string | null;
+// A "team" placed on a trip = one clip's worth of divers assigned to one
+// staff member, plus per-dive nitrox/15L flags (trip-specific, not part of
+// the shared clip). Matches scheduling.html's real Phase 2 mechanism: a
+// clip is dropped onto a boat wholesale via "+ Add Team," never a single
+// loose diver assigned directly.
+export type TripTeamInput = {
   staffId: string | null;
-  experienceType: "fun_diving" | "dive_course";
-  courseRateId: string | null;
-  is15L: boolean;
-  nitroxRequested: boolean;
-  rememberStaffPairing: boolean;
+  staffName: string;
+  sourceClipId: string | null;
+  divers: { diverId: string; is15L: boolean; nitroxRequested: boolean }[];
 };
 
-export async function saveTripDiverAssignments(
+export async function saveTripTeams(
   scheduleId: string,
-  assignments: DiverAssignmentInput[],
+  teams: TripTeamInput[],
 ): Promise<{ error?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
@@ -250,61 +222,181 @@ export async function saveTripDiverAssignments(
   if (!schedule) return fail("Trip not found.");
   if (schedule.closed) return fail("A closed trip can't be edited.");
 
-  // Ensure every diver has an open visit matching their assigned experience
-  // type — reuses the exact same insert shape as divers/[id]/actions.ts's
-  // createVisit, written fresh here per this codebase's established
-  // self-contained-per-page convention (no cross-page action imports).
-  for (const a of assignments) {
-    if (a.openVisitId) continue;
-    const { error: visitError } = await supabase.from("visits").insert({
-      dive_center_id: user.diveCenterId,
-      diver_id: a.diverId,
-      experience_type: a.experienceType,
-      course_rate_id: a.experienceType === "dive_course" ? a.courseRateId : null,
-      visit_status: "open",
-      is_active: true,
-      is_paid: false,
-    });
-    if (visitError) return fail(`Could not start a visit for one diver: ${visitError.message}`);
-  }
-
   // schedule_divers has no independent identity beyond the trip — delete +
   // reinsert fresh on every save, same reasoning as schedule_sites.
   await supabase.from("schedule_divers").delete().eq("schedule_id", scheduleId);
-  if (assignments.length > 0) {
-    const { error: insertError } = await supabase.from("schedule_divers").insert(
-      assignments.map((a) => ({
-        dive_center_id: user.diveCenterId,
-        schedule_id: scheduleId,
-        diver_id: a.diverId,
-        staff_id: a.staffId,
-        experience_type: a.experienceType,
-        is_15l: a.is15L,
-        nitrox_requested: a.nitroxRequested,
-      })),
-    );
+
+  const rows = teams.flatMap((t) =>
+    t.divers.map((d) => ({
+      dive_center_id: user.diveCenterId,
+      schedule_id: scheduleId,
+      diver_id: d.diverId,
+      staff_id: t.staffId,
+      source_clip_id: t.sourceClipId,
+      is_15l: d.is15L,
+      nitrox_requested: d.nitroxRequested,
+    })),
+  );
+  if (rows.length > 0) {
+    const { error: insertError } = await supabase.from("schedule_divers").insert(rows);
     if (insertError) return fail(insertError.message);
   }
 
-  // "Remember this pairing" — upsert or clear diver_staff_defaults per the
-  // explicit per-diver toggle, never a whole-team carry-over.
-  for (const a of assignments) {
-    if (a.rememberStaffPairing && a.staffId) {
-      await supabase
-        .from("diver_staff_defaults")
-        .upsert(
-          { dive_center_id: user.diveCenterId, diver_id: a.diverId, staff_id: a.staffId },
-          { onConflict: "dive_center_id,diver_id" },
-        );
-    } else if (!a.rememberStaffPairing) {
-      await supabase
-        .from("diver_staff_defaults")
-        .delete()
-        .eq("dive_center_id", user.diveCenterId)
-        .eq("diver_id", a.diverId);
-    }
+  return ok();
+}
+
+// ── Phase 1: loose divers + suggested team clips ──────────────────────────
+
+export async function getPhaseOneData(scheduleDate: string): Promise<PhaseOneData> {
+  const user = await getCurrentUser();
+  return loadPhaseOneData(user.diveCenterId, scheduleDate, user.id);
+}
+
+export async function getClipsForDate(scheduleDate: string): Promise<Clip[]> {
+  const user = await getCurrentUser();
+  return loadClipsForDate(user.diveCenterId, scheduleDate);
+}
+
+export async function createClip(
+  scheduleDate: string,
+  staffId: string | null,
+  staffName: string,
+  isFreelancer: boolean,
+  diverIds: string[],
+): Promise<{ error?: string; clipId?: string }> {
+  const user = await getCurrentUser();
+  if (!staffName.trim()) return fail("A staff name is required.");
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("schedule_team_clips")
+    .insert({
+      dive_center_id: user.diveCenterId,
+      schedule_date: scheduleDate,
+      staff_id: staffId,
+      staff_name: staffName.trim(),
+      is_freelancer: isFreelancer,
+      source: "manual",
+      carry_forward: true,
+      created_by: user.id,
+    })
+    .select("id")
+    .single();
+  if (error) return fail(error.message);
+
+  if (diverIds.length > 0) {
+    const { error: memberError } = await supabase.from("schedule_team_clip_divers").insert(
+      diverIds.map((id) => ({
+        dive_center_id: user.diveCenterId,
+        clip_id: data.id,
+        diver_id: id,
+        excluded_on_date: false,
+      })),
+    );
+    if (memberError) return fail(memberError.message);
   }
 
+  revalidatePath("/scheduling");
+  return { clipId: data.id };
+}
+
+// Excluding a clip member sets excluded_on_date rather than deleting the
+// row, matching the live app — the pairing is remembered for future days,
+// just not counted today.
+export async function excludeDiverFromClip(clipId: string, diverId: string): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("schedule_team_clip_divers")
+    .update({ excluded_on_date: true })
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("clip_id", clipId)
+    .eq("diver_id", diverId);
+  if (error) return fail(error.message);
+  return ok();
+}
+
+export async function moveDiverToClip(
+  diverId: string,
+  fromClipId: string,
+  toClipId: string,
+): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  await supabase
+    .from("schedule_team_clip_divers")
+    .delete()
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("clip_id", fromClipId)
+    .eq("diver_id", diverId);
+
+  const { error } = await supabase.from("schedule_team_clip_divers").insert({
+    dive_center_id: user.diveCenterId,
+    clip_id: toClipId,
+    diver_id: diverId,
+    excluded_on_date: false,
+  });
+  if (error) return fail(error.message);
+  return ok();
+}
+
+export async function deleteClip(clipId: string): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("schedule_team_clips")
+    .delete()
+    .eq("id", clipId)
+    .eq("dive_center_id", user.diveCenterId);
+  if (error) return fail(error.message);
+  return ok();
+}
+
+export async function updateClipStaff(
+  clipId: string,
+  staffId: string | null,
+  staffName: string,
+  isFreelancer: boolean,
+): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  if (!staffName.trim()) return fail("A staff name is required.");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("schedule_team_clips")
+    .update({ staff_id: staffId, staff_name: staffName.trim(), is_freelancer: isFreelancer })
+    .eq("id", clipId)
+    .eq("dive_center_id", user.diveCenterId);
+  if (error) return fail(error.message);
+  return ok();
+}
+
+export async function excludeDiverForDay(diverId: string, scheduleDate: string): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const { error } = await supabase.from("schedule_day_diver_exclusions").upsert(
+    {
+      dive_center_id: user.diveCenterId,
+      diver_id: diverId,
+      schedule_date: scheduleDate,
+      created_by: user.id,
+    },
+    { onConflict: "diver_id,schedule_date" },
+  );
+  if (error) return fail(error.message);
+  return ok();
+}
+
+export async function includeDiverForDay(diverId: string, scheduleDate: string): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("schedule_day_diver_exclusions")
+    .delete()
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("diver_id", diverId)
+    .eq("schedule_date", scheduleDate);
+  if (error) return fail(error.message);
   return ok();
 }
 
@@ -328,9 +420,15 @@ function nowManilaMinute(): string {
 export async function markBoatReturned(
   scheduleId: string,
   fuelLitersConsumed: number | null,
-): Promise<{ error?: string; skippedDivers?: string[] }> {
+  options: { excludeDiverIds?: string[]; forceProceed?: boolean } = {},
+): Promise<{
+  error?: string;
+  skippedDivers?: string[];
+  duplicates?: { diverId: string; name: string }[];
+}> {
   const user = await getCurrentUser();
   const supabase = await createClient();
+  const excludeSet = new Set(options.excludeDiverIds ?? []);
 
   const { data: schedule } = await supabase
     .from("schedules")
@@ -376,10 +474,41 @@ export async function markBoatReturned(
     : { data: [] };
   const staffNameById = new Map((staffRows ?? []).map((s) => [s.id, `${s.first_name} ${s.last_name}`]));
 
+  // Duplicate-activity guard, matching the live app's "Activities already
+  // added" check — a diver can already have an activities row for this
+  // date/site (e.g. logged manually via Diver Detail) before Boat Returned
+  // is ever clicked. First pass surfaces the conflict for a Proceed/Exclude
+  // choice rather than silently double-charging.
+  if (!options.forceProceed) {
+    const candidateIds = (diverRows ?? []).map((r) => r.diver_id).filter((id) => !excludeSet.has(id));
+    if (candidateIds.length > 0) {
+      const { data: existing } = await supabase
+        .from("activities")
+        .select("diver_id")
+        .eq("dive_center_id", user.diveCenterId)
+        .eq("date", schedule.schedule_date)
+        .in("diver_id", candidateIds);
+      const dupIds = [...new Set((existing ?? []).map((r) => r.diver_id))];
+      if (dupIds.length > 0) {
+        const { data: dupDivers } = await supabase
+          .from("divers")
+          .select("id, first_name, last_name")
+          .in("id", dupIds);
+        return {
+          duplicates: (dupDivers ?? []).map((d) => ({
+            diverId: d.id,
+            name: `${d.first_name} ${d.last_name}`,
+          })),
+        };
+      }
+    }
+  }
+
   const skippedDivers: string[] = [];
   const activityRows: Record<string, unknown>[] = [];
 
   for (const row of diverRows ?? []) {
+    if (excludeSet.has(row.diver_id)) continue;
     const { data: visit } = await supabase
       .from("visits")
       .select("id")
@@ -468,11 +597,6 @@ export async function markBoatReturned(
 
 // Group CRUD moved to the Divers page (src/app/(app)/divers/actions.ts) —
 // that's the live app's real home for group management, not Scheduling.
-
-export async function getReadyPoolDivers(scheduleDate: string, excludeScheduleId: string | null): Promise<DiverPickResult[]> {
-  const user = await getCurrentUser();
-  return loadReadyPool(user.diveCenterId, scheduleDate, excludeScheduleId);
-}
 
 // ── Crew code — moved here from Staff (the live app generates the crew
 // code from scheduling.html, not a roster page; staff.html only ever

@@ -1,49 +1,66 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { TripSummary, BoatOption, DiveSiteOption, StaffOption, CourseRateOption } from "./data";
-import { getTripsForDate } from "./actions";
-import { DaySelector } from "./components/DaySelector";
-import { TripListPanel } from "./components/TripListPanel";
-import { TripBuilderPanel } from "./components/TripBuilderPanel";
-import { DiverAssignmentPanel } from "./components/DiverAssignmentPanel";
-import { ConfirmPanel } from "./components/ConfirmPanel";
+import type { TripSummary, BoatOption, DiveSiteOption, StaffOption, DayAssignment } from "./data";
+import { getTripsForDate, getDayAssignmentsForWarnings } from "./actions";
+import { PhaseTabs, type Phase } from "./components/PhaseTabs";
+import { PhaseOnePanel } from "./components/PhaseOnePanel";
+import { PhaseTwoPanel } from "./components/PhaseTwoPanel";
+import { PhaseThreePanel } from "./components/PhaseThreePanel";
+
+function todayManila(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 export function SchedulingClient({
-  diveCenterId,
-  initialDate,
-  initialTrips,
   boats,
   diveSites,
   staffOptions,
-  courseRates,
 }: {
-  diveCenterId: string;
-  initialDate: string;
-  initialTrips: TripSummary[];
   boats: BoatOption[];
   diveSites: DiveSiteOption[];
   staffOptions: StaffOption[];
-  courseRates: CourseRateOption[];
 }) {
-  const [date, setDate] = useState(initialDate);
-  const [trips, setTrips] = useState(initialTrips);
-  const [selected, setSelected] = useState<string | "new" | null>(null);
-  const [diverSaveVersion, setDiverSaveVersion] = useState(0);
+  const [date, setDate] = useState("");
+  const [trips, setTrips] = useState<TripSummary[]>([]);
+  const [dayContext, setDayContext] = useState<DayAssignment[]>([]);
+  const [phase, setPhase] = useState<Phase>("phase1");
   const [pending, startTransition] = useTransition();
 
-  function changeDate(newDate: string) {
-    setDate(newDate);
-    setSelected(null);
+  const isPastDate = date !== "" && date < todayManila();
+
+  function loadForDate(newDate: string) {
     startTransition(async () => {
-      setTrips(await getTripsForDate(newDate));
+      const [tripsRes, dayCtx] = await Promise.all([
+        getTripsForDate(newDate),
+        getDayAssignmentsForWarnings(newDate),
+      ]);
+      setTrips(tripsRes);
+      setDayContext(dayCtx);
+      const hasSavedTrips = tripsRes.some((t) => !t.cancelled);
+      const past = newDate < todayManila();
+      setPhase(past || hasSavedTrips ? "phase3" : "phase1");
     });
   }
 
-  function refreshTrips() {
-    startTransition(async () => {
-      setTrips(await getTripsForDate(date));
-    });
+  function changeDate(newDate: string) {
+    setDate(newDate);
+    if (newDate) loadForDate(newDate);
+  }
+
+  // Refreshes trips/context in place without resetting phase (e.g. after a
+  // save within Phase 2 or a Boat Returned in Phase 3) — a lighter path
+  // than loadForDate, which also re-decides the default phase.
+  async function refreshInPlace() {
+    if (!date) return;
+    const [tripsRes, dayCtx] = await Promise.all([getTripsForDate(date), getDayAssignmentsForWarnings(date)]);
+    setTrips(tripsRes);
+    setDayContext(dayCtx);
   }
 
   return (
@@ -51,77 +68,72 @@ export function SchedulingClient({
       <div className="flex items-start justify-between mb-1 gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-3xl text-navy mb-1">Scheduling</h1>
-          <p className="text-gray-600 text-sm">
-            Trip/schedule builder, boat and staff assignment.
-          </p>
+          <p className="text-gray-600 text-sm">Trip/schedule builder, boat and staff assignment.</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setSelected("new")}
-            className="px-4 py-2 bg-navy text-white text-sm font-medium rounded-lg hover:bg-navy-dark transition-colors"
-          >
-            + Add Trip
-          </button>
+        <div>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => changeDate(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          />
         </div>
       </div>
 
-      <DaySelector date={date} onChange={changeDate} />
+      {!date ? (
+        <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-gray-400 text-sm">
+          Select a schedule date to begin.
+        </div>
+      ) : pending && trips.length === 0 ? (
+        <div className="text-center text-gray-400 text-sm py-8">Loading…</div>
+      ) : (
+        <>
+          {isPastDate && (
+            <div className="text-xs bg-teal/10 text-teal px-3 py-2 rounded-md">
+              Past schedule — you can review this date. Only unclosed trips can still be marked Boat Returned.
+            </div>
+          )}
 
-      <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-5 items-start">
-        <TripListPanel
-          trips={trips}
-          pending={pending}
-          selectedId={selected}
-          onSelect={setSelected}
-        />
+          <PhaseTabs phase={phase} onChange={setPhase} readOnly={isPastDate} />
 
-        {selected && (
-          <div className="grid gap-5">
-            <TripBuilderPanel
-              key={selected}
-              diveCenterId={diveCenterId}
-              scheduleId={selected === "new" ? null : selected}
+          {phase === "phase1" && (
+            <PhaseOnePanel
+              key={date}
               scheduleDate={date}
+              staffOptions={staffOptions}
+              readOnly={isPastDate}
+              onNext={() => setPhase("phase2")}
+            />
+          )}
+
+          {phase === "phase2" && (
+            <PhaseTwoPanel
+              scheduleDate={date}
+              trips={trips}
               boats={boats}
               diveSites={diveSites}
-              onSaved={(savedId) => {
-                setSelected(savedId);
-                refreshTrips();
-              }}
-              onDeletedOrCancelled={() => {
-                setSelected(null);
-                refreshTrips();
+              staffOptions={staffOptions}
+              dayContext={dayContext}
+              readOnly={isPastDate}
+              onChanged={refreshInPlace}
+              onConfirm={() => {
+                refreshInPlace();
+                setPhase("phase3");
               }}
             />
-            {selected !== "new" && (
-              <>
-                <DiverAssignmentPanel
-                  key={`divers-${selected}`}
-                  scheduleId={selected}
-                  scheduleDate={date}
-                  staffOptions={staffOptions}
-                  courseRates={courseRates}
-                  boats={boats}
-                  onSaved={() => {
-                    refreshTrips();
-                    setDiverSaveVersion((v) => v + 1);
-                  }}
-                />
-                <ConfirmPanel
-                  key={`confirm-${selected}`}
-                  scheduleId={selected}
-                  staffOptions={staffOptions}
-                  refreshKey={diverSaveVersion}
-                  onReturned={() => {
-                    refreshTrips();
-                    setDiverSaveVersion((v) => v + 1);
-                  }}
-                />
-              </>
-            )}
-          </div>
-        )}
-      </div>
+          )}
+
+          {phase === "phase3" && (
+            <PhaseThreePanel
+              trips={trips}
+              boats={boats}
+              staffOptions={staffOptions}
+              readOnly={isPastDate}
+              onChanged={refreshInPlace}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }

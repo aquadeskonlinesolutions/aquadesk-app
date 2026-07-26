@@ -13,7 +13,6 @@ const TABS = [
   { label: "Staff Access", href: "/settings/staff-access" },
   { label: "Waiver & Registration", href: "/settings/waiver" },
   { label: "Equipment", href: "/settings/equipment" },
-  { label: "Integrations", href: "/settings/integrations" },
 ];
 
 export function SettingsTabs() {
