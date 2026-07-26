@@ -23,7 +23,11 @@ function sizeCategoryFor(itemKey: string): string | null {
   return null;
 }
 
-type ParsedEquipment = { items: { name: string; size: string | null }[]; computer: boolean };
+function isWeightsItem(itemKey: string): boolean {
+  return itemKey.includes("weight");
+}
+
+type ParsedEquipment = { items: { name: string; size: string | null; kg?: number | null }[]; computer: boolean };
 
 function parseEquipmentRequested(raw: string | null): ParsedEquipment {
   if (!raw) return { items: [], computer: false };
@@ -52,7 +56,12 @@ export function EquipmentModal({
   const initial = parseEquipmentRequested(diver.equipmentRequested);
   const [needsEquipment, setNeedsEquipment] = useState(diver.needsEquipment);
   const [selections, setSelections] = useState<Record<string, string | null>>(
-    Object.fromEntries(initial.items.map((i) => [i.name, i.size])),
+    Object.fromEntries(
+      initial.items.map((i) => [
+        i.name,
+        isWeightsItem(i.name) ? (i.kg != null ? String(i.kg) : null) : i.size,
+      ]),
+    ),
   );
   const [computer, setComputer] = useState(initial.computer);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +85,11 @@ export function EquipmentModal({
   function save() {
     setError(null);
     startTransition(async () => {
-      const items = Object.entries(selections).map(([name, size]) => ({ name, size }));
+      const items = Object.entries(selections).map(([name, value]) =>
+        isWeightsItem(name)
+          ? { name, size: null, kg: value ? Number(value) : null }
+          : { name, size: value },
+      );
       const res = await saveDiverEquipment(diver.id, { needsEquipment, items, computer });
       if (res.error) {
         setError(res.error);
@@ -140,6 +153,17 @@ export function EquipmentModal({
                       />
                       {r.itemName}
                     </label>
+                    {checked && isWeightsItem(key) && (
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        placeholder="kg"
+                        value={selections[key] ?? ""}
+                        onChange={(e) => setSelections((prev) => ({ ...prev, [key]: e.target.value || null }))}
+                        className="w-16 border border-gray-300 rounded-md px-2 py-1 text-xs"
+                      />
+                    )}
                     {checked && sizeCategory && (
                       <select
                         value={selections[key] ?? ""}

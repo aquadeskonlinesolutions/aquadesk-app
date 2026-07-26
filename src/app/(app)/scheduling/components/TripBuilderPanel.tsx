@@ -14,6 +14,9 @@ function emptyForm(scheduleDate: string): TripFormInput {
     departureTime: "",
     siteIds: [],
     notes: "",
+    guestDiversCount: null,
+    guestDiveCenterName: "",
+    guestNotes: "",
   };
 }
 
@@ -26,6 +29,9 @@ function fromDetail(detail: TripDetail): TripFormInput {
     departureTime: detail.departureTime ?? "",
     siteIds: detail.siteIds,
     notes: detail.notes ?? "",
+    guestDiversCount: detail.guestDiversCount,
+    guestDiveCenterName: detail.guestDiveCenterName ?? "",
+    guestNotes: detail.guestNotes ?? "",
   };
 }
 
@@ -192,6 +198,47 @@ export function TripBuilderPanel({
               />
             </div>
           )}
+
+          <div className="col-span-2 grid grid-cols-3 gap-3 border border-gray-200 rounded-md p-3 bg-gray-50">
+            <div className="col-span-3 text-xs font-medium text-gray-500">
+              Other divers joining this boat (optional)
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Divers Joining</label>
+              <input
+                type="number"
+                min={0}
+                disabled={locked}
+                value={form.guestDiversCount ?? ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    guestDiversCount: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Their Dive Center</label>
+              <input
+                disabled={locked}
+                value={form.guestDiveCenterName}
+                onChange={(e) => setForm({ ...form, guestDiveCenterName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+              />
+            </div>
+            <div className="col-span-3">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+              <textarea
+                disabled={locked}
+                value={form.guestNotes}
+                onChange={(e) => setForm({ ...form, guestNotes: e.target.value })}
+                rows={2}
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+              />
+            </div>
+          </div>
 
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-600 mb-1">Dive Sites</label>

@@ -133,13 +133,14 @@ export async function deleteDiverNote(diverId: string, noteId: string): Promise<
 
 // ── Equipment ────────────────────────────────────────────────────────────
 //
-// equipment_requested's real shape is { items: {name, size|null}[], computer:
-// boolean } — confirmed from the actual payload RegistrationWizard.tsx sends
-// today, not the old app's diver-form.html shape (which uses a different,
-// no-longer-relevant {type, items} structure).
+// equipment_requested's real shape is { items: {name, size|null, kg?}[],
+// computer: boolean } — confirmed from the actual payload
+// RegistrationWizard.tsx sends today, not the old app's diver-form.html
+// shape (which uses a different, no-longer-relevant {type, items}
+// structure). The weights item carries kg instead of size.
 export type EquipmentSelection = {
   needsEquipment: boolean;
-  items: { name: string; size: string | null }[];
+  items: { name: string; size: string | null; kg?: number | null }[];
   computer: boolean;
 };
 

@@ -1,18 +1,35 @@
 import Link from "next/link";
 import { getCurrentPlatformAdmin } from "@/lib/dal";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { signOut } from "@/lib/actions/auth";
 import { DiveCenterList } from "./DiveCenterList";
 import { CreateDiveCenterForm } from "./CreateDiveCenterForm";
 
 export default async function OfficePage() {
   const admin = await getCurrentPlatformAdmin();
-  const supabase = await createClient();
+  // A platform admin's own session can't read users rows outside RLS's
+  // dive_center_id scoping (current_dive_center_id() is null for platform
+  // admins, since they have no public.users row) — the admin client is
+  // needed here to embed each dive center's owner info, same reason
+  // createDiveCenter already uses it.
+  const supabase = createAdminClient();
 
-  const { data: diveCenters } = await supabase
+  // dive_centers has two FK paths to users (the reverse
+  // users.dive_center_id relation, and dive_centers.waiver_content_updated_by
+  // -> users.id) — PostgREST can't infer which one without a hint, and
+  // silently returns an error (not a thrown exception) when ambiguous,
+  // which the destructured `data` alone doesn't surface. Disambiguate
+  // explicitly and alias back to `users` for DiveCenterList's prop shape.
+  const { data: diveCenters, error: diveCentersError } = await supabase
     .from("dive_centers")
-    .select("id, name, email, phone, subscription_status, created_at")
+    .select(
+      "id, name, email, phone, address, subscription_status, billing_due_date, billing_amount, last_payment_date, created_at, users:users!users_dive_center_id_fkey(id, full_name, email, is_active, locked_until, role)",
+    )
     .order("created_at", { ascending: false });
+
+  if (diveCentersError) {
+    console.error("Failed to load dive centers:", diveCentersError.message);
+  }
 
   return (
     <div className="min-h-screen bg-off-white">

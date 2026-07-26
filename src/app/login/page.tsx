@@ -1,6 +1,11 @@
 import { LoginForm } from "./LoginForm";
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ suspended?: string }>;
+}) {
+  const params = await searchParams;
   return (
     <div className="min-h-screen flex items-center justify-center bg-off-white px-4">
       <div className="w-full max-w-sm">
@@ -14,6 +19,11 @@ export default function LoginPage() {
         </div>
         <div className="bg-white rounded-card-lg shadow-card border border-gray-200 p-8">
           <h1 className="font-display text-xl text-navy mb-6">Sign in</h1>
+          {params.suspended && (
+            <p className="text-sm text-red mb-4">
+              This dive center&apos;s account is suspended. Contact AquaDesk support for help.
+            </p>
+          )}
           <LoginForm />
         </div>
       </div>

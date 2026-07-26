@@ -11,44 +11,6 @@ would require. Remove the entry once it's resolved.
 
 ## Open
 
-### Dashboard: one old alert type not reproduced
-
-The live app's Dashboard had 6 alert checks; this rebuild's Dashboard
-(`src/app/(app)/dashboard/data.ts`) has 5 — "government fees not logged
-today" was restored once Reports' build fixed the `govt_fees` table to
-match what this alert always expected (see `database/006_govt_fees_daily_log.sql`).
-
-**"Another boat joined us today, not yet logged."** The live app detected
-this by parsing a JSON blob in `schedules.notes` (`joinerDivers`/`joinerDC`
-keys) set at schedule-creation time. The new schema replaced that
-notes-JSON pattern with explicit columns (`schedules.is_joiner`,
-`schedules.joiner_boat_name`) — but only for the "we joined someone
-else's boat" direction. There's no equivalent signal captured anywhere
-for the reverse direction (another dive center's divers joining our
-boat) until Scheduling is built and defines how that gets entered.
-
-Commented in `data.ts` above `loadAlerts()`. Revisit when Scheduling is
-built — don't guess a workaround before then.
-
-### Settings: no page for dive center profile (name/address/phone/logo)
-
-The live app's Settings had a "Profile" tab (dive center name, email,
-phone, address, logo upload, subscription status display, plus the
-insurance fields). The new app's 5-tab Settings structure (Pricing &
-Rates, Staff Access, Waiver & Registration, Equipment, Integrations —
-all now built) has no tab that covers this at all. The insurance fields
-found a home in Integrations; the rest (name/email/phone/address/logo)
-currently has no edit path anywhere after initial creation via the
-`/office` platform admin console.
-
-Not fixed now because it wasn't part of the 5-tab scope the user asked
-for and adding it means a real design call (a 6th tab? fold into an
-existing one? does it need its own page outside Settings?) plus a new
-concern (logo upload needs its own Storage bucket + policies, same class
-of setup as the cert-card bucket in `003_cert_card_storage.sql`). Flagging
-so it doesn't get lost — a dive center will eventually want to update its
-name, phone, or logo, and there's currently nowhere in the app to do that.
-
 ### Boat Manifest: no offline support
 
 The blueprint's page map (`aquadesk-rebuild-blueprint-v1.md`, Stage 1b)
@@ -65,3 +27,59 @@ what to cache, how edits made offline get synced later) is an
 architecture decision affecting the whole app's build, not something to
 improvise into one page. Flagging since the blueprint calls it out
 explicitly as a requirement this page doesn't meet yet.
+
+### Registration: several smaller live-app behaviors not ported
+
+Found during a 2026-07-26 audit pass against `register.html`, not fixed
+in that pass (each is its own small scope decision):
+
+- No client-side cert-card image compression — live app resizes to
+  max 1600px / re-encodes JPEG q0.7 before upload; this rebuild uploads
+  the raw file, so phone photos can be multi-MB.
+- No "English alphabet only" filtering on name fields, no minimum-age
+  check, no "can't be in the future" check on birthday/last-dive-date
+  (rebuild only checks these fields are non-empty).
+- Country dial code list has ~60 entries vs. the live app's ~180.
+- A dead server-side mechanism: `submit_diver_registration`
+  (`database/002_registration_rpcs.sql`) still supports a
+  `p_payload->>'note'` key for a "last dive was 6+ months ago" reminder
+  note, but `RegistrationWizard.tsx`'s payload never sets it — the
+  server-side plumbing exists, nothing populates it.
+
+### Diver Detail: no mid-visit "change experience type"
+
+The live app lets staff switch an in-progress visit between
+`fun_diving`/`dive_course` after creation (`diver-form.html`,
+`openChangeExperienceModal`), gated by lock rules (bill closed/paid,
+activities tied to a schedule, diver already assigned to an active
+trip). `VisitPanel.tsx`/`actions.ts` only set `experienceType` once, at
+visit creation — no code path to change it afterward. Found in the same
+2026-07-26 audit pass; not built since it needs the same lock-rule
+logic ported deliberately, not improvised.
+
+### Settings: no Waiver/Medical Questions preview, no staff-record reconciliation
+
+Two separate Settings gaps found in the same audit pass:
+
+- The live app's Waiver tab has a "Preview" button for both the waiver
+  text and medical questions, rendering a modal showing how they'll
+  appear on the registration form. `WaiverEditorSection.tsx`/
+  `MedicalQuestionsSection.tsx` are Save-only, no preview.
+- The live app's Access tab reconciles a `staff` row (position =
+  Secretary) with no linked login — shows a "no login account linked
+  yet" banner and a one-click "Create Login," and keeps `staff.is_active`
+  in sync when `users.is_active` is toggled. This rebuild's
+  `SecretaryAccountsSection`/`staff-access/actions.ts` only reads/writes
+  `users` rows — no handling of an unlinked `staff` row, and toggling
+  active status doesn't touch a linked `staff` row (the Staff page
+  handles the *reverse* linking direction instead).
+
+### Login: no "remember me" or password-strength meter
+
+Cosmetic only, found in the same audit pass. The live app's login page
+has a "Remember me" checkbox (just a localStorage flag controlling
+whether an existing session auto-redirects) and a live password-strength
+meter on password-set forms. Neither exists in the rebuild. Trivial to
+add on request — not built since neither affects functionality or
+security (the real lockout/reset/suspension mechanisms all shipped
+2026-07-26 independent of these).

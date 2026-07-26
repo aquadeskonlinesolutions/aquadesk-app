@@ -143,6 +143,9 @@ export type TripDetail = {
   fuelConsumedLiters: number | null;
   closed: boolean;
   cancelled: boolean;
+  guestDiversCount: number | null;
+  guestDiveCenterName: string | null;
+  guestNotes: string | null;
 };
 
 export type DiverPickResult = {
@@ -516,7 +519,7 @@ export async function loadTripDetail(
   const { data: schedule } = await supabase
     .from("schedules")
     .select(
-      "id, schedule_date, boat_id, is_joiner, joiner_boat_name, departure_time, notes, fuel_consumed_liters, closed, cancelled",
+      "id, schedule_date, boat_id, is_joiner, joiner_boat_name, departure_time, notes, fuel_consumed_liters, closed, cancelled, guest_divers_count, guest_dive_center_name, guest_notes",
     )
     .eq("id", scheduleId)
     .eq("dive_center_id", diveCenterId)
@@ -541,5 +544,8 @@ export async function loadTripDetail(
     fuelConsumedLiters: schedule.fuel_consumed_liters,
     closed: schedule.closed,
     cancelled: schedule.cancelled,
+    guestDiversCount: schedule.guest_divers_count,
+    guestDiveCenterName: schedule.guest_dive_center_name,
+    guestNotes: schedule.guest_notes,
   };
 }

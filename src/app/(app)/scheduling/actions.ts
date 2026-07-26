@@ -86,6 +86,9 @@ export type TripFormInput = {
   departureTime: string;
   siteIds: string[];
   notes: string;
+  guestDiversCount: number | null;
+  guestDiveCenterName: string;
+  guestNotes: string;
 };
 
 async function replaceScheduleSites(
@@ -125,6 +128,9 @@ export async function createTrip(
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
       notes: input.notes.trim() || null,
+      guest_divers_count: input.guestDiversCount || null,
+      guest_dive_center_name: input.guestDiveCenterName.trim() || null,
+      guest_notes: input.guestNotes.trim() || null,
       created_by: user.id,
     })
     .select("id")
@@ -156,6 +162,9 @@ export async function updateTrip(
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
       notes: input.notes.trim() || null,
+      guest_divers_count: input.guestDiversCount || null,
+      guest_dive_center_name: input.guestDiveCenterName.trim() || null,
+      guest_notes: input.guestNotes.trim() || null,
     })
     .eq("id", scheduleId)
     .eq("dive_center_id", user.diveCenterId);

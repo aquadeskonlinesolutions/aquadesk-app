@@ -40,6 +40,20 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     redirect("/login");
   }
 
+  // Recheck on every load, not just at sign-in — a dive center can be
+  // suspended mid-session, same "recheck every time" precedent as the
+  // password_changed check just above.
+  const { data: dc } = await supabase
+    .from("dive_centers")
+    .select("subscription_status")
+    .eq("id", profile.dive_center_id)
+    .single();
+
+  if (dc && (dc.subscription_status === "suspended" || dc.subscription_status === "cancelled")) {
+    await supabase.auth.signOut();
+    redirect("/login?suspended=1");
+  }
+
   if (!profile.password_changed) {
     redirect("/account/password");
   }
@@ -141,11 +155,22 @@ export async function resolveLandingPath(): Promise<string> {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, is_active, password_changed")
+    .select("id, dive_center_id, is_active, password_changed")
     .eq("id", user.id)
     .maybeSingle();
 
   if (profile?.is_active) {
+    const { data: dc } = await supabase
+      .from("dive_centers")
+      .select("subscription_status")
+      .eq("id", profile.dive_center_id)
+      .single();
+
+    if (dc && (dc.subscription_status === "suspended" || dc.subscription_status === "cancelled")) {
+      await supabase.auth.signOut();
+      return "/login?suspended=1";
+    }
+
     return profile.password_changed ? "/dashboard" : "/account/password";
   }
 

@@ -61,6 +61,7 @@ async function loadActiveDivers(supabase: Supabase, diveCenterId: string) {
     .eq("dive_center_id", diveCenterId)
     .eq("is_active", true)
     .eq("visit_status", "open")
+    .not("experience_type", "is", null)
     .order("visit_start", { ascending: false });
 
   const openVisits = visits ?? [];
@@ -243,12 +244,6 @@ export type Alert = {
   linkText?: string;
 };
 
-// One alert type from the old live app has no equivalent yet in this
-// schema and is deliberately not reproduced here — see KNOWN_GAPS.md:
-// "another boat joined us today" (no signal captured at schedule-creation
-// time for that direction). Depends on data entry that belongs to the
-// Scheduling page, not built yet.
-//
 // "Government fees not logged" was skipped for the same reason until the
 // Reports build (see database/006_govt_fees_daily_log.sql) — govt_fees is
 // now the real daily log the live app always expected, so this alert is
@@ -404,6 +399,36 @@ async function loadAlerts(
     }
   }
 
+  const { data: guestDiverSchedules } = await supabase
+    .from("schedules")
+    .select("id")
+    .eq("dive_center_id", diveCenterId)
+    .eq("schedule_date", todayStr)
+    .eq("cancelled", false)
+    .or("guest_divers_count.gt.0,guest_dive_center_name.not.is.null")
+    .limit(1);
+
+  if ((guestDiverSchedules ?? []).length > 0) {
+    const { data: guestLogged } = await supabase
+      .from("join_ride_records")
+      .select("id")
+      .eq("dive_center_id", diveCenterId)
+      .eq("date", todayStr)
+      .eq("direction", "joined_our_boat")
+      .limit(1);
+
+    if (!guestLogged || guestLogged.length === 0) {
+      alerts.push({
+        type: "info",
+        icon: "🚢",
+        title: "Someone joined your boat today!",
+        desc: "Don't forget to record it in Reports.",
+        link: "/reports?tab=join",
+        linkText: "Go to Join Ride →",
+      });
+    }
+  }
+
   const { data: arriving } = await supabase
     .from("diver_registrations")
     .select("diver_id, needs_equipment, equipment_requested")
@@ -421,26 +446,29 @@ async function loadAlerts(
       linkText: "View Equipment Management →",
     });
 
+    // Real shape confirmed against RegistrationWizard.tsx/EquipmentModal.tsx:
+    // { items: [{name, size, kg?}], computer: boolean } — items is an array
+    // keyed by item name, not a map with a "partial" type discriminator (a
+    // prior version of this check assumed a {type, items: map} shape that
+    // was never actually sent, so this block never triggered — fixed here
+    // to match the real payload).
     const requestedCounts = new Map<string, number>();
     arrivingList.forEach((d) => {
       if (!d.needs_equipment || !d.equipment_requested) return;
       try {
         const eq = JSON.parse(d.equipment_requested) as {
-          type?: string;
-          items?: Record<string, unknown>;
+          items?: { name: string; size: string | null; kg?: number | null }[];
+          computer?: boolean;
         };
-        if (eq.type === "partial" && eq.items) {
-          Object.entries(eq.items).forEach(([item, val]) => {
-            if (!val || item === "computer" || item === "weights_kg") return;
-            const key = item.toLowerCase();
-            requestedCounts.set(key, (requestedCounts.get(key) ?? 0) + 1);
-          });
-          if (eq.items.computer) {
-            requestedCounts.set(
-              "dive computer",
-              (requestedCounts.get("dive computer") ?? 0) + 1,
-            );
-          }
+        (eq.items ?? []).forEach((item) => {
+          if (item.name.toLowerCase().includes("weight")) return;
+          requestedCounts.set(item.name, (requestedCounts.get(item.name) ?? 0) + 1);
+        });
+        if (eq.computer) {
+          requestedCounts.set(
+            "dive computer",
+            (requestedCounts.get("dive computer") ?? 0) + 1,
+          );
         }
       } catch {
         // Malformed equipment_requested payload — skip this diver's request.

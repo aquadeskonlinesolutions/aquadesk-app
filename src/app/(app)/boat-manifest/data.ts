@@ -144,37 +144,24 @@ export async function loadManifestDetail(
 
   const diverIds = [...new Set((scheduleDivers ?? []).map((r) => r.diver_id))];
 
-  const [{ data: divers }, { data: registrations }] = await Promise.all([
-    diverIds.length
-      ? supabase
-          .from("divers")
-          .select("id, first_name, last_name, birthday, nationality")
-          .in("id", diverIds)
-      : Promise.resolve({ data: [] }),
-    diverIds.length
-      ? supabase
-          .from("diver_registrations")
-          .select("diver_id, accommodation, created_at")
-          .in("diver_id", diverIds)
-          .order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] }),
-  ]);
+  const { data: divers } = diverIds.length
+    ? await supabase
+        .from("divers")
+        .select("id, first_name, last_name, birthday, nationality, accommodation")
+        .in("id", diverIds)
+    : { data: [] };
 
-  // Most recent registration per diver — registrations are pre-sorted newest
-  // first, so the first match for each diver_id is the latest one.
-  const latestAccommodation = new Map<string, string | null>();
-  (registrations ?? []).forEach((r) => {
-    if (!latestAccommodation.has(r.diver_id)) {
-      latestAccommodation.set(r.diver_id, r.accommodation);
-    }
-  });
-
+  // Reads the diver's current accommodation, not the immutable registration
+  // snapshot — matches the live app (dv.accommodation), and a diver's
+  // accommodation can be edited after registration via Diver Detail, so the
+  // manifest should reflect the current value, not what they wrote at
+  // registration time.
   const passengers: ManifestPassenger[] = (divers ?? []).map((d) => ({
     diverId: d.id,
     fullName: `${d.first_name} ${d.last_name}`.trim(),
     age: calcAge(d.birthday),
     nationality: d.nationality,
-    residence: latestAccommodation.get(d.id) ?? null,
+    residence: d.accommodation ?? null,
   }));
 
   const siteNames = sitesBySchedule.get(scheduleId);

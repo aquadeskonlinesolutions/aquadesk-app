@@ -32,6 +32,10 @@ function splitStoredPhone(stored: string): { dialCode: string; number: string } 
   return { dialCode: DEFAULT_COUNTRY_DIAL_CODE, number: stored };
 }
 
+function isWeightsItem(itemKey: string): boolean {
+  return itemKey.includes("weight");
+}
+
 function sizeCategoryFor(itemKey: string): string | null {
   if (itemKey.includes("bcd")) return "bcd";
   if (itemKey.includes("wetsuit")) return "wetsuit";
@@ -372,7 +376,11 @@ export function RegistrationWizard({
 
     const selectedItems = Object.entries(form.equipmentSelections)
       .filter(([, v]) => v)
-      .map(([k]) => ({ name: k, size: form.equipmentSizes[k] || null }));
+      .map(([k]) => ({
+        name: k,
+        size: isWeightsItem(k) ? null : form.equipmentSizes[k] || null,
+        kg: isWeightsItem(k) ? Number(form.equipmentSizes[k]) || null : undefined,
+      }));
 
     const phone = form.phoneNumber.trim() ? `${form.phoneDialCode}${form.phoneNumber.trim()}` : null;
     const whatsapp = `${form.whatsappDialCode}${form.whatsappNumber.trim()}`;
@@ -1089,6 +1097,17 @@ export function RegistrationWizard({
                               />
                               {r.item_name}
                             </label>
+                            {checked && isWeightsItem(key) && (
+                              <input
+                                type="number"
+                                min={0}
+                                max={20}
+                                placeholder="kg"
+                                className="w-16 rounded-card border border-gray-300 px-2 py-1.5 text-xs"
+                                value={form.equipmentSizes[key] ?? ""}
+                                onChange={(e) => setEquipmentSize(key, e.target.value)}
+                              />
+                            )}
                             {checked && sizeCategory && (
                               <select
                                 className="rounded-card border border-gray-300 px-2 py-1.5 text-xs"
