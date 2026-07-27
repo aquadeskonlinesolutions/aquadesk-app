@@ -27,6 +27,35 @@ function SummaryRow({
   );
 }
 
+// "Owed to you" bars use the same teal as Money Snapshot's collected-money
+// segment; "you owe" bars use the same orange as its open/pending segment
+// — same color language, not a new convention.
+function SettledBarList({
+  items,
+}: {
+  items: { label: string; value: number; variant: "owed" | "owe" }[];
+}) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return (
+    <div className="grid gap-2 mt-2">
+      {items.map((item) => (
+        <div key={item.label} className="grid grid-cols-[1fr_90px] gap-3 items-center">
+          <div className="grid gap-1">
+            <div className="text-xs text-gray-600">{item.label}</div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${item.variant === "owed" ? "bg-teal" : "bg-orange"}`}
+                style={{ width: `${item.value === 0 ? 0 : Math.max(4, (item.value / max) * 100)}%` }}
+              />
+            </div>
+          </div>
+          <div className="text-xs font-extrabold text-gray-600 text-right">{peso(item.value)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function BarList({ items, format }: { items: { name: string; count: number }[] | { name: string; amount: number }[]; format: (v: number) => string }) {
   const values = items.map((i) => ("count" in i ? i.count : i.amount));
   const max = Math.max(1, ...values);
@@ -122,19 +151,23 @@ export function OverviewTab({
             <span>Net Profit</span>
             <span>{peso(summary.netProfit)}</span>
           </div>
-          <div className="bg-gray-50 border border-gray-200 rounded-xl px-5 pt-4 pb-1">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-5 pt-4 pb-4">
             <div className="flex justify-between font-extrabold text-gray-600 text-xs uppercase tracking-wide mb-1">
               <span>Not Yet Settled</span>
               <span className="font-normal text-gray-400 normal-case tracking-normal">
                 Current balances, excluded from Net Profit above
               </span>
             </div>
-            <SummaryRow label="Open Diver Bills (owed to you)" value={peso(summary.openDiverBills)} />
-            <SummaryRow label="Rental — To Collect (owed to you)" value={peso(summary.rentalToCollect)} />
-            <SummaryRow label="Rental — To Pay (you owe)" value={peso(summary.rentalToPay)} />
-            <SummaryRow label="Join Ride — To Collect (owed to you)" value={peso(summary.joinToCollect)} />
-            <SummaryRow label="Join Ride — To Pay (you owe)" value={peso(summary.joinToPay)} />
-            <SummaryRow label="Unpaid Staff Commissions (you owe)" value={peso(summary.unpaidCommissions)} />
+            <SettledBarList
+              items={[
+                { label: "Open Diver Bills (owed to you)", value: summary.openDiverBills, variant: "owed" },
+                { label: "Rental — To Collect (owed to you)", value: summary.rentalToCollect, variant: "owed" },
+                { label: "Rental — To Pay (you owe)", value: summary.rentalToPay, variant: "owe" },
+                { label: "Join Ride — To Collect (owed to you)", value: summary.joinToCollect, variant: "owed" },
+                { label: "Join Ride — To Pay (you owe)", value: summary.joinToPay, variant: "owe" },
+                { label: "Unpaid Staff Commissions (you owe)", value: summary.unpaidCommissions, variant: "owe" },
+              ]}
+            />
           </div>
         </div>
       </div>
@@ -159,15 +192,23 @@ export function OverviewTab({
               Collected, open, and pending money movement.
             </div>
           </div>
-          <div className="p-5 flex items-center justify-center gap-4 h-full">
+          <div className="p-5 flex flex-wrap items-center justify-center gap-4 h-full min-w-0">
             <div
-              className="w-[150px] h-[150px] rounded-full grid place-items-center"
+              className="w-[150px] h-[150px] rounded-full grid place-items-center shrink-0"
               style={{
                 background: `conic-gradient(var(--teal) 0deg, var(--teal) ${collectedDeg}deg, var(--orange) ${collectedDeg}deg, var(--orange) ${openDeg}deg, var(--gray-200) ${openDeg}deg)`,
               }}
             >
-              <div className="w-[92px] h-[92px] bg-white rounded-full grid place-items-center text-center font-display text-xl text-navy">
-                {peso(summary.collectedFromDivers + summary.openDiverBills + summary.notYetSettled)}
+              <div className="w-[92px] h-[92px] bg-white rounded-full grid place-items-center text-center font-display text-navy overflow-hidden px-1">
+                <span
+                  className={
+                    peso(summary.collectedFromDivers + summary.openDiverBills + summary.notYetSettled).length > 9
+                      ? "text-xs leading-tight"
+                      : "text-xl leading-tight"
+                  }
+                >
+                  {peso(summary.collectedFromDivers + summary.openDiverBills + summary.notYetSettled)}
+                </span>
               </div>
             </div>
             <div className="grid gap-2 text-sm text-gray-600">

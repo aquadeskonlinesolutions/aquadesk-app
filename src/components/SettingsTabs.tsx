@@ -3,16 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// Order matches the live app's settings.html: Profile, then Staff (its
-// own real tab there — confirmed via tab-staff right after tab-profile in
-// the source), then the rest.
+// The live app's settings.html has these 12 tabs, in this exact order
+// (tab buttons, lines 282-293) — a prior session had consolidated these
+// into 6 rebuild tabs, but the user asked to split back to the real 12
+// once they started using Settings day-to-day and found Fleet/Dive Sites
+// had no click target of their own.
 const TABS = [
   { label: "Profile", href: "/settings/profile" },
   { label: "Staff", href: "/settings/staff" },
+  { label: "Fleet", href: "/settings/fleet" },
   { label: "Pricing & Rates", href: "/settings/pricing" },
-  { label: "Staff Access", href: "/settings/staff-access" },
-  { label: "Waiver & Registration", href: "/settings/waiver" },
-  { label: "Equipment", href: "/settings/equipment" },
+  { label: "Courses", href: "/settings/courses" },
+  { label: "Dive Sites", href: "/settings/dive-sites" },
+  { label: "Equipment Rental", href: "/settings/equipment-rental" },
+  { label: "Exchange Rates", href: "/settings/exchange-rates" },
+  { label: "Waiver", href: "/settings/waiver" },
+  { label: "Inventory", href: "/settings/inventory" },
+  { label: "Passwords", href: "/settings/passwords" },
+  { label: "Access & Permissions", href: "/settings/access" },
 ];
 
 export function SettingsTabs() {

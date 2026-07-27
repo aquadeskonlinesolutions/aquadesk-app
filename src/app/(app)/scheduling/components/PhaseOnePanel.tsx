@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import type { StaffOption, Clip, DiverPickResult, PhaseOneData } from "../data";
+import type { StaffOption, Clip, ClipMember, DiverPickResult, PhaseOneData } from "../data";
 import {
   getPhaseOneData,
   createClip,
@@ -132,6 +132,134 @@ function CreateClipModal({
   );
 }
 
+// A diver's compatibility at a glance — nationality/cert, dive count/age,
+// and fun-diving-vs-course, matching the live app's real mini-cards
+// (scheduling.html's diverLeftLine2/diverLeftLine3/diverExperienceLine) so
+// a secretary can see who's suited to dive together without opening
+// anything. An orange left accent flags course divers, same signal role
+// as the old app's purple border (this codebase's palette has no purple).
+function DiverInfoCard({
+  d,
+}: {
+  d: {
+    firstName: string;
+    lastName: string;
+    certificationLevel: string;
+    nationality: string | null;
+    loggedDives: number;
+    age: number | null;
+    experienceType: "fun_diving" | "dive_course" | null;
+    courseName?: string | null;
+  };
+}) {
+  const isCourse = d.experienceType === "dive_course";
+  return (
+    <div className={`pl-2 border-l-4 ${isCourse ? "border-orange" : "border-transparent"}`}>
+      <div className="font-bold text-navy text-sm leading-tight">
+        {d.firstName} {d.lastName}
+      </div>
+      <div className="text-teal text-xs font-bold leading-tight">
+        {d.nationality || "Unknown"} · {d.certificationLevel || "No cert"}
+      </div>
+      <div className="text-gray-400 text-xs leading-tight">
+        {d.loggedDives} Dive{d.loggedDives === 1 ? "" : "s"}
+        {d.age != null ? `, ${d.age} Years old` : ", age not set"}
+      </div>
+      {d.experienceType && (
+        <div className="text-xs text-gray-500 leading-tight">
+          {isCourse ? `Course${d.courseName ? ` - ${d.courseName}` : ""}` : "Fun Diving"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClipMemberRow({
+  clip,
+  allClips,
+  member,
+  readOnly,
+  moving,
+  onStartMove,
+  onCancelMove,
+  onChanged,
+}: {
+  clip: Clip;
+  allClips: Clip[];
+  member: ClipMember;
+  readOnly: boolean;
+  moving: boolean;
+  onStartMove: () => void;
+  onCancelMove: () => void;
+  onChanged: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+
+  function clipLabel(c: Clip) {
+    return c.source === "manual" ? c.staffName : `${c.staffName} (${c.source === "carryover" ? "carried over" : "returned"})`;
+  }
+
+  return (
+    <div className={`rounded-md ${moving ? "bg-off-white" : ""}`}>
+      <div className="flex items-center justify-between gap-3 py-1.5">
+        <DiverInfoCard d={member} />
+        {!readOnly && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={onStartMove}
+              className="px-2 py-1 text-xs font-medium text-navy border border-gray-200 rounded-md hover:bg-gray-100"
+            >
+              Move
+            </button>
+            <button
+              onClick={() =>
+                startTransition(async () => {
+                  await excludeDiverFromClip(clip.id, member.diverId);
+                  onChanged();
+                })
+              }
+              disabled={pending}
+              className="px-2 py-1 text-xs font-medium text-red border border-red/30 rounded-md hover:bg-red-light"
+            >
+              Exclude
+            </button>
+          </div>
+        )}
+      </div>
+
+      {moving && (
+        <div className="pl-2 pb-2 border-t border-gray-100 pt-2">
+          <div className="text-xs text-gray-500 mb-1">
+            Move {member.firstName} {member.lastName} to:
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {allClips
+              .filter((c) => c.id !== clip.id)
+              .map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() =>
+                    startTransition(async () => {
+                      await moveDiverToClip(member.diverId, clip.id, c.id);
+                      onCancelMove();
+                      onChanged();
+                    })
+                  }
+                  className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-gray-100 bg-white"
+                >
+                  {clipLabel(c)}
+                </button>
+              ))}
+            <button onClick={onCancelMove} className="px-2 py-1 text-xs text-gray-500">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClipCard({
   clip,
   allClips,
@@ -146,7 +274,7 @@ function ClipCard({
   onChanged: () => void;
 }) {
   const [editingStaff, setEditingStaff] = useState(false);
-  const [moving, setMoving] = useState<string | null>(null);
+  const [movingDiverId, setMovingDiverId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const members = clip.members.filter((m) => !m.excluded);
 
@@ -194,68 +322,28 @@ function ClipCard({
                 });
             }}
             disabled={pending}
-            className="text-xs text-red hover:underline"
+            className="px-2 py-1 text-xs font-medium text-red border border-red/30 rounded-md hover:bg-red-light"
           >
             Delete
           </button>
         )}
       </div>
-      <div className="grid gap-1">
+      <div className="grid gap-1 divide-y divide-gray-100">
         {members.map((m) => (
-          <div key={m.diverId} className="flex items-center justify-between text-xs">
-            <span className="text-gray-700">
-              {m.firstName} {m.lastName} <span className="text-gray-400">({m.certificationLevel})</span>
-            </span>
-            {!readOnly && (
-              <div className="flex items-center gap-2">
-                <button onClick={() => setMoving(m.diverId)} className="text-navy hover:underline">
-                  Move
-                </button>
-                <button
-                  onClick={() =>
-                    startTransition(async () => {
-                      await excludeDiverFromClip(clip.id, m.diverId);
-                      onChanged();
-                    })
-                  }
-                  className="text-red hover:underline"
-                >
-                  Exclude
-                </button>
-              </div>
-            )}
-          </div>
+          <ClipMemberRow
+            key={m.diverId}
+            clip={clip}
+            allClips={allClips}
+            member={m}
+            readOnly={readOnly}
+            moving={movingDiverId === m.diverId}
+            onStartMove={() => setMovingDiverId(m.diverId)}
+            onCancelMove={() => setMovingDiverId(null)}
+            onChanged={onChanged}
+          />
         ))}
-        {members.length === 0 && <div className="text-xs text-gray-400">No divers.</div>}
+        {members.length === 0 && <div className="text-xs text-gray-400 py-1">No divers.</div>}
       </div>
-
-      {moving && (
-        <div className="mt-2 border-t border-gray-100 pt-2">
-          <div className="text-xs text-gray-500 mb-1">Move to:</div>
-          <div className="flex flex-wrap gap-1">
-            {allClips
-              .filter((c) => c.id !== clip.id)
-              .map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() =>
-                    startTransition(async () => {
-                      await moveDiverToClip(moving, clip.id, c.id);
-                      setMoving(null);
-                      onChanged();
-                    })
-                  }
-                  className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-gray-100"
-                >
-                  {c.staffName}
-                </button>
-              ))}
-            <button onClick={() => setMoving(null)} className="px-2 py-1 text-xs text-gray-500">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -341,17 +429,22 @@ export function PhaseOnePanel({
             {data.looseDivers.map((d: DiverPickResult) => (
               <label
                 key={d.id}
-                className={`flex items-center gap-2 border rounded-lg px-3 py-2 text-sm cursor-pointer ${
+                className={`flex items-start gap-2 border rounded-lg px-3 py-2 text-sm cursor-pointer ${
                   selected.has(d.id) ? "border-navy bg-off-white" : "border-gray-200"
                 }`}
               >
                 {!readOnly && (
-                  <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggle(d.id)} />
+                  <input
+                    type="checkbox"
+                    checked={selected.has(d.id)}
+                    onChange={() => toggle(d.id)}
+                    className="mt-1"
+                  />
                 )}
-                <span className="flex-1">
-                  {d.firstName} {d.lastName}
-                  {d.groupName && <span className="text-gray-400"> · {d.groupName}</span>}
-                </span>
+                <div className="flex-1">
+                  <DiverInfoCard d={{ ...d, experienceType: d.openVisitExperienceType }} />
+                  {d.groupName && <div className="text-xs text-gray-400 mt-0.5">Group: {d.groupName}</div>}
+                </div>
                 {!readOnly && (
                   <button
                     onClick={(e) => {
@@ -361,7 +454,7 @@ export function PhaseOnePanel({
                         refresh();
                       });
                     }}
-                    className="text-xs text-gray-400 hover:text-red"
+                    className="shrink-0 px-2 py-1 text-xs text-gray-400 border border-gray-200 rounded-md hover:text-red hover:border-red/30"
                   >
                     Not diving today
                   </button>

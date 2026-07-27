@@ -65,7 +65,7 @@ export function Sidebar({ user }: { user: CurrentUser }) {
           </span>
         </div>
 
-        <nav className="flex-1 py-4 overflow-y-auto">
+        <nav className="flex-1 py-4">
           {visibleItems.map((item) => {
             const isActive = pathname.startsWith(item.href);
             return (

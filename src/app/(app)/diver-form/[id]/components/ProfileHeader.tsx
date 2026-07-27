@@ -43,7 +43,7 @@ export function ProfileHeader({
   onEquipmentClick: () => void;
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+    <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
       <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
         <div>
           <div className="font-display text-2xl text-navy">

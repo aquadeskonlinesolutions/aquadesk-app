@@ -3,8 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 
 // ── Pricing engine ──────────────────────────────────────────────────────
 //
-// Reads the already-shipped Settings > Pricing & Rates / Equipment tables —
-// no new config tables. TypeScript, not a Postgres function (see the plan's
+// Reads the already-shipped Settings > Pricing & Rates / Courses / Dive
+// Sites / Equipment Rental tables — no new config tables. TypeScript, not
+// a Postgres function (see the plan's
 // architectural note: the only existing server-side pricing logic in this
 // codebase is compute_activity_total's trivial component sum and
 // calculate_visit_total's trivial aggregate — neither does rate lookup, and
@@ -13,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 // One deliberate deviation from the old app (diver-form.html), verified
 // against this rebuild's real schema/Settings UI, not assumed: package-mode
 // dive-rate resolution uses dive_sites.linked_package_id (a real, already-
-// shipped Settings > Equipment > Dive Sites field — a direct FK, set once
+// shipped Settings > Dive Sites field — a direct FK, set once
 // per site) instead of the old app's fuzzy site-key text matching with a
 // mid-flow "which package?" picker. The FK already resolves the ambiguity
 // the old app needed a picker for, so no picker/visit_rate_selections use
@@ -124,7 +125,7 @@ export async function autoPricePackageMode(diveCenterId: string, diveSiteText: s
     return { ...ZERO_RESULT, fuelSurcharge: fuel, marineTax: marine, sharkFee: shark, note: "No matching dive site configured — enter the dive rate manually." };
   }
   if (!site.linkedPackageId) {
-    return { ...ZERO_RESULT, fuelSurcharge: fuel, marineTax: marine, sharkFee: shark, note: "This dive site has no linked package (set one in Settings > Equipment > Dive Sites) — enter the dive rate manually." };
+    return { ...ZERO_RESULT, fuelSurcharge: fuel, marineTax: marine, sharkFee: shark, note: "This dive site has no linked package (set one in Settings > Dive Sites) — enter the dive rate manually." };
   }
 
   const supabase = await createClient();

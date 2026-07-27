@@ -1,18 +1,15 @@
 import { requireOwner } from "@/lib/dal";
-import { loadStaffAccessData } from "./data";
-import { SecretaryAccountsSection } from "./SecretaryAccountsSection";
+import { loadPasswordsData } from "./data";
 import { PasswordSection } from "./PasswordSection";
 import { WarningBox, InfoBox } from "@/components/settings/SettingsSection";
 import { setOwnerPassword, setBillingPassword } from "./actions";
 
-export default async function SettingsStaffAccessPage() {
+export default async function SettingsPasswordsPage() {
   const user = await requireOwner();
-  const data = await loadStaffAccessData(user.diveCenterId);
+  const data = await loadPasswordsData(user.diveCenterId);
 
   return (
     <div>
-      <SecretaryAccountsSection secretaries={data.secretaries} />
-
       <PasswordSection
         title="Billing Password"
         subtitle="Used by owner and secretary to mark bills as paid or unlock paid bills"

@@ -4,9 +4,12 @@
 // server-only module graph (createClient, next/headers) into the browser
 // bundle and fail to build.
 
-export const DEFAULT_CHARGES: { name: string; subType: string | null }[] = [
-  { name: "Marine Tax", subType: null },
-  { name: "Shark Fee", subType: null },
-  { name: "Fuel Charge — Medium", subType: "medium" },
-  { name: "Fuel Charge — High", subType: "high" },
+export const DEFAULT_COURSES = [
+  { name: "Open Water Diver", rate: 19500 },
+  { name: "Advanced Open Water", rate: 16500 },
+  { name: "Rescue Diver", rate: 11000 },
+  { name: "Divemaster", rate: 100000 },
+  { name: "Instructor", rate: 150000 },
+  { name: "Nitrox", rate: 11000 },
+  { name: "Deep Dive Specialty", rate: 11000 },
 ];

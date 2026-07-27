@@ -327,7 +327,7 @@ export function VisitPanel({
 
   if (!visit) {
     return (
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+      <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
         <div className="text-sm font-extrabold text-navy mb-3">Visit</div>
         {error && <div className="text-sm text-red mb-3">{error}</div>}
         <div className="text-sm text-gray-500 mb-3">No open visit. Start one to log dives or a course.</div>
@@ -343,7 +343,7 @@ export function VisitPanel({
             <button
               onClick={() => setChoosingCourse(true)}
               disabled={pending || courseRates.length === 0}
-              title={courseRates.length === 0 ? "No courses configured in Settings > Pricing & Rates" : undefined}
+              title={courseRates.length === 0 ? "No courses configured in Settings > Courses" : undefined}
               className="px-4 py-2 bg-teal text-white text-sm font-medium rounded-lg hover:bg-teal-mid disabled:opacity-60"
             >
               Start Course Visit
@@ -381,7 +381,7 @@ export function VisitPanel({
   const isEditable = visit.isActive && visit.visitStatus === "open";
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+    <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm">
       <div className="px-5 py-4 border-b border-gray-200 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="text-sm font-extrabold text-navy">

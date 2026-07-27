@@ -44,7 +44,7 @@ export function PricingModeSection({
 
   function handleSwitch() {
     if (!hasOwnerPassword) {
-      setError("Set your owner password first, under Staff Access.");
+      setError("Set your owner password first, under Passwords.");
       return;
     }
     setSwitching(true);

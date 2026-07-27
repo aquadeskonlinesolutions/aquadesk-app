@@ -1,6 +1,21 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 
+// Plain calendar-year arithmetic, same as the old app's diverAge() — no
+// timezone risk since a birthday is a date-only value with no time
+// component to round-trip through a JS Date's local fields.
+function calcAge(birthday: string | null): number | null {
+  if (!birthday) return null;
+  const [y, m, d] = birthday.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const today = new Date();
+  let age = today.getFullYear() - y;
+  const hasHadBirthdayThisYear =
+    today.getMonth() + 1 > m || (today.getMonth() + 1 === m && today.getDate() >= d);
+  if (!hasHadBirthdayThisYear) age--;
+  return age;
+}
+
 export type TripSummary = {
   scheduleId: string;
   boatId: string | null;
@@ -156,6 +171,9 @@ export type DiverPickResult = {
   lastName: string;
   certificationLevel: string;
   nitroxCertified: boolean;
+  nationality: string | null;
+  loggedDives: number;
+  age: number | null;
   groupId: string | null;
   groupName: string | null;
   openVisitId: string | null;
@@ -177,7 +195,9 @@ async function buildDiverPickResults(
     await Promise.all([
       supabase
         .from("divers")
-        .select("id, first_name, last_name, certification_level, nitrox_certified, group_id")
+        .select(
+          "id, first_name, last_name, certification_level, nitrox_certified, nationality, logged_dives, birthday, group_id",
+        )
         .in("id", diverIds),
       supabase
         .from("visits")
@@ -228,6 +248,9 @@ async function buildDiverPickResults(
       lastName: d.last_name,
       certificationLevel: d.certification_level,
       nitroxCertified: d.nitrox_certified,
+      nationality: d.nationality,
+      loggedDives: d.logged_dives ?? 0,
+      age: calcAge(d.birthday),
       groupId: d.group_id,
       groupName: d.group_id ? groupNameById.get(d.group_id) ?? null : null,
       openVisitId: visit?.id ?? null,
@@ -397,10 +420,14 @@ export type ClipMember = {
   lastName: string;
   certificationLevel: string;
   nitroxCertified: boolean;
+  nationality: string | null;
+  loggedDives: number;
+  age: number | null;
   groupId: string | null;
   groupName: string | null;
   excluded: boolean;
   experienceType: "fun_diving" | "dive_course" | null;
+  courseName: string | null;
 };
 
 export type Clip = {
@@ -446,7 +473,9 @@ async function fetchClipsRaw(
   const { data: divers } = diverIds.length
     ? await supabase
         .from("divers")
-        .select("id, first_name, last_name, certification_level, nitrox_certified, group_id")
+        .select(
+          "id, first_name, last_name, certification_level, nitrox_certified, nationality, logged_dives, birthday, group_id",
+        )
         .in("id", diverIds)
     : { data: [] };
   const groupIds = [...new Set((divers ?? []).map((d) => d.group_id).filter(Boolean))] as string[];
@@ -465,34 +494,47 @@ async function fetchClipsRaw(
   const { data: openVisits } = diverIds.length
     ? await supabase
         .from("visits")
-        .select("diver_id, experience_type, created_at")
+        .select("diver_id, experience_type, course_rate_id, created_at")
         .in("diver_id", diverIds)
         .eq("is_active", true)
         .eq("visit_status", "open")
         .order("created_at", { ascending: false })
     : { data: [] };
   const experienceTypeByDiver = new Map<string, "fun_diving" | "dive_course">();
+  const courseRateIdByDiver = new Map<string, string>();
   (openVisits ?? []).forEach((v) => {
     if (!experienceTypeByDiver.has(v.diver_id)) {
       experienceTypeByDiver.set(v.diver_id, v.experience_type as "fun_diving" | "dive_course");
+      if (v.course_rate_id) courseRateIdByDiver.set(v.diver_id, v.course_rate_id);
     }
   });
+
+  const courseRateIds = [...new Set(courseRateIdByDiver.values())];
+  const { data: courseRates } = courseRateIds.length
+    ? await supabase.from("course_rates").select("id, course_name").in("id", courseRateIds)
+    : { data: [] };
+  const courseNameById = new Map((courseRates ?? []).map((c) => [c.id, c.course_name]));
 
   const membersByClip = new Map<string, ClipMember[]>();
   (memberRows ?? []).forEach((m) => {
     const d = diverById.get(m.diver_id);
     if (!d) return;
     const list = membersByClip.get(m.clip_id) ?? [];
+    const courseRateId = courseRateIdByDiver.get(d.id);
     list.push({
       diverId: d.id,
       firstName: d.first_name,
       lastName: d.last_name,
       certificationLevel: d.certification_level,
       nitroxCertified: d.nitrox_certified,
+      nationality: d.nationality,
+      loggedDives: d.logged_dives ?? 0,
+      age: calcAge(d.birthday),
       groupId: d.group_id,
       groupName: d.group_id ? (groupNameById.get(d.group_id) ?? null) : null,
       excluded: m.excluded_on_date,
       experienceType: experienceTypeByDiver.get(d.id) ?? null,
+      courseName: courseRateId ? (courseNameById.get(courseRateId) ?? null) : null,
     });
     membersByClip.set(m.clip_id, list);
   });

@@ -64,7 +64,7 @@ export function DocumentsViewer({ registrations }: { registrations: Registration
         </div>
       )}
 
-      <div className="p-5 grid gap-4">
+      <div className="print:hidden p-5 grid gap-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Arrival</div>
@@ -113,10 +113,15 @@ export function DocumentsViewer({ registrations }: { registrations: Registration
             Waiver {selected.waiverSigned ? `— signed ${fmtDateTime(selected.waiverDate)}` : "— not signed"}
           </div>
           {selected.waiverContentSnapshot && (
-            <div
-              className="text-xs text-gray-600 border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto prose prose-sm"
-              dangerouslySetInnerHTML={{ __html: selected.waiverContentSnapshot }}
-            />
+            <details className="text-xs text-gray-600 border border-gray-200 rounded-lg">
+              <summary className="cursor-pointer select-none px-3 py-2 font-medium text-navy">
+                View full waiver text
+              </summary>
+              <div
+                className="p-3 pt-0 prose prose-sm"
+                dangerouslySetInnerHTML={{ __html: selected.waiverContentSnapshot }}
+              />
+            </details>
           )}
           {selected.waiverSignatureUrl && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -125,6 +130,73 @@ export function DocumentsViewer({ registrations }: { registrations: Registration
               alt="Signature"
               className="mt-2 max-h-24 border border-gray-200 rounded-lg bg-off-white"
             />
+          )}
+        </div>
+      </div>
+
+      {/* Print-only view — everything in full, unlike the condensed on-screen
+          version above: every medical question with its answer (not just
+          the flagged ones), the full waiver text with no scroll clipping,
+          and the signature. */}
+      <div className="hidden print:block p-6">
+        <div className="text-lg font-extrabold text-navy mb-4">Signed Documents — {fmtDateTime(selected.createdAt)}</div>
+
+        <div className="grid grid-cols-4 gap-4 mb-4">
+          <div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Arrival</div>
+            <div className="text-sm font-semibold text-navy">{fmtDate(selected.arrivalDate)}</div>
+          </div>
+          <div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Departure</div>
+            <div className="text-sm font-semibold text-navy">{fmtDate(selected.departureDate)}</div>
+          </div>
+          <div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Accommodation</div>
+            <div className="text-sm font-semibold text-navy">{selected.accommodation || "—"}</div>
+          </div>
+          <div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Certification</div>
+            <div className="text-sm font-semibold text-navy">{selected.certificationLevel || "—"}</div>
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400 mb-1">
+            Medical Declaration
+          </div>
+          {selected.medicalAnswersSnapshot.length > 0 ? (
+            <ul className="text-sm text-gray-700 pl-0" style={{ listStyle: "none" }}>
+              {selected.medicalAnswersSnapshot.map((a, i) => (
+                <li key={i}>
+                  {a.question_text} — <strong>{a.answer === true || a.answer === "yes" ? "Yes" : "No"}</strong>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-sm text-gray-500">No medical questionnaire on file.</div>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400 mb-1">Privacy Consent</div>
+          <div className="text-sm text-gray-700">
+            {selected.privacyConsentAt ? `Consented ${fmtDateTime(selected.privacyConsentAt)}` : "Not on file."}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400 mb-1">
+            Waiver {selected.waiverSigned ? `— signed ${fmtDateTime(selected.waiverDate)}` : "— not signed"}
+          </div>
+          {selected.waiverContentSnapshot && (
+            <div
+              className="text-sm text-gray-700 prose prose-sm"
+              dangerouslySetInnerHTML={{ __html: selected.waiverContentSnapshot }}
+            />
+          )}
+          {selected.waiverSignatureUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={selected.waiverSignatureUrl} alt="Signature" className="mt-2 max-h-24" />
           )}
         </div>
       </div>

@@ -2,31 +2,6 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { TANK_TYPES, GEAR_ITEMS } from "./constants";
 
-export type Boat = {
-  id: string;
-  name: string;
-  boat_type: string | null;
-  fuel_type: string | null;
-  capacity: number | null;
-  captain: string | null;
-  is_active: boolean;
-};
-
-export type DiveSite = {
-  id: string;
-  site_name: string;
-  distance: string | null;
-  fuel_estimate: string;
-  shark_fee: boolean;
-  linked_package_id: string | null;
-  is_active: boolean;
-};
-
-export type PackageOption = {
-  id: string;
-  package_name: string;
-};
-
 export type Tank = {
   id: string | null;
   type: string;
@@ -52,46 +27,20 @@ export type GearItem = {
   lowAlertThreshold: number;
 };
 
-export type EquipmentData = {
-  boats: Boat[];
-  diveSites: DiveSite[];
-  packages: PackageOption[];
-  pricingMode: string | null;
+export type InventoryData = {
   tanks: Tank[];
   fuel: FuelSettings;
   gear: GearItem[];
 };
 
-export async function loadEquipmentData(diveCenterId: string): Promise<EquipmentData> {
+export async function loadInventoryData(diveCenterId: string): Promise<InventoryData> {
   const supabase = await createClient();
 
-  const [
-    { data: boats },
-    { data: diveSites },
-    { data: packages },
-    { data: dc },
-    { data: tankRows },
-    { data: equipmentRows },
-  ] = await Promise.all([
-    supabase
-      .from("boats")
-      .select("id, name, boat_type, fuel_type, capacity, captain, is_active")
-      .eq("dive_center_id", diveCenterId)
-      .order("created_at"),
-    supabase
-      .from("dive_sites")
-      .select("id, site_name, distance, fuel_estimate, shark_fee, linked_package_id, is_active")
-      .eq("dive_center_id", diveCenterId)
-      .order("site_name"),
-    supabase
-      .from("packages")
-      .select("id, package_name")
-      .eq("dive_center_id", diveCenterId)
-      .order("package_name"),
+  const [{ data: dc }, { data: tankRows }, { data: equipmentRows }] = await Promise.all([
     supabase
       .from("dive_centers")
       .select(
-        "pricing_mode, fuel_gasoline_level, fuel_gasoline_threshold, fuel_gasoline_last_reset_at, fuel_diesel_level, fuel_diesel_threshold, fuel_diesel_last_reset_at",
+        "fuel_gasoline_level, fuel_gasoline_threshold, fuel_gasoline_last_reset_at, fuel_diesel_level, fuel_diesel_threshold, fuel_diesel_last_reset_at",
       )
       .eq("id", diveCenterId)
       .single(),
@@ -144,10 +93,6 @@ export async function loadEquipmentData(diveCenterId: string): Promise<Equipment
   });
 
   return {
-    boats: boats ?? [],
-    diveSites: diveSites ?? [],
-    packages: packages ?? [],
-    pricingMode: dc?.pricing_mode ?? null,
     tanks,
     fuel: {
       gasolineLevel: dc?.fuel_gasoline_level ?? null,

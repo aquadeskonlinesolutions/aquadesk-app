@@ -225,7 +225,7 @@ export function StaffFormModal({
                 ))}
               </select>
               <p className="text-xs text-gray-400 mt-1">
-                Secretary logins themselves are created on Settings &gt; Staff Access.
+                Secretary logins themselves are created on Settings &gt; Access &amp; Permissions.
               </p>
             </div>
           )}

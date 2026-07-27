@@ -3,11 +3,7 @@ import { loadPricingData } from "./data";
 import { PricingModeSection } from "./PricingModeSection";
 import { PackagesSection } from "./PackagesSection";
 import { TieredRatesSection } from "./TieredRatesSection";
-import { CourseRatesSection } from "./CourseRatesSection";
-import { EquipmentRentalSection } from "./EquipmentRentalSection";
 import { OtherChargesSection } from "./OtherChargesSection";
-import { SurchargesSection } from "./SurchargesSection";
-import { ExchangeRatesSection } from "./ExchangeRatesSection";
 import { CommissionRatesSection } from "./CommissionRatesSection";
 
 export default async function SettingsPricingPage() {
@@ -24,11 +20,7 @@ export default async function SettingsPricingPage() {
       {data.pricingMode === "package" && <PackagesSection packages={data.packages} />}
       {data.pricingMode === "tier" && <TieredRatesSection tiers={data.rateTiers} />}
 
-      <CourseRatesSection courses={data.courseRates} />
-      <EquipmentRentalSection rates={data.equipmentRentalRates} />
       <OtherChargesSection charges={data.otherCharges} />
-      <SurchargesSection surcharges={data.surcharges} />
-      <ExchangeRatesSection rates={data.exchangeRates} />
       <CommissionRatesSection rates={data.commissionRates} />
     </div>
   );

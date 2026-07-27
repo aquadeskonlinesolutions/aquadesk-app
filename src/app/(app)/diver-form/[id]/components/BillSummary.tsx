@@ -88,7 +88,7 @@ export function BillSummary({
   );
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+    <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm">
       <div className="px-5 py-4 border-b border-gray-200">
         <div className="text-sm font-extrabold text-navy">Bill Summary</div>
         <div className="text-xs text-gray-500 mt-0.5">Payments collected against this visit — doesn&apos;t close the bill.</div>
