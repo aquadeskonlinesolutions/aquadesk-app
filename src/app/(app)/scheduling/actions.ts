@@ -203,7 +203,12 @@ export type TripTeamInput = {
   staffId: string | null;
   staffName: string;
   sourceClipId: string | null;
-  divers: { diverId: string; is15L: boolean; nitroxRequested: boolean }[];
+  divers: {
+    diverId: string;
+    is15L: boolean;
+    nitroxRequested: boolean;
+    experienceType: "fun_diving" | "dive_course" | null;
+  }[];
 };
 
 export async function saveTripTeams(
@@ -235,6 +240,7 @@ export async function saveTripTeams(
       source_clip_id: t.sourceClipId,
       is_15l: d.is15L,
       nitrox_requested: d.nitroxRequested,
+      experience_type: d.experienceType,
     })),
   );
   if (rows.length > 0) {

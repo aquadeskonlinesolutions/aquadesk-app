@@ -400,6 +400,7 @@ export type ClipMember = {
   groupId: string | null;
   groupName: string | null;
   excluded: boolean;
+  experienceType: "fun_diving" | "dive_course" | null;
 };
 
 export type Clip = {
@@ -455,6 +456,28 @@ async function fetchClipsRaw(
   const groupNameById = new Map((groups ?? []).map((g) => [g.id, g.group_name]));
   const diverById = new Map((divers ?? []).map((d) => [d.id, d]));
 
+  // A clip member's experience type isn't stored on the clip itself — it
+  // comes from the diver's current open visit (the same value push-to-
+  // schedule tagged) so it can be carried onto schedule_divers when the
+  // clip is assigned to a trip. /crew's get_crew_schedule RPC reads
+  // schedule_divers.experience_type directly, so this has to be threaded
+  // through all the way to the save, not just displayed here.
+  const { data: openVisits } = diverIds.length
+    ? await supabase
+        .from("visits")
+        .select("diver_id, experience_type, created_at")
+        .in("diver_id", diverIds)
+        .eq("is_active", true)
+        .eq("visit_status", "open")
+        .order("created_at", { ascending: false })
+    : { data: [] };
+  const experienceTypeByDiver = new Map<string, "fun_diving" | "dive_course">();
+  (openVisits ?? []).forEach((v) => {
+    if (!experienceTypeByDiver.has(v.diver_id)) {
+      experienceTypeByDiver.set(v.diver_id, v.experience_type as "fun_diving" | "dive_course");
+    }
+  });
+
   const membersByClip = new Map<string, ClipMember[]>();
   (memberRows ?? []).forEach((m) => {
     const d = diverById.get(m.diver_id);
@@ -469,6 +492,7 @@ async function fetchClipsRaw(
       groupId: d.group_id,
       groupName: d.group_id ? (groupNameById.get(d.group_id) ?? null) : null,
       excluded: m.excluded_on_date,
+      experienceType: experienceTypeByDiver.get(d.id) ?? null,
     });
     membersByClip.set(m.clip_id, list);
   });

@@ -25,6 +25,7 @@ type TeamDiver = {
   nitroxCertified: boolean;
   is15L: boolean;
   nitroxRequested: boolean;
+  experienceType: "fun_diving" | "dive_course" | null;
 };
 
 type Team = {
@@ -79,6 +80,7 @@ function clipToTeam(clip: Clip): Team {
         nitroxCertified: m.nitroxCertified,
         is15L: false,
         nitroxRequested: false,
+        experienceType: m.experienceType,
       })),
   };
 }
@@ -203,6 +205,7 @@ export function TripCard({
             nitroxCertified: r.nitroxCertified,
             is15L: r.is15L,
             nitroxRequested: r.nitroxRequested,
+            experienceType: r.experienceType,
           });
           byKey.set(key, team);
         });
@@ -295,7 +298,12 @@ export function TripCard({
         staffId: t.staffId,
         staffName: t.staffName,
         sourceClipId: t.sourceClipId,
-        divers: t.divers.map((d) => ({ diverId: d.diverId, is15L: d.is15L, nitroxRequested: d.nitroxRequested })),
+        divers: t.divers.map((d) => ({
+          diverId: d.diverId,
+          is15L: d.is15L,
+          nitroxRequested: d.nitroxRequested,
+          experienceType: d.experienceType,
+        })),
       }));
       const teamRes = await saveTripTeams(id, teamInputs);
       if (teamRes.error) {
