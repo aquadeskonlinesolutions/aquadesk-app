@@ -155,6 +155,8 @@ export type TripDetail = {
   isJoiner: boolean;
   joinerBoatName: string | null;
   departureTime: string | null;
+  captain: string | null;
+  crew: string[];
   notes: string | null;
   siteIds: string[];
   fuelConsumedLiters: number | null;
@@ -724,18 +726,17 @@ export async function loadTripDetail(
   const { data: schedule } = await supabase
     .from("schedules")
     .select(
-      "id, schedule_date, boat_id, is_joiner, joiner_boat_name, departure_time, notes, fuel_consumed_liters, closed, cancelled, guest_divers_count, guest_dive_center_name, guest_notes",
+      "id, schedule_date, boat_id, is_joiner, joiner_boat_name, departure_time, captain, notes, fuel_consumed_liters, closed, cancelled, guest_divers_count, guest_dive_center_name, guest_notes",
     )
     .eq("id", scheduleId)
     .eq("dive_center_id", diveCenterId)
     .single();
   if (!schedule) return null;
 
-  const { data: siteRows } = await supabase
-    .from("schedule_sites")
-    .select("dive_site_id")
-    .eq("schedule_id", scheduleId)
-    .order("sort_order");
+  const [{ data: siteRows }, { data: crewRows }] = await Promise.all([
+    supabase.from("schedule_sites").select("dive_site_id").eq("schedule_id", scheduleId).order("sort_order"),
+    supabase.from("schedule_crew").select("crew_name").eq("schedule_id", scheduleId).order("sort_order"),
+  ]);
 
   return {
     scheduleId: schedule.id,
@@ -744,6 +745,8 @@ export async function loadTripDetail(
     isJoiner: schedule.is_joiner,
     joinerBoatName: schedule.joiner_boat_name,
     departureTime: schedule.departure_time,
+    captain: schedule.captain,
+    crew: (crewRows ?? []).map((r) => r.crew_name),
     notes: schedule.notes,
     siteIds: (siteRows ?? []).map((r) => r.dive_site_id),
     fuelConsumedLiters: schedule.fuel_consumed_liters,

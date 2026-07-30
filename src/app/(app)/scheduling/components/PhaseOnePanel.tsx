@@ -432,83 +432,91 @@ export function PhaseOnePanel({
 
   return (
     <div className="grid gap-6">
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-navy">Loose Divers ({data.looseDivers.length})</h3>
-          {!readOnly && selected.size > 0 && (
-            <button
-              onClick={() => setShowCreateClip(true)}
-              className="px-3 py-1.5 text-xs font-medium bg-navy text-white rounded-md hover:bg-navy-dark"
-            >
-              Add to Clip ({selected.size})
-            </button>
+      {/* Loose Divers stays a fixed-width, independently-scrolling sidebar
+          (matching scheduling.html's .available-panel) rather than a
+          full-width grid that grows the whole page taller as more divers
+          are added — the actual mechanism that keeps this usable at 50+
+          divers, not smaller card text (already as compact as it needs to
+          be, see DiverInfoCard). */}
+      <div className="grid md:grid-cols-[20rem_1fr] gap-6 items-start">
+        <div className="md:sticky md:top-4 md:max-h-[calc(100vh-8rem)] md:overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-navy">Loose Divers ({data.looseDivers.length})</h3>
+            {!readOnly && selected.size > 0 && (
+              <button
+                onClick={() => setShowCreateClip(true)}
+                className="px-3 py-1.5 text-xs font-medium bg-navy text-white rounded-md hover:bg-navy-dark"
+              >
+                Add to Clip ({selected.size})
+              </button>
+            )}
+          </div>
+          {data.looseDivers.length === 0 ? (
+            <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg p-4 text-center">
+              No loose divers — everyone ready today is in a clip.
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {data.looseDivers.map((d: DiverPickResult) => (
+                <label
+                  key={d.id}
+                  className={`flex items-start gap-2 border rounded-lg px-3 py-2 text-sm cursor-pointer ${
+                    selected.has(d.id) ? "border-navy bg-off-white" : "border-gray-200"
+                  }`}
+                >
+                  {!readOnly && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(d.id)}
+                      onChange={() => toggle(d.id)}
+                      className="mt-1"
+                    />
+                  )}
+                  <div className="flex-1">
+                    <DiverInfoCard d={{ ...d, experienceType: d.openVisitExperienceType }} />
+                    {d.groupName && <div className="text-xs text-gray-400 mt-0.5">Group: {d.groupName}</div>}
+                  </div>
+                  {!readOnly && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        startTransition(async () => {
+                          await excludeDiverForDay(d.id, scheduleDate);
+                          refresh();
+                        });
+                      }}
+                      className="shrink-0 px-2 py-1 text-xs text-gray-400 border border-gray-200 rounded-md hover:text-red hover:border-red/30"
+                    >
+                      Not diving today
+                    </button>
+                  )}
+                </label>
+              ))}
+            </div>
           )}
         </div>
-        {data.looseDivers.length === 0 ? (
-          <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg p-4 text-center">
-            No loose divers — everyone ready today is in a clip.
-          </div>
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {data.looseDivers.map((d: DiverPickResult) => (
-              <label
-                key={d.id}
-                className={`flex items-start gap-2 border rounded-lg px-3 py-2 text-sm cursor-pointer ${
-                  selected.has(d.id) ? "border-navy bg-off-white" : "border-gray-200"
-                }`}
-              >
-                {!readOnly && (
-                  <input
-                    type="checkbox"
-                    checked={selected.has(d.id)}
-                    onChange={() => toggle(d.id)}
-                    className="mt-1"
-                  />
-                )}
-                <div className="flex-1">
-                  <DiverInfoCard d={{ ...d, experienceType: d.openVisitExperienceType }} />
-                  {d.groupName && <div className="text-xs text-gray-400 mt-0.5">Group: {d.groupName}</div>}
-                </div>
-                {!readOnly && (
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      startTransition(async () => {
-                        await excludeDiverForDay(d.id, scheduleDate);
-                        refresh();
-                      });
-                    }}
-                    className="shrink-0 px-2 py-1 text-xs text-gray-400 border border-gray-200 rounded-md hover:text-red hover:border-red/30"
-                  >
-                    Not diving today
-                  </button>
-                )}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
 
-      <div>
-        <h3 className="text-sm font-semibold text-navy mb-2">Suggested Clips ({data.clips.length})</h3>
-        {data.clips.length === 0 ? (
-          <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg p-4 text-center">
-            No clips yet — select loose divers above and create one.
-          </div>
-        ) : (
-          <div className="grid gap-2">
-            {data.clips.map((c) => (
-              <ClipCard
-                key={c.id}
-                clip={c}
-                allClips={data.clips}
-                staffOptions={staffOptions}
-                readOnly={readOnly}
-                onChanged={refresh}
-              />
-            ))}
-          </div>
-        )}
+        <div>
+          <h3 className="text-sm font-semibold text-navy mb-2">Suggested Clips ({data.clips.length})</h3>
+          {data.clips.length === 0 ? (
+            <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg p-4 text-center">
+              No clips yet — select loose divers above and create one.
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {data.clips.map((c) => (
+                <ClipCard
+                  key={c.id}
+                  clip={c}
+                  allClips={data.clips}
+                  staffOptions={staffOptions}
+                  readOnly={readOnly}
+                  onChanged={refresh}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {data.excludedDivers.length > 0 && (

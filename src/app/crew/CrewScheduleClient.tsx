@@ -25,6 +25,7 @@ type CrewTrip = {
   is_joiner: boolean;
   joiner_boat_name: string | null;
   boat: { name: string | null; captain: string | null } | null;
+  crew: string[];
   dive_sites: string[];
   divers: CrewDiver[];
   tank_tally: { tank_12l: number; tank_15l: number; nitrox: number };
@@ -137,6 +138,9 @@ export function CrewScheduleClient() {
                   </div>
                   {trip.boat?.captain && (
                     <div className="text-xs text-gray-400">Captain: {trip.boat.captain}</div>
+                  )}
+                  {trip.crew.length > 0 && (
+                    <div className="text-xs text-gray-400">Crew: {trip.crew.join(", ")}</div>
                   )}
                 </div>
                 <div className="text-sm text-gray-600 text-right">

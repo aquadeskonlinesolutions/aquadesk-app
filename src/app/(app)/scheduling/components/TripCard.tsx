@@ -48,11 +48,43 @@ function tankAt(tanks: DiverTank[], siteIndex: number): "air_12l" | "nitrox" | "
 // string is an unfilled slot, not a real selection. "+ Add Dive Site"
 // appends more. Filtered down to real, non-empty ids only at save time.
 const MIN_SITE_SLOTS = 3;
+// Crew follows the identical pattern — scheduling.html's real
+// t.crews:['','',''] default, "+ Add Crew" appends more slots.
+const MIN_CREW_SLOTS = 3;
 
 function padSiteSlots(siteIds: string[]): string[] {
   const slots = [...siteIds];
   while (slots.length < MIN_SITE_SLOTS) slots.push("");
   return slots;
+}
+
+function padCrewSlots(crew: string[]): string[] {
+  const slots = [...crew];
+  while (slots.length < MIN_CREW_SLOTS) slots.push("");
+  return slots;
+}
+
+// Departure time is stored as a 24h "HH:MM" string (matching the
+// schedules.departure_time column) but scheduling.html's real UI is 3
+// dropdowns (Hour 1-12 / Minute / AM-PM) — converted at the edges so the
+// stored value/validation stay unchanged.
+const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+
+function to12h(time24: string): { hour: string; minute: string; ampm: "AM" | "PM" } {
+  if (!time24) return { hour: "", minute: "", ampm: "AM" };
+  const [hStr, mStr] = time24.split(":");
+  const h24 = parseInt(hStr, 10);
+  const ampm: "AM" | "PM" = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return { hour: String(h12), minute: mStr ?? "00", ampm };
+}
+
+function to24h(hour: string, minute: string, ampm: "AM" | "PM"): string {
+  if (!hour || !minute) return "";
+  let h = parseInt(hour, 10) % 12;
+  if (ampm === "PM") h += 12;
+  return `${String(h).padStart(2, "0")}:${minute}`;
 }
 
 function emptyForm(scheduleDate: string): TripFormInput {
@@ -62,8 +94,11 @@ function emptyForm(scheduleDate: string): TripFormInput {
     boatId: null,
     joinerBoatName: "",
     departureTime: "",
+    captain: "",
+    crew: padCrewSlots([]),
     siteIds: padSiteSlots([]),
     notes: "",
+    fuelConsumedLiters: null,
     guestDiversCount: null,
     guestDiveCenterName: "",
     guestNotes: "",
@@ -77,8 +112,11 @@ function fromDetail(detail: TripDetail): TripFormInput {
     boatId: detail.boatId,
     joinerBoatName: detail.joinerBoatName ?? "",
     departureTime: detail.departureTime ?? "",
+    captain: detail.captain ?? "",
+    crew: padCrewSlots(detail.crew),
     siteIds: padSiteSlots(detail.siteIds),
     notes: detail.notes ?? "",
+    fuelConsumedLiters: detail.fuelConsumedLiters,
     guestDiversCount: detail.guestDiversCount,
     guestDiveCenterName: detail.guestDiveCenterName ?? "",
     guestNotes: detail.guestNotes ?? "",
@@ -260,6 +298,18 @@ export function TripCard({
     setForm((f) => ({ ...f, siteIds: [...f.siteIds, ""] }));
   }
 
+  function setCrewSlot(index: number, name: string) {
+    setForm((f) => {
+      const crew = [...f.crew];
+      crew[index] = name;
+      return { ...f, crew };
+    });
+  }
+
+  function addCrewSlot() {
+    setForm((f) => ({ ...f, crew: [...f.crew, ""] }));
+  }
+
   function removeDiverFromTeam(teamIndex: number, diverId: string) {
     setTeams((prev) => {
       const next = [...prev];
@@ -318,6 +368,14 @@ export function TripCard({
     }
     if (form.boatMode !== "own_boat" && !form.joinerBoatName.trim()) {
       setError("Boat name is required.");
+      return;
+    }
+    if (form.boatMode === "own_boat" && !form.captain.trim()) {
+      setError("Enter the boat captain before saving this trip.");
+      return;
+    }
+    if (form.boatMode === "own_boat" && (form.fuelConsumedLiters === null || form.fuelConsumedLiters < 0)) {
+      setError("Enter the fuel consumption in liters before saving this trip.");
       return;
     }
     if (teams.length === 0) {
@@ -436,17 +494,64 @@ export function TripCard({
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <div>
+          <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-600 mb-1">Departure Time</label>
-            <input
-              type="time"
-              disabled={locked}
-              value={form.departureTime}
-              onChange={(e) => setForm({ ...form, departureTime: e.target.value })}
-              className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-            />
+            <div className="grid grid-cols-3 gap-2">
+              {(() => {
+                const dt = to12h(form.departureTime);
+                return (
+                  <>
+                    <select
+                      disabled={locked}
+                      value={dt.hour}
+                      onChange={(e) =>
+                        setForm({ ...form, departureTime: to24h(e.target.value, dt.minute || "00", dt.ampm) })
+                      }
+                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                    >
+                      <option value="">Hour</option>
+                      {HOURS.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      disabled={locked}
+                      value={dt.minute}
+                      onChange={(e) =>
+                        setForm({ ...form, departureTime: to24h(dt.hour || "12", e.target.value, dt.ampm) })
+                      }
+                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                    >
+                      <option value="">Min</option>
+                      {MINUTES.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      disabled={locked}
+                      value={dt.ampm}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          departureTime: to24h(dt.hour || "12", dt.minute || "00", e.target.value as "AM" | "PM"),
+                        })
+                      }
+                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                    >
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
+                  </>
+                );
+              })()}
+            </div>
           </div>
-          <div>
+
+          <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-600 mb-1">Boat</label>
             <div className="inline-flex border border-gray-200 rounded-md overflow-hidden w-full">
               {BOAT_MODE_OPTIONS.map(([value, label]) => (
@@ -497,66 +602,79 @@ export function TripCard({
             </div>
           )}
 
-          {(form.boatMode === "own_boat" || form.boatMode === "rental") && (
-            <div className="col-span-2 grid grid-cols-3 gap-3 border border-gray-200 rounded-md p-3 bg-gray-50">
-              <div className="col-span-3 text-xs font-medium text-gray-500">
-                Other divers joining this boat (optional)
+          {form.boatMode === "own_boat" && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Boat Captain</label>
+                <input
+                  disabled={locked}
+                  value={form.captain}
+                  onChange={(e) => setForm({ ...form, captain: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Divers Joining</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fuel Consumption (L)</label>
                 <input
                   type="number"
                   min={0}
                   disabled={locked}
-                  value={form.guestDiversCount ?? ""}
+                  value={form.fuelConsumedLiters ?? ""}
                   onChange={(e) =>
-                    setForm({ ...form, guestDiversCount: e.target.value === "" ? null : Number(e.target.value) })
+                    setForm({
+                      ...form,
+                      fuelConsumedLiters: e.target.value === "" ? null : Number(e.target.value),
+                    })
                   }
                   className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
                 />
               </div>
+
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Their Dive Center</label>
-                <input
-                  disabled={locked}
-                  value={form.guestDiveCenterName}
-                  onChange={(e) => setForm({ ...form, guestDiveCenterName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Dive Crew</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {form.crew.map((name, i) => (
+                    <input
+                      key={i}
+                      disabled={locked}
+                      value={name}
+                      placeholder={`Crew ${i + 1}`}
+                      onChange={(e) => setCrewSlot(i, e.target.value)}
+                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                    />
+                  ))}
+                </div>
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={addCrewSlot}
+                    className="mt-2 px-2.5 py-1 text-xs font-medium text-navy border border-gray-300 rounded-md hover:bg-gray-100"
+                  >
+                    + Add Crew
+                  </button>
+                )}
               </div>
-              <div className="col-span-3">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-                <textarea
-                  disabled={locked}
-                  value={form.guestNotes}
-                  onChange={(e) => setForm({ ...form, guestNotes: e.target.value })}
-                  rows={2}
-                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                />
-              </div>
-            </div>
+            </>
           )}
 
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-600 mb-1">Dive Sites</label>
-            <div className="grid gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {form.siteIds.map((siteId, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-16 shrink-0">Dive Site {i + 1}</span>
-                  <select
-                    disabled={locked}
-                    value={siteId}
-                    onChange={(e) => setSiteSlot(i, e.target.value)}
-                    className="flex-1 border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                  >
-                    <option value="">— Select site —</option>
-                    {diveSites.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.siteName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <select
+                  key={i}
+                  disabled={locked}
+                  value={siteId}
+                  onChange={(e) => setSiteSlot(i, e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                >
+                  <option value="">Dive {i + 1} — Select site</option>
+                  {diveSites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.siteName}
+                    </option>
+                  ))}
+                </select>
               ))}
             </div>
             {!locked && (
@@ -698,6 +816,46 @@ export function TripCard({
             />
           </div>
         </div>
+
+        {(form.boatMode === "own_boat" || form.boatMode === "rental") && (
+          <div className="grid grid-cols-3 gap-3 border border-gray-200 rounded-md p-3 bg-gray-50">
+            <div className="col-span-3 text-xs font-medium text-gray-500">
+              Other divers joining this boat (optional)
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Divers Joining</label>
+              <input
+                type="number"
+                min={0}
+                disabled={locked}
+                value={form.guestDiversCount ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, guestDiversCount: e.target.value === "" ? null : Number(e.target.value) })
+                }
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Their Dive Center</label>
+              <input
+                disabled={locked}
+                value={form.guestDiveCenterName}
+                onChange={(e) => setForm({ ...form, guestDiveCenterName: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+              />
+            </div>
+            <div className="col-span-3">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+              <textarea
+                disabled={locked}
+                value={form.guestNotes}
+                onChange={(e) => setForm({ ...form, guestNotes: e.target.value })}
+                rows={2}
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {!readOnly && (

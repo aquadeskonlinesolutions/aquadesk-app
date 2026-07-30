@@ -72,7 +72,10 @@ function tripPreviewText(
   lines.push(detail.isJoiner ? (detail.joinerBoatName ?? "Join Ride") : (boat?.name ?? "Boat"));
   lines.push(`Date: ${detail.scheduleDate}`);
   if (detail.departureTime) lines.push(`Departure: ${detail.departureTime}`);
-  if (boat?.captain) lines.push(`Captain: ${boat.captain}`);
+  if (!detail.isJoiner) {
+    lines.push(`Captain: ${detail.captain || "-"}`);
+    lines.push(`Crew: ${detail.crew.length ? detail.crew.join(", ") : "-"}`);
+  }
   if (siteCount > 0) {
     lines.push(detail.siteIds.map((id, i) => `Dive ${i + 1} - ${siteNameById.get(id) ?? "Site"}`).join(" | "));
   }
@@ -149,7 +152,6 @@ function TripSummaryCard({
   const [detail, setDetail] = useState<TripDetail | null>(null);
   const [divers, setDivers] = useState<ScheduleDiverRow[]>([]);
   const [staffTanks, setStaffTanks] = useState<StaffDiveTanks[]>([]);
-  const [fuelLiters, setFuelLiters] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[] | null>(null);
   const [duplicates, setDuplicates] = useState<{ diverId: string; name: string }[] | null>(null);
@@ -183,7 +185,7 @@ function TripSummaryCard({
     setError(null);
     setSkipped(null);
     startTransition(async () => {
-      const res = await markBoatReturned(scheduleId, fuelLiters.trim() ? Number(fuelLiters) : null, options);
+      const res = await markBoatReturned(scheduleId, options);
       if (res.error) {
         setError(res.error);
       } else if (res.duplicates && res.duplicates.length > 0) {
@@ -205,7 +207,8 @@ function TripSummaryCard({
             {detail.isJoiner ? (detail.joinerBoatName ?? "Join Ride") : (boat?.name ?? "Boat")}
           </div>
           <div className="text-xs text-gray-500">
-            {detail.departureTime ?? "No time"} {boat?.captain ? `· Captain ${boat.captain}` : ""}
+            {detail.departureTime ?? "No time"} {detail.captain ? `· Captain ${detail.captain}` : ""}
+            {detail.crew.length > 0 ? ` · Crew: ${detail.crew.join(", ")}` : ""}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -285,16 +288,9 @@ function TripSummaryCard({
 
       {!detail.closed && !detail.cancelled && !duplicates && (
         <div className="border-t border-gray-200 pt-3 flex items-end gap-3 flex-wrap">
-          {!detail.isJoiner && (
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Fuel Consumed (liters)</label>
-              <input
-                type="number"
-                min={0}
-                value={fuelLiters}
-                onChange={(e) => setFuelLiters(e.target.value)}
-                className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm w-32"
-              />
+          {!detail.isJoiner && detail.fuelConsumedLiters != null && (
+            <div className="text-xs text-gray-500">
+              Fuel Consumed: <span className="font-medium text-navy">{detail.fuelConsumedLiters} L</span>
             </div>
           )}
           <button

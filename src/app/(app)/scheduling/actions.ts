@@ -59,8 +59,11 @@ export type TripFormInput = {
   boatId: string | null;
   joinerBoatName: string;
   departureTime: string;
+  captain: string;
+  crew: string[];
   siteIds: string[];
   notes: string;
+  fuelConsumedLiters: number | null;
   guestDiversCount: number | null;
   guestDiveCenterName: string;
   guestNotes: string;
@@ -84,12 +87,45 @@ async function replaceScheduleSites(
   );
 }
 
+async function replaceScheduleCrew(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  diveCenterId: string,
+  scheduleId: string,
+  crew: string[],
+) {
+  await supabase.from("schedule_crew").delete().eq("schedule_id", scheduleId);
+  const names = crew.map((c) => c.trim()).filter(Boolean);
+  if (names.length === 0) return;
+  await supabase.from("schedule_crew").insert(
+    names.map((crewName, index) => ({
+      dive_center_id: diveCenterId,
+      schedule_id: scheduleId,
+      crew_name: crewName,
+      sort_order: index,
+    })),
+  );
+}
+
+// Matches scheduling.html's validateTrip: an own-boat trip needs a
+// captain name and a non-negative fuel figure before it can be saved —
+// join-ride/rental trips need neither (no boat of ours to fuel/crew).
+function validateOwnBoatFields(input: TripFormInput): string | null {
+  if (input.boatMode !== "own_boat") return null;
+  if (!input.captain.trim()) return "Enter the boat captain before saving this trip.";
+  if (input.fuelConsumedLiters === null || input.fuelConsumedLiters < 0) {
+    return "Enter the fuel consumption in liters before saving this trip.";
+  }
+  return null;
+}
+
 export async function createTrip(
   input: TripFormInput,
 ): Promise<{ error?: string; scheduleId?: string }> {
   const user = await getCurrentUser();
   if (!input.scheduleDate) return fail("A date is required.");
   if (input.siteIds.length === 0) return fail("At least one dive site is required.");
+  const validationError = validateOwnBoatFields(input);
+  if (validationError) return fail(validationError);
   const supabase = await createClient();
 
   const isJoiner = input.boatMode !== "own_boat";
@@ -102,7 +138,9 @@ export async function createTrip(
       is_joiner: isJoiner,
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
+      captain: isJoiner ? null : input.captain.trim() || null,
       notes: input.notes.trim() || null,
+      fuel_consumed_liters: isJoiner ? null : input.fuelConsumedLiters,
       guest_divers_count: input.guestDiversCount || null,
       guest_dive_center_name: input.guestDiveCenterName.trim() || null,
       guest_notes: input.guestNotes.trim() || null,
@@ -112,7 +150,10 @@ export async function createTrip(
     .single();
 
   if (error) return fail(error.message);
-  await replaceScheduleSites(supabase, user.diveCenterId, data.id, input.siteIds);
+  await Promise.all([
+    replaceScheduleSites(supabase, user.diveCenterId, data.id, input.siteIds),
+    replaceScheduleCrew(supabase, user.diveCenterId, data.id, isJoiner ? [] : input.crew),
+  ]);
 
   revalidatePath("/scheduling");
   return { scheduleId: data.id };
@@ -125,6 +166,8 @@ export async function updateTrip(
   const user = await getCurrentUser();
   if (!input.scheduleDate) return fail("A date is required.");
   if (input.siteIds.length === 0) return fail("At least one dive site is required.");
+  const validationError = validateOwnBoatFields(input);
+  if (validationError) return fail(validationError);
   const supabase = await createClient();
 
   const isJoiner = input.boatMode !== "own_boat";
@@ -136,7 +179,9 @@ export async function updateTrip(
       is_joiner: isJoiner,
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
+      captain: isJoiner ? null : input.captain.trim() || null,
       notes: input.notes.trim() || null,
+      fuel_consumed_liters: isJoiner ? null : input.fuelConsumedLiters,
       guest_divers_count: input.guestDiversCount || null,
       guest_dive_center_name: input.guestDiveCenterName.trim() || null,
       guest_notes: input.guestNotes.trim() || null,
@@ -145,7 +190,10 @@ export async function updateTrip(
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return fail(error.message);
-  await replaceScheduleSites(supabase, user.diveCenterId, scheduleId, input.siteIds);
+  await Promise.all([
+    replaceScheduleSites(supabase, user.diveCenterId, scheduleId, input.siteIds),
+    replaceScheduleCrew(supabase, user.diveCenterId, scheduleId, isJoiner ? [] : input.crew),
+  ]);
   return ok();
 }
 
@@ -496,7 +544,6 @@ function nowManilaMinute(): string {
 // manual-edit flow, per the explicit user decision behind this build.
 export async function markBoatReturned(
   scheduleId: string,
-  fuelLitersConsumed: number | null,
   options: { excludeDiverIds?: string[]; forceProceed?: boolean } = {},
 ): Promise<{
   error?: string;
@@ -509,13 +556,14 @@ export async function markBoatReturned(
 
   const { data: schedule } = await supabase
     .from("schedules")
-    .select("id, schedule_date, departure_time, is_joiner, boat_id, closed, cancelled")
+    .select("id, schedule_date, departure_time, is_joiner, boat_id, fuel_consumed_liters, closed, cancelled")
     .eq("id", scheduleId)
     .eq("dive_center_id", user.diveCenterId)
     .single();
   if (!schedule) return fail("Trip not found.");
   if (schedule.closed) return fail("This trip is already closed.");
   if (schedule.cancelled) return fail("A cancelled trip can't be closed.");
+  const fuelLitersConsumed = schedule.fuel_consumed_liters;
 
   if (schedule.departure_time) {
     const departureAt = `${schedule.schedule_date}T${schedule.departure_time.slice(0, 5)}`;
@@ -527,7 +575,7 @@ export async function markBoatReturned(
   const [{ data: diverRows }, { data: siteRows }] = await Promise.all([
     supabase
       .from("schedule_divers")
-      .select("diver_id, staff_id")
+      .select("id, diver_id, staff_id")
       .eq("dive_center_id", user.diveCenterId)
       .eq("schedule_id", scheduleId),
     supabase
@@ -536,6 +584,24 @@ export async function markBoatReturned(
       .eq("schedule_id", scheduleId)
       .order("sort_order"),
   ]);
+
+  // Per-dive nitrox/15L tank choice, keyed by (schedule_diver_id,
+  // site_index) — the source of truth Diver Form's "Apply Charges" bulk
+  // action reads via each created activities row's own flags column,
+  // matching the live app's real data flow (Boat Return is the only
+  // writer of these flags; diver-form.html never exposes a checkbox).
+  const scheduleDiverIds = (diverRows ?? []).map((r) => r.id);
+  const { data: tankRows } = scheduleDiverIds.length
+    ? await supabase
+        .from("schedule_diver_dive_tanks")
+        .select("schedule_diver_id, site_index, tank_type")
+        .in("schedule_diver_id", scheduleDiverIds)
+    : { data: [] };
+  const tanksByScheduleDiver = new Map<string, Map<number, string>>();
+  for (const t of tankRows ?? []) {
+    if (!tanksByScheduleDiver.has(t.schedule_diver_id)) tanksByScheduleDiver.set(t.schedule_diver_id, new Map());
+    tanksByScheduleDiver.get(t.schedule_diver_id)!.set(t.site_index, t.tank_type);
+  }
 
   const siteNames = (siteRows ?? [])
     .map((r) => {
@@ -609,7 +675,9 @@ export async function markBoatReturned(
 
     const staffName = row.staff_id ? staffNameById.get(row.staff_id) ?? null : null;
     const sitesForRow = siteNames.length > 0 ? siteNames : [null];
-    for (const siteName of sitesForRow) {
+    const diverTanks = tanksByScheduleDiver.get(row.id);
+    sitesForRow.forEach((siteName, siteIndex) => {
+      const tankType = diverTanks?.get(siteIndex) ?? null;
       activityRows.push({
         dive_center_id: user.diveCenterId,
         diver_id: row.diver_id,
@@ -619,8 +687,14 @@ export async function markBoatReturned(
         dive_site: siteName,
         staff_name: staffName,
         status: "completed",
+        flags:
+          tankType === "nitrox"
+            ? { nitrox_requested: true }
+            : tankType === "air_15l"
+              ? { tank_15l_requested: true }
+              : null,
       });
-    }
+    });
   }
 
   if (activityRows.length > 0) {

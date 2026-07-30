@@ -294,9 +294,18 @@ export type AutoPriceRequest = {
   activityId: string;
   date: string;
   diveSite: string;
-  wantsNitrox: boolean;
-  wants15L: boolean;
 };
+
+// Nitrox/15L are never a client-facing checkbox in this codebase (matching
+// diver-form.html — there is no such checkbox in the live app either): a
+// diver's per-dive tank choice is set upstream, once, by Scheduling's Boat
+// Return step (schedule_diver_dive_tanks → activities.flags), and both
+// this per-row path and the bulk applyChargesToVisit below read that same
+// stored flag rather than any UI toggle.
+function tankFlagsFromRow(flags: unknown): { wantsNitrox: boolean; wants15L: boolean } {
+  const f = (flags ?? {}) as { nitrox_requested?: boolean; tank_15l_requested?: boolean };
+  return { wantsNitrox: f.nitrox_requested === true, wants15L: f.tank_15l_requested === true };
+}
 
 export async function autoPriceActivityRow(
   request: AutoPriceRequest,
@@ -323,13 +332,15 @@ export async function autoPriceActivityRow(
     supabase.from("dive_centers").select("pricing_mode").eq("id", user.diveCenterId).single(),
     supabase
       .from("activities")
-      .select("id, date, status, fuel_surcharge, marine_tax, shark_fee")
+      .select("id, date, status, fuel_surcharge, marine_tax, shark_fee, flags")
       .eq("visit_id", request.visitId)
       .neq("status", "cancelled"),
   ]);
 
   if (!visit) return { error: "Visit not found." };
 
+  const ownRow = (siblingsRaw ?? []).find((a) => a.id === request.activityId);
+  const { wantsNitrox, wants15L } = tankFlagsFromRow(ownRow?.flags);
   const siblings = (siblingsRaw ?? []).filter((a) => a.id !== request.activityId);
   const cumulativeDiveCount = (siblingsRaw ?? []).length; // includes this row if already non-cancelled
 
@@ -343,8 +354,8 @@ export async function autoPriceActivityRow(
       user.diveCenterId,
       request.diveSite,
       Math.max(1, cumulativeDiveCount),
-      request.wantsNitrox,
-      request.wants15L,
+      wantsNitrox,
+      wants15L,
     );
   } else {
     return { error: "This dive center has no pricing mode configured yet (see Settings > Pricing & Rates)." };
@@ -383,6 +394,109 @@ export async function autoPriceActivityRow(
     fifteenLFee: result.fifteenLFee,
     note: result.note,
   };
+}
+
+// The visit-level "Apply Charges" action — modeled directly on
+// diver-form.html's real recalculateAllRows(), the *only* pricing-recompute
+// mechanism in the live app (there is no per-row auto-price there at all).
+// Walks every non-cancelled activity in date order, recomputing a
+// retroactive tier dive rate from a real running cumulative dive count and
+// applying per-day charge-cadence dedup across the whole visit in one
+// pass — a different (more correct) cadence check than the single-row
+// autoPriceActivityRow above, which can only compare against already-saved
+// sibling values.
+export async function applyChargesToVisit(
+  diverId: string,
+  visitId: string,
+): Promise<{ error?: string; updatedCount?: number; missingRateCount?: number }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  const [{ data: visit }, { data: dc }, { data: rowsRaw }] = await Promise.all([
+    supabase
+      .from("visits")
+      .select("experience_type, course_rate_id")
+      .eq("id", visitId)
+      .eq("dive_center_id", user.diveCenterId)
+      .single(),
+    supabase.from("dive_centers").select("pricing_mode").eq("id", user.diveCenterId).single(),
+    supabase
+      .from("activities")
+      .select("id, date, dive_site, flags")
+      .eq("visit_id", visitId)
+      .eq("dive_center_id", user.diveCenterId)
+      .neq("status", "cancelled")
+      .order("date", { ascending: true })
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (!visit) return { error: "Visit not found." };
+  const rows = rowsRaw ?? [];
+  if (rows.length === 0) return { updatedCount: 0 };
+
+  const isCourse = visit.experience_type === "dive_course";
+  const cadence = isCourse ? null : await getChargeCadence(user.diveCenterId);
+  const seenPerDayCharge = {
+    marineTax: new Set<string>(),
+    sharkFee: new Set<string>(),
+    fuel: new Set<string>(),
+  };
+
+  let updatedCount = 0;
+  let missingRateCount = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const cumulativeDiveCount = i + 1;
+    const { wantsNitrox, wants15L } = tankFlagsFromRow(row.flags);
+    const diveSiteText = row.dive_site ?? "";
+
+    let result;
+    if (isCourse) {
+      result = await autoPriceCourseMode(user.diveCenterId, visit.course_rate_id);
+    } else if (dc?.pricing_mode === "package") {
+      result = await autoPricePackageMode(user.diveCenterId, diveSiteText);
+    } else if (dc?.pricing_mode === "tier") {
+      result = await autoPriceTierMode(user.diveCenterId, diveSiteText, cumulativeDiveCount, wantsNitrox, wants15L);
+    } else {
+      return { error: "This dive center has no pricing mode configured yet (see Settings > Pricing & Rates)." };
+    }
+
+    if (cadence) {
+      if (cadence.marineTax === "per_day") {
+        if (seenPerDayCharge.marineTax.has(row.date)) result.marineTax = 0;
+        else if (result.marineTax > 0) seenPerDayCharge.marineTax.add(row.date);
+      }
+      if (cadence.sharkFee === "per_day") {
+        if (seenPerDayCharge.sharkFee.has(row.date)) result.sharkFee = 0;
+        else if (result.sharkFee > 0) seenPerDayCharge.sharkFee.add(row.date);
+      }
+      if (cadence.fuelMedium === "per_day" || cadence.fuelHigh === "per_day") {
+        if (seenPerDayCharge.fuel.has(row.date)) result.fuelSurcharge = 0;
+        else if (result.fuelSurcharge > 0) seenPerDayCharge.fuel.add(row.date);
+      }
+    }
+
+    if (!isCourse && result.diveRate === 0) missingRateCount++;
+
+    const { error } = await supabase
+      .from("activities")
+      .update({
+        dive_rate: result.diveRate,
+        fuel_surcharge: result.fuelSurcharge,
+        marine_tax: result.marineTax,
+        shark_fee: result.sharkFee,
+        nitrox_fee: result.nitroxFee,
+        fifteen_l_fee: result.fifteenLFee,
+      })
+      .eq("id", row.id)
+      .eq("dive_center_id", user.diveCenterId);
+    if (error) return { error: error.message };
+    updatedCount++;
+  }
+
+  revalidatePath(`/diver-form/${diverId}`);
+  return { updatedCount, missingRateCount };
 }
 
 // Hard-delete, only when the visit has zero activities and zero payments —

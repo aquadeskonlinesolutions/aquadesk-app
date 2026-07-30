@@ -8,6 +8,7 @@ import {
   deleteActivityRow,
   voidVisit,
   autoPriceActivityRow,
+  applyChargesToVisit,
   type ActivityFields,
 } from "../actions";
 import type { Activity, Visit, CourseRateOption } from "../data";
@@ -48,22 +49,18 @@ function toFields(a: Activity): ActivityFields {
 function ActivityRow({
   diverId,
   visitId,
-  isCourseVisit,
   activity,
   onChanged,
   onDeleted,
 }: {
   diverId: string;
   visitId: string;
-  isCourseVisit: boolean;
   activity: Activity;
   onChanged: (a: Activity) => void;
   onDeleted: (id: string) => void;
 }) {
   const [fields, setFields] = useState<ActivityFields>(toFields(activity));
   const [dirty, setDirty] = useState(false);
-  const [wantsNitrox, setWantsNitrox] = useState(activity.nitroxFee > 0);
-  const [wants15L, setWants15L] = useState(activity.fifteenLFee > 0);
   const [note, setNote] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -80,8 +77,6 @@ function ActivityRow({
         activityId: activity.id,
         date: fields.date,
         diveSite: fields.diveSite,
-        wantsNitrox,
-        wants15L,
       });
       if (res.error) {
         setNote(res.error);
@@ -204,18 +199,6 @@ function ActivityRow({
       </td>
       <td className="px-2 py-2 text-right font-semibold text-navy whitespace-nowrap">{peso(activity.total)}</td>
       <td className="px-2 py-2 min-w-[160px]">
-        {!isCourseVisit && (
-          <div className="flex gap-2 mb-1 text-[11px] text-gray-500">
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input type="checkbox" checked={wantsNitrox} onChange={(e) => setWantsNitrox(e.target.checked)} />
-              Nitrox
-            </label>
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input type="checkbox" checked={wants15L} onChange={(e) => setWants15L(e.target.checked)} />
-              15L
-            </label>
-          </div>
-        )}
         {note && <div className="text-[11px] text-orange mb-1">{note}</div>}
         <div className="flex gap-1.5 flex-wrap">
           <button
@@ -321,6 +304,29 @@ export function VisitPanel({
     });
   }
 
+  // Matches diver-form.html's "↺ Apply Charges" — recomputes every
+  // non-cancelled row's dive rate/fees at once (retroactive tier count,
+  // per-day cadence dedup, nitrox/15L from each row's own stored flags).
+  // Reloads afterward, same as Add Activity/bill-unlock — this affects
+  // every row at once, not one piece of local state to hand-patch.
+  function applyCharges() {
+    if (!visit) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await applyChargesToVisit(diverId, visit.id);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      if (res.missingRateCount) {
+        window.alert(
+          `Charges applied. ${res.missingRateCount} row(s) have no configured dive rate — enter those manually.`,
+        );
+      }
+      window.location.reload();
+    });
+  }
+
   const grandTotal = activities
     .filter((a) => a.status !== "cancelled")
     .reduce((s, a) => s + a.total, 0);
@@ -401,6 +407,15 @@ export function VisitPanel({
             >
               + Add Activity
             </button>
+            {activities.length > 0 && (
+              <button
+                onClick={applyCharges}
+                disabled={pending}
+                className="px-3 py-1.5 text-xs font-medium bg-navy text-white rounded-md hover:bg-navy-dark disabled:opacity-60"
+              >
+                ↺ Apply Charges
+              </button>
+            )}
             {activities.length === 0 && (
               <button
                 onClick={handleVoid}
@@ -451,7 +466,6 @@ export function VisitPanel({
                     key={a.id}
                     diverId={diverId}
                     visitId={visit.id}
-                    isCourseVisit={visit.experienceType === "dive_course"}
                     activity={a}
                     onChanged={(updated) =>
                       setActivities((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
