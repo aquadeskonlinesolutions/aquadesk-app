@@ -289,13 +289,6 @@ export async function deleteActivityRow(diverId: string, activityId: string): Pr
   return {};
 }
 
-export type AutoPriceRequest = {
-  visitId: string;
-  activityId: string;
-  date: string;
-  diveSite: string;
-};
-
 // Nitrox/15L are never a client-facing checkbox in this codebase (matching
 // diver-form.html — there is no such checkbox in the live app either): a
 // diver's per-dive tank choice is set upstream, once, by Scheduling's Boat
@@ -307,104 +300,14 @@ function tankFlagsFromRow(flags: unknown): { wantsNitrox: boolean; wants15L: boo
   return { wantsNitrox: f.nitrox_requested === true, wants15L: f.tank_15l_requested === true };
 }
 
-export async function autoPriceActivityRow(
-  request: AutoPriceRequest,
-): Promise<{
-  error?: string;
-  note?: string | null;
-  diveRate?: number;
-  fuelSurcharge?: number;
-  marineTax?: number;
-  sharkFee?: number;
-  nitroxFee?: number;
-  fifteenLFee?: number;
-}> {
-  const user = await getCurrentUser();
-  const supabase = await createClient();
-
-  const [{ data: visit }, { data: dc }, { data: siblingsRaw }] = await Promise.all([
-    supabase
-      .from("visits")
-      .select("experience_type, course_rate_id")
-      .eq("id", request.visitId)
-      .eq("dive_center_id", user.diveCenterId)
-      .single(),
-    supabase.from("dive_centers").select("pricing_mode").eq("id", user.diveCenterId).single(),
-    supabase
-      .from("activities")
-      .select("id, date, status, fuel_surcharge, marine_tax, shark_fee, flags")
-      .eq("visit_id", request.visitId)
-      .neq("status", "cancelled"),
-  ]);
-
-  if (!visit) return { error: "Visit not found." };
-
-  const ownRow = (siblingsRaw ?? []).find((a) => a.id === request.activityId);
-  const { wantsNitrox, wants15L } = tankFlagsFromRow(ownRow?.flags);
-  const siblings = (siblingsRaw ?? []).filter((a) => a.id !== request.activityId);
-  const cumulativeDiveCount = (siblingsRaw ?? []).length; // includes this row if already non-cancelled
-
-  let result;
-  if (visit.experience_type === "dive_course") {
-    result = await autoPriceCourseMode(user.diveCenterId, visit.course_rate_id);
-  } else if (dc?.pricing_mode === "package") {
-    result = await autoPricePackageMode(user.diveCenterId, request.diveSite);
-  } else if (dc?.pricing_mode === "tier") {
-    result = await autoPriceTierMode(
-      user.diveCenterId,
-      request.diveSite,
-      Math.max(1, cumulativeDiveCount),
-      wantsNitrox,
-      wants15L,
-    );
-  } else {
-    return { error: "This dive center has no pricing mode configured yet (see Settings > Pricing & Rates)." };
-  }
-
-  // Per-day cadence: zero out a charge if an earlier row already carries it
-  // for the same calendar date and that charge is configured as per_day.
-  if (visit.experience_type !== "dive_course") {
-    const cadence = await getChargeCadence(user.diveCenterId);
-    const sameDaySiblings = siblings.filter((s) => s.date === request.date);
-    if (cadence.marineTax === "per_day" && sameDaySiblings.some((s) => Number(s.marine_tax) > 0)) {
-      result.marineTax = 0;
-    }
-    if (cadence.sharkFee === "per_day" && sameDaySiblings.some((s) => Number(s.shark_fee) > 0)) {
-      result.sharkFee = 0;
-    }
-    // Fuel charge cadence looked up per matched level (medium/high) — since
-    // the row's own resolved amount already picks the right level, checking
-    // cadence for either fuel sub-type against a sibling's existing
-    // fuel_surcharge is a reasonable proxy without re-resolving the sibling's
-    // own site.
-    if (
-      (cadence.fuelMedium === "per_day" || cadence.fuelHigh === "per_day") &&
-      sameDaySiblings.some((s) => Number(s.fuel_surcharge) > 0)
-    ) {
-      result.fuelSurcharge = 0;
-    }
-  }
-
-  return {
-    diveRate: result.diveRate,
-    fuelSurcharge: result.fuelSurcharge,
-    marineTax: result.marineTax,
-    sharkFee: result.sharkFee,
-    nitroxFee: result.nitroxFee,
-    fifteenLFee: result.fifteenLFee,
-    note: result.note,
-  };
-}
-
 // The visit-level "Apply Charges" action — modeled directly on
 // diver-form.html's real recalculateAllRows(), the *only* pricing-recompute
-// mechanism in the live app (there is no per-row auto-price there at all).
-// Walks every non-cancelled activity in date order, recomputing a
-// retroactive tier dive rate from a real running cumulative dive count and
-// applying per-day charge-cadence dedup across the whole visit in one
-// pass — a different (more correct) cadence check than the single-row
-// autoPriceActivityRow above, which can only compare against already-saved
-// sibling values.
+// mechanism in the live app (there is no per-row auto-price there at all,
+// matching this file — per-row auto-price was a rebuild-only addition,
+// since removed). Walks every non-cancelled activity in date order,
+// recomputing a retroactive tier dive rate from a real running cumulative
+// dive count and applying per-day charge-cadence dedup across the whole
+// visit in one pass.
 export async function applyChargesToVisit(
   diverId: string,
   visitId: string,

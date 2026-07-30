@@ -4,6 +4,7 @@ import { useState, useTransition, useRef } from "react";
 import Link from "next/link";
 import { getDiversSearchResults } from "./actions";
 import type { DiverListItem } from "./data";
+import { CERT_LEVEL_LABELS } from "./constants";
 
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -104,7 +105,9 @@ export function DiversListClient({
                       <div className="font-semibold text-navy">
                         {d.firstName} {d.lastName}
                       </div>
-                      <div className="text-xs text-gray-400">{d.certificationLevel}</div>
+                      <div className="text-xs text-gray-400">
+                        {CERT_LEVEL_LABELS[d.certificationLevel] ?? d.certificationLevel}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600">
                       {d.email || d.whatsapp || d.phone || "—"}

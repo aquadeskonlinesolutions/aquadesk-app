@@ -126,6 +126,7 @@ function tripPreviewText(
     siteCount,
     diverTanks: divers.map((d) => d.tanks),
     staffNitroxSiteIndexesByTeam: staffNitroxByTeam,
+    spareTankTypes: detail.spareTanks.map((t) => t.tankType),
   });
   lines.push(`Tank Tally: ${formatTankLine(tally)}`);
 
@@ -206,6 +207,7 @@ function TripSummaryCard({
     siteCount,
     diverTanks: divers.map((d) => d.tanks),
     staffNitroxSiteIndexesByTeam: staffNitroxByTeam,
+    spareTankTypes: detail.spareTanks.map((t) => t.tankType),
   });
 
   function returnBoat(options: { excludeDiverIds?: string[]; forceProceed?: boolean } = {}) {

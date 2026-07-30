@@ -132,14 +132,14 @@ export function OverviewTab({
           <div className="mb-4">
             <SummaryRow label="Money In" value={peso(summary.moneyIn)} bold />
             <SummaryRow label="Collected from Divers" value={peso(summary.collectedFromDivers)} />
-            <SummaryRow label="Rental Income (Collected)" value={peso(summary.rentalIncome)} />
+            <SummaryRow label="Gear Rental Income (Collected)" value={peso(summary.rentalIncome)} />
             <SummaryRow label="Join Ride Income (Collected)" value={peso(summary.joinIncome)} />
           </div>
           <div className="mb-4">
             <SummaryRow label="Money Out" value={peso(summary.moneyOut)} bold />
             <SummaryRow label="Government Fees (Marine/Shark Tax)" value={peso(summary.govtFees)} />
             <SummaryRow label="Dive Center Expenses" value={peso(summary.expenses)} />
-            <SummaryRow label="Rental Expense (Paid)" value={peso(summary.rentalExpense)} />
+            <SummaryRow label="Gear Rental Expense (Paid)" value={peso(summary.rentalExpense)} />
             <SummaryRow label="Join Ride Expense (Paid)" value={peso(summary.joinExpense)} />
             <SummaryRow label="Staff Commissions (Paid)" value={peso(summary.commissionsPaid)} />
           </div>
@@ -161,8 +161,8 @@ export function OverviewTab({
             <SettledBarList
               items={[
                 { label: "Open Diver Bills (owed to you)", value: summary.openDiverBills, variant: "owed" },
-                { label: "Rental — To Collect (owed to you)", value: summary.rentalToCollect, variant: "owed" },
-                { label: "Rental — To Pay (you owe)", value: summary.rentalToPay, variant: "owe" },
+                { label: "Gear Rental — To Collect (owed to you)", value: summary.rentalToCollect, variant: "owed" },
+                { label: "Gear Rental — To Pay (you owe)", value: summary.rentalToPay, variant: "owe" },
                 { label: "Join Ride — To Collect (owed to you)", value: summary.joinToCollect, variant: "owed" },
                 { label: "Join Ride — To Pay (you owe)", value: summary.joinToPay, variant: "owe" },
                 { label: "Unpaid Staff Commissions (you owe)", value: summary.unpaidCommissions, variant: "owe" },
@@ -185,16 +185,16 @@ export function OverviewTab({
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-200">
             <div className="text-sm font-extrabold text-navy">Money Snapshot</div>
             <div className="text-xs text-gray-500 mt-0.5">
               Collected, open, and pending money movement.
             </div>
           </div>
-          <div className="p-5 flex flex-wrap items-center justify-center gap-4 h-full min-w-0">
+          <div className="p-5 flex flex-wrap items-center justify-center gap-4 h-full min-w-0 overflow-hidden">
             <div
-              className="w-[150px] h-[150px] rounded-full grid place-items-center shrink-0"
+              className="w-full max-w-[150px] aspect-square rounded-full grid place-items-center shrink-0"
               style={{
                 background: `conic-gradient(var(--teal) 0deg, var(--teal) ${collectedDeg}deg, var(--orange) ${collectedDeg}deg, var(--orange) ${openDeg}deg, var(--gray-200) ${openDeg}deg)`,
               }}

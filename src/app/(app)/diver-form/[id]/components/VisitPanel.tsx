@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import {
   createVisit,
   addActivityRow,
   saveActivityRow,
   deleteActivityRow,
   voidVisit,
-  autoPriceActivityRow,
   applyChargesToVisit,
   type ActivityFields,
 } from "../actions";
@@ -47,90 +46,81 @@ function toFields(a: Activity): ActivityFields {
   };
 }
 
+// Matches diver-form.html's real buildActivityRow()/updateActivity()/
+// saveActivity(): edits persist immediately (no manual per-row Save step,
+// no per-row Auto-Price — the live app has neither), and the row shows no
+// per-row Total or Discount column at all (discount is the whole-bill
+// field in BillSummary.tsx; total is only ever shown once, at the Visit
+// Total footer). Committing on blur/select-change rather than the live
+// app's literal oninput-per-keystroke achieves the same "no button"
+// result without a network write on every keystroke.
 function ActivityRow({
   diverId,
-  visitId,
   activity,
   onChanged,
   onDeleted,
 }: {
   diverId: string;
-  visitId: string;
   activity: Activity;
   onChanged: (a: Activity) => void;
   onDeleted: (id: string) => void;
 }) {
   const [fields, setFields] = useState<ActivityFields>(toFields(activity));
-  const [dirty, setDirty] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const fieldsRef = useRef(fields);
   const [pending, startTransition] = useTransition();
 
-  function update(patch: Partial<ActivityFields>) {
-    setFields((f) => ({ ...f, ...patch }));
-    setDirty(true);
-  }
-
-  function autoPrice() {
-    setNote(null);
-    startTransition(async () => {
-      const res = await autoPriceActivityRow({
-        visitId,
-        activityId: activity.id,
-        date: fields.date,
-        diveSite: fields.diveSite,
-      });
-      if (res.error) {
-        setNote(res.error);
-        return;
-      }
-      setFields((f) => ({
-        ...f,
-        diveRate: res.diveRate ?? f.diveRate,
-        fuelSurcharge: res.fuelSurcharge ?? f.fuelSurcharge,
-        marineTax: res.marineTax ?? f.marineTax,
-        sharkFee: res.sharkFee ?? f.sharkFee,
-        nitroxFee: res.nitroxFee ?? f.nitroxFee,
-        fifteenLFee: res.fifteenLFee ?? f.fifteenLFee,
-      }));
-      setNote(res.note ?? null);
-      setDirty(true);
+  function updateLocal(patch: Partial<ActivityFields>) {
+    setFields((f) => {
+      const next = { ...f, ...patch };
+      fieldsRef.current = next;
+      return next;
     });
   }
 
-  function save() {
+  function commit(nextFields: ActivityFields) {
     startTransition(async () => {
-      const res = await saveActivityRow(diverId, activity.id, fields);
+      const res = await saveActivityRow(diverId, activity.id, nextFields);
       if (!res.error) {
         const computedTotal =
-          fields.diveRate +
-          fields.fuelSurcharge +
-          fields.marineTax +
-          fields.sharkFee +
-          fields.nitroxFee +
-          fields.fifteenLFee +
-          fields.equipmentRental +
-          fields.addons -
-          fields.discount;
+          nextFields.diveRate +
+          nextFields.fuelSurcharge +
+          nextFields.marineTax +
+          nextFields.sharkFee +
+          nextFields.nitroxFee +
+          nextFields.fifteenLFee +
+          nextFields.equipmentRental +
+          nextFields.addons -
+          nextFields.discount;
         onChanged({
           ...activity,
-          date: fields.date,
-          diveSite: fields.diveSite || null,
-          staffName: fields.staffName || null,
-          diveRate: fields.diveRate,
-          fuelSurcharge: fields.fuelSurcharge,
-          marineTax: fields.marineTax,
-          sharkFee: fields.sharkFee,
-          nitroxFee: fields.nitroxFee,
-          fifteenLFee: fields.fifteenLFee,
-          equipmentRental: fields.equipmentRental,
-          addons: fields.addons,
-          discount: fields.discount,
-          status: fields.status,
+          date: nextFields.date,
+          diveSite: nextFields.diveSite || null,
+          staffName: nextFields.staffName || null,
+          diveRate: nextFields.diveRate,
+          fuelSurcharge: nextFields.fuelSurcharge,
+          marineTax: nextFields.marineTax,
+          sharkFee: nextFields.sharkFee,
+          nitroxFee: nextFields.nitroxFee,
+          fifteenLFee: nextFields.fifteenLFee,
+          equipmentRental: nextFields.equipmentRental,
+          addons: nextFields.addons,
+          discount: nextFields.discount,
+          status: nextFields.status,
           total: computedTotal,
         });
-        setDirty(false);
       }
     });
+  }
+
+  function commitOnBlur() {
+    commit(fieldsRef.current);
+  }
+
+  function commitSelect(patch: Partial<ActivityFields>) {
+    const next = { ...fieldsRef.current, ...patch };
+    fieldsRef.current = next;
+    setFields(next);
+    commit(next);
   }
 
   function remove() {
@@ -146,9 +136,12 @@ function ActivityRow({
       step="0.01"
       value={value}
       onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+      onBlur={commitOnBlur}
       className="w-20 border border-gray-300 rounded-md px-1.5 py-1 text-xs text-right"
     />
   );
+
+  const locked = !!activity.scheduleId;
 
   return (
     <tr className="border-b border-gray-100 last:border-0">
@@ -156,14 +149,16 @@ function ActivityRow({
         <input
           type="date"
           value={fields.date}
-          onChange={(e) => update({ date: e.target.value })}
+          onChange={(e) => updateLocal({ date: e.target.value })}
+          onBlur={commitOnBlur}
           className="w-32 border border-gray-300 rounded-md px-1.5 py-1 text-xs"
         />
       </td>
       <td className="px-2 py-2">
         <input
           value={fields.diveSite}
-          onChange={(e) => update({ diveSite: e.target.value })}
+          onChange={(e) => updateLocal({ diveSite: e.target.value })}
+          onBlur={commitOnBlur}
           placeholder="Dive site"
           className="w-28 border border-gray-300 rounded-md px-1.5 py-1 text-xs"
         />
@@ -171,24 +166,24 @@ function ActivityRow({
       <td className="px-2 py-2">
         <input
           value={fields.staffName}
-          onChange={(e) => update({ staffName: e.target.value })}
+          onChange={(e) => updateLocal({ staffName: e.target.value })}
+          onBlur={commitOnBlur}
           placeholder="Staff"
           className="w-24 border border-gray-300 rounded-md px-1.5 py-1 text-xs"
         />
       </td>
-      <td className="px-2 py-2">{numInput(fields.diveRate, (v) => update({ diveRate: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.fuelSurcharge, (v) => update({ fuelSurcharge: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.marineTax, (v) => update({ marineTax: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.sharkFee, (v) => update({ sharkFee: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.nitroxFee, (v) => update({ nitroxFee: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.fifteenLFee, (v) => update({ fifteenLFee: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.equipmentRental, (v) => update({ equipmentRental: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.addons, (v) => update({ addons: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.discount, (v) => update({ discount: v }))}</td>
+      <td className="px-2 py-2">{numInput(fields.diveRate, (v) => updateLocal({ diveRate: v }))}</td>
+      <td className="px-2 py-2">{numInput(fields.fuelSurcharge, (v) => updateLocal({ fuelSurcharge: v }))}</td>
+      <td className="px-2 py-2">{numInput(fields.marineTax, (v) => updateLocal({ marineTax: v }))}</td>
+      <td className="px-2 py-2">{numInput(fields.sharkFee, (v) => updateLocal({ sharkFee: v }))}</td>
+      <td className="px-2 py-2">{numInput(fields.nitroxFee, (v) => updateLocal({ nitroxFee: v }))}</td>
+      <td className="px-2 py-2">{numInput(fields.fifteenLFee, (v) => updateLocal({ fifteenLFee: v }))}</td>
+      <td className="px-2 py-2">{numInput(fields.equipmentRental, (v) => updateLocal({ equipmentRental: v }))}</td>
+      <td className="px-2 py-2">{numInput(fields.addons, (v) => updateLocal({ addons: v }))}</td>
       <td className="px-2 py-2">
         <select
           value={fields.status}
-          onChange={(e) => update({ status: e.target.value as Activity["status"] })}
+          onChange={(e) => commitSelect({ status: e.target.value as Activity["status"] })}
           className="border border-gray-300 rounded-md px-1.5 py-1 text-xs"
         >
           {STATUS_OPTIONS.map((s) => (
@@ -198,33 +193,24 @@ function ActivityRow({
           ))}
         </select>
       </td>
-      <td className="px-2 py-2 text-right font-semibold text-navy whitespace-nowrap">{peso(activity.total)}</td>
-      <td className="px-2 py-2 min-w-[160px]">
-        {note && <div className="text-[11px] text-orange mb-1">{note}</div>}
-        <div className="flex gap-1.5 flex-wrap">
-          <button
-            onClick={autoPrice}
-            disabled={pending}
-            className="text-xs text-navy hover:underline disabled:opacity-40"
+      <td className="px-2 py-2 text-center">
+        {locked ? (
+          <span
+            title="Created from Scheduling — cancel instead of deleting"
+            className="text-gray-300 cursor-not-allowed"
           >
-            Auto-Price
-          </button>
-          <button
-            onClick={save}
-            disabled={!dirty || pending}
-            className="text-xs text-teal hover:text-navy disabled:opacity-40"
-          >
-            Save
-          </button>
+            🔒
+          </span>
+        ) : (
           <button
             onClick={remove}
-            disabled={pending || !!activity.scheduleId}
-            title={activity.scheduleId ? "Created from Scheduling — cancel instead of deleting" : undefined}
-            className="text-xs text-red hover:underline disabled:opacity-40"
+            disabled={pending}
+            title="Delete"
+            className="text-red hover:opacity-70 disabled:opacity-40"
           >
-            Delete
+            ✕
           </button>
-        </div>
+        )}
       </td>
     </tr>
   );
@@ -453,16 +439,14 @@ export function VisitPanel({
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">15L</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Equip.</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Addons</th>
-              <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Disc.</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Status</th>
-              <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-right">Total</th>
-              <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Action</th>
+              <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-center">Action</th>
             </tr>
           </thead>
           <tbody>
             {activities.length === 0 ? (
               <tr>
-                <td colSpan={15} className="text-center py-8 text-gray-400 text-sm">
+                <td colSpan={13} className="text-center py-8 text-gray-400 text-sm">
                   No activities logged yet.
                 </td>
               </tr>
@@ -472,7 +456,6 @@ export function VisitPanel({
                   <ActivityRow
                     key={a.id}
                     diverId={diverId}
-                    visitId={visit.id}
                     activity={a}
                     onChanged={(updated) =>
                       setActivities((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
@@ -492,9 +475,7 @@ export function VisitPanel({
                     <td className="px-2 py-2">{peso(a.fifteenLFee)}</td>
                     <td className="px-2 py-2">{peso(a.equipmentRental)}</td>
                     <td className="px-2 py-2">{peso(a.addons)}</td>
-                    <td className="px-2 py-2">{peso(a.discount)}</td>
                     <td className="px-2 py-2">{a.status}</td>
-                    <td className="px-2 py-2 text-right font-semibold text-navy">{peso(a.total)}</td>
                     <td className="px-2 py-2"></td>
                   </tr>
                 ),
@@ -504,11 +485,10 @@ export function VisitPanel({
           {activities.length > 0 && (
             <tfoot>
               <tr className="bg-navy text-white font-extrabold">
-                <td className="px-2 py-2" colSpan={13}>
+                <td className="px-2 py-2" colSpan={12}>
                   Visit Total
                 </td>
                 <td className="px-2 py-2 text-right">{peso(grandTotal)}</td>
-                <td className="px-2 py-2"></td>
               </tr>
             </tfoot>
           )}

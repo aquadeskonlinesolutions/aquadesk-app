@@ -12,8 +12,11 @@ export function computeTankTally(params: {
   siteCount: number;
   diverTanks: { siteIndex: number; tankType: "nitrox" | "air_15l" }[][];
   staffNitroxSiteIndexesByTeam: number[][];
+  // Spare tanks brought along on the trip — no live-app precedent, folded
+  // directly into the same totals rather than a separate breakdown line.
+  spareTankTypes?: ("air_12l" | "air_15l" | "nitrox")[];
 }): TankTally {
-  const { siteCount, diverTanks, staffNitroxSiteIndexesByTeam } = params;
+  const { siteCount, diverTanks, staffNitroxSiteIndexesByTeam, spareTankTypes } = params;
   let air12l = 0;
   let air15l = 0;
   let nitrox = 0;
@@ -32,6 +35,12 @@ export function computeTankTally(params: {
       if (indexes.includes(si)) nitrox++;
       else air12l++;
     }
+  });
+
+  (spareTankTypes ?? []).forEach((type) => {
+    if (type === "nitrox") nitrox++;
+    else if (type === "air_15l") air15l++;
+    else air12l++;
   });
 
   return { air12l, air15l, nitrox };

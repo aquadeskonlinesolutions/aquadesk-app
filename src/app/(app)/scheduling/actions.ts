@@ -67,6 +67,7 @@ export type TripFormInput = {
   guestDiversCount: number | null;
   guestDiveCenterName: string;
   guestNotes: string;
+  spareTanks: ("air_12l" | "air_15l" | "nitrox")[];
 };
 
 async function replaceScheduleSites(
@@ -106,6 +107,24 @@ async function replaceScheduleCrew(
       dive_center_id: diveCenterId,
       schedule_id: scheduleId,
       crew_name: crewName,
+      sort_order: index,
+    })),
+  );
+}
+
+async function replaceScheduleSpareTanks(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  diveCenterId: string,
+  scheduleId: string,
+  spareTanks: string[],
+) {
+  await supabase.from("schedule_spare_tanks").delete().eq("schedule_id", scheduleId);
+  if (spareTanks.length === 0) return;
+  await supabase.from("schedule_spare_tanks").insert(
+    spareTanks.map((tankType, index) => ({
+      dive_center_id: diveCenterId,
+      schedule_id: scheduleId,
+      tank_type: tankType,
       sort_order: index,
     })),
   );
@@ -158,6 +177,7 @@ export async function createTrip(
   const [sitesRes] = await Promise.all([
     replaceScheduleSites(supabase, user.diveCenterId, data.id, input.siteIds),
     replaceScheduleCrew(supabase, user.diveCenterId, data.id, isJoiner ? [] : input.crew),
+    replaceScheduleSpareTanks(supabase, user.diveCenterId, data.id, input.spareTanks),
   ]);
   if (sitesRes.error) return fail(sitesRes.error);
 
@@ -199,6 +219,7 @@ export async function updateTrip(
   const [sitesRes] = await Promise.all([
     replaceScheduleSites(supabase, user.diveCenterId, scheduleId, input.siteIds),
     replaceScheduleCrew(supabase, user.diveCenterId, scheduleId, isJoiner ? [] : input.crew),
+    replaceScheduleSpareTanks(supabase, user.diveCenterId, scheduleId, input.spareTanks),
   ]);
   if (sitesRes.error) return fail(sitesRes.error);
   return ok();

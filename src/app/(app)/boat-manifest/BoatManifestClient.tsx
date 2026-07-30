@@ -21,6 +21,15 @@ function formatTime(time: string | null): string {
   return `${h}:${mStr ?? "00"} ${ampm}`;
 }
 
+// Matches boat-manifest.html's real displayBoatName(): every rendered
+// boat name is prefixed "MBCA " (Bureau-of-Customs vessel-type
+// convention), guarded case-insensitively so a boat already named with
+// that prefix in Settings > Fleet never gets it doubled.
+function mbca(name: string): string {
+  const trimmed = name.trim();
+  return /^mbca\b/i.test(trimmed) ? trimmed : `MBCA ${trimmed}`;
+}
+
 export function BoatManifestClient({
   initialDate,
   initialTrips,
@@ -135,7 +144,7 @@ export function BoatManifestClient({
             <option value="">— Choose a trip —</option>
             {trips.map((t) => (
               <option key={t.scheduleId} value={t.scheduleId}>
-                {t.boatName} — {t.siteLabel} — {formatTime(t.departureTime)}
+                {mbca(t.boatName)} — {t.siteLabel} — {formatTime(t.departureTime)}
                 {t.hasManifestEdits ? " ✏️ edited" : ""}
               </option>
             ))}
@@ -153,16 +162,55 @@ export function BoatManifestClient({
       )}
 
       {detail && (
-        <div className="bg-white border border-gray-200 rounded-card shadow-card p-10 max-w-4xl mx-auto text-black">
+        <div className="boat-manifest-sheet bg-white border border-gray-200 rounded-card shadow-card p-10 max-w-4xl mx-auto text-black">
+          {/* Print-only compaction, matching boat-manifest.html's real
+              print stylesheet (smaller fonts, auto-height table cells,
+              tightened margins, an explicit @page size) — this is what
+              actually keeps the padded-to-32-row manifest on one printed
+              page; the row count itself is already the same in both apps. */}
+          <style>{`
+            @media print {
+              .boat-manifest-sheet {
+                padding: 6mm 8mm;
+                box-shadow: none;
+                border: none;
+                max-width: 100%;
+                margin: 0;
+                font-size: 9px;
+              }
+              .boat-manifest-sheet table {
+                font-size: 8px;
+                margin-bottom: 0.35rem;
+              }
+              .boat-manifest-sheet th,
+              .boat-manifest-sheet td {
+                padding: 0.5px 3px;
+                height: auto;
+                line-height: 1.1;
+              }
+              .boat-manifest-sheet .manifest-copy {
+                font-size: 9px !important;
+                line-height: 1.3 !important;
+              }
+              .boat-manifest-sheet .mb-4 { margin-bottom: 0.3rem; }
+              .boat-manifest-sheet .mb-5 { margin-bottom: 0.3rem; }
+              .boat-manifest-sheet .mt-6 { margin-top: 0.3rem; }
+              .boat-manifest-sheet .mt-8 { margin-top: 0.4rem; }
+            }
+            @page {
+              size: A4 portrait;
+              margin: 8mm;
+            }
+          `}</style>
           <div className="text-center leading-relaxed mb-4">
             <div className="font-bold tracking-wide">REPUBLIC OF THE PHILIPPINES</div>
             <div className="font-semibold">DEPARTMENT OF FINANCE</div>
             <div className="font-extrabold text-base tracking-wide">BUREAU OF CUSTOMS</div>
           </div>
 
-          <p className="text-center leading-loose text-sm max-w-2xl mx-auto mb-5">
+          <p className="manifest-copy text-center leading-loose text-sm max-w-2xl mx-auto mb-5">
             A complete list of all passengers taken on board in{" "}
-            <span className="font-bold border-b border-black px-1">{detail.boatName}</span>{" "}
+            <span className="font-bold border-b border-black px-1">{mbca(detail.boatName)}</span>{" "}
             sailing from the Port of{" "}
             <input
               placeholder="________________"
@@ -231,13 +279,13 @@ export function BoatManifestClient({
             />
           </div>
 
-          <p className="leading-loose text-sm">
+          <p className="manifest-copy leading-loose text-sm">
             I{" "}
             <span className="font-bold border-b border-black px-1">
               {detail.captain || "________________"}
             </span>{" "}
             master of the{" "}
-            <span className="font-bold border-b border-black px-1">{detail.boatName}</span> do
+            <span className="font-bold border-b border-black px-1">{mbca(detail.boatName)}</span> do
             solemnly swear that the following is full and complete manifest of all crews taken
             onboard said vessel on its present voyage, and statements contained therein are true
             and correct to the best of my knowledge and behalf.
@@ -247,10 +295,10 @@ export function BoatManifestClient({
             <div className="font-bold border-b border-black min-w-[260px] pb-1">
               {detail.captain || " "}
             </div>
-            <div className="italic text-sm mt-1">Master</div>
+            <div className="manifest-copy italic text-sm mt-1">Master</div>
           </div>
 
-          <p className="mt-8 text-sm leading-loose">
+          <p className="manifest-copy mt-8 text-sm leading-loose">
             SUBSCRIBED AND SWORN to before me this{" "}
             <input
               placeholder="__________ day of _____________"
@@ -262,7 +310,7 @@ export function BoatManifestClient({
             <div className="font-bold border-b border-black inline-block min-w-[300px]">
               &nbsp;
             </div>
-            <p className="text-sm mt-1 ml-auto w-1/2 text-right">
+            <p className="manifest-copy text-sm mt-1 ml-auto w-1/2 text-right">
               Empowered to administer oath under the provision Section 1147 of the administrative
               code
             </p>

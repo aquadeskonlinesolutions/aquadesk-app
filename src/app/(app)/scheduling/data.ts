@@ -165,6 +165,7 @@ export type TripDetail = {
   guestDiversCount: number | null;
   guestDiveCenterName: string | null;
   guestNotes: string | null;
+  spareTanks: { id: string; tankType: "air_12l" | "air_15l" | "nitrox" }[];
 };
 
 export type DiverPickResult = {
@@ -733,9 +734,10 @@ export async function loadTripDetail(
     .single();
   if (!schedule) return null;
 
-  const [{ data: siteRows }, { data: crewRows }] = await Promise.all([
+  const [{ data: siteRows }, { data: crewRows }, { data: spareTankRows }] = await Promise.all([
     supabase.from("schedule_sites").select("dive_site_id").eq("schedule_id", scheduleId).order("sort_order"),
     supabase.from("schedule_crew").select("crew_name").eq("schedule_id", scheduleId).order("sort_order"),
+    supabase.from("schedule_spare_tanks").select("id, tank_type").eq("schedule_id", scheduleId).order("sort_order"),
   ]);
 
   return {
@@ -755,5 +757,6 @@ export async function loadTripDetail(
     guestDiversCount: schedule.guest_divers_count,
     guestDiveCenterName: schedule.guest_dive_center_name,
     guestNotes: schedule.guest_notes,
+    spareTanks: (spareTankRows ?? []).map((r) => ({ id: r.id, tankType: r.tank_type })),
   };
 }

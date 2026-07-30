@@ -111,6 +111,7 @@ function emptyForm(scheduleDate: string): TripFormInput {
     guestDiversCount: null,
     guestDiveCenterName: "",
     guestNotes: "",
+    spareTanks: [],
   };
 }
 
@@ -129,6 +130,7 @@ function fromDetail(detail: TripDetail): TripFormInput {
     guestDiversCount: detail.guestDiversCount,
     guestDiveCenterName: detail.guestDiveCenterName ?? "",
     guestNotes: detail.guestNotes ?? "",
+    spareTanks: detail.spareTanks.map((t) => t.tankType),
   };
 }
 
@@ -325,6 +327,22 @@ export function TripCard({
     setForm((f) => ({ ...f, crew: [...f.crew, ""] }));
   }
 
+  function setSpareTankSlot(index: number, tankType: "air_12l" | "air_15l" | "nitrox") {
+    setForm((f) => {
+      const spareTanks = [...f.spareTanks];
+      spareTanks[index] = tankType;
+      return { ...f, spareTanks };
+    });
+  }
+
+  function addSpareTank() {
+    setForm((f) => ({ ...f, spareTanks: [...f.spareTanks, "air_12l"] }));
+  }
+
+  function removeSpareTank(index: number) {
+    setForm((f) => ({ ...f, spareTanks: f.spareTanks.filter((_, i) => i !== index) }));
+  }
+
   function removeDiverFromTeam(teamIndex: number, diverId: string) {
     setTeams((prev) => {
       const next = [...prev];
@@ -514,6 +532,7 @@ export function TripCard({
     siteCount: realSiteIds.length,
     diverTanks: teams.flatMap((t) => t.divers.map((d) => d.tanks)),
     staffNitroxSiteIndexesByTeam: teams.map((t) => t.staffNitroxSiteIndexes),
+    spareTankTypes: form.spareTanks,
   });
 
   const warningAssignments = teams.flatMap((t) =>
@@ -762,6 +781,47 @@ export function TripCard({
           {!locked && (
             <Button type="button" variant="ghost" size="sm" onClick={addSiteSlot} className="mt-2">
               + Add Dive Site
+            </Button>
+          )}
+        </SectionBox>
+
+        {/* No live-app precedent — a rebuild-only addition. Each spare
+            tank is independently typed (12L/15L/Nitrox), so carrying
+            "both" or "all three" is just adding more rows of different
+            types; folded straight into the shared tank tally below. */}
+        <SectionBox title="Spare Tanks">
+          {form.spareTanks.length === 0 ? (
+            <div className="text-xs text-gray-400">No spare tanks added.</div>
+          ) : (
+            <div className="grid gap-2">
+              {form.spareTanks.map((tankType, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <select
+                    disabled={locked}
+                    value={tankType}
+                    onChange={(e) => setSpareTankSlot(i, e.target.value as "air_12l" | "air_15l" | "nitrox")}
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                  >
+                    <option value="air_12l">Air 12L</option>
+                    <option value="air_15l">Air 15L</option>
+                    <option value="nitrox">Nitrox</option>
+                  </select>
+                  {!locked && (
+                    <button
+                      type="button"
+                      onClick={() => removeSpareTank(i)}
+                      className="shrink-0 text-red text-xs hover:underline"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {!locked && (
+            <Button type="button" variant="ghost" size="sm" onClick={addSpareTank} className="mt-2">
+              + Add Spare Tank
             </Button>
           )}
         </SectionBox>

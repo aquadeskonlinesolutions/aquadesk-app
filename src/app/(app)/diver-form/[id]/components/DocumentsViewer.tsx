@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { DiverDetail, RegistrationRecord } from "../data";
+import { CERT_LEVEL_LABELS } from "../constants";
 
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -117,7 +118,11 @@ export function DocumentsViewer({
           </div>
           <div>
             <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Certification</div>
-            <div className="text-sm font-semibold text-navy">{selected.certificationLevel || "—"}</div>
+            <div className="text-sm font-semibold text-navy">
+              {(selected.certificationLevel && CERT_LEVEL_LABELS[selected.certificationLevel]) ||
+                selected.certificationLevel ||
+                "—"}
+            </div>
           </div>
         </div>
 
@@ -204,7 +209,11 @@ export function DocumentsViewer({
           </div>
           <div>
             <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Certification</div>
-            <div className="text-sm font-semibold text-navy">{selected.certificationLevel || "—"}</div>
+            <div className="text-sm font-semibold text-navy">
+              {(selected.certificationLevel && CERT_LEVEL_LABELS[selected.certificationLevel]) ||
+                selected.certificationLevel ||
+                "—"}
+            </div>
           </div>
         </div>
 
