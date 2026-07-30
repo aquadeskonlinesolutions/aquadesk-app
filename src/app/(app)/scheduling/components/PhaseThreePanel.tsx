@@ -1,36 +1,111 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import type { TripSummary, TripDetail, ScheduleDiverRow, StaffOption, BoatOption } from "../data";
-import { getTripDetail, getScheduleDivers, markBoatReturned, getCrewTokenToday, generateCrewToken } from "../actions";
+import type { TripSummary, TripDetail, ScheduleDiverRow, StaffDiveTanks, StaffOption, BoatOption, DiveSiteOption, DiveTank } from "../data";
+import {
+  getTripDetail,
+  getScheduleDivers,
+  getStaffDiveTanks,
+  markBoatReturned,
+  getCrewTokenToday,
+  generateCrewToken,
+} from "../actions";
+import { computeTankTally, formatTankLine } from "../tanks";
 
-function tripPreviewText(
-  detail: TripDetail,
-  boat: BoatOption | null,
-  divers: ScheduleDiverRow[],
-  staffNameById: Map<string, string>,
-): string {
+// "Nitrox D1,D2" / "15L D1" — which dives (1-based) use which tank, for a
+// diver whose choice can vary per dive on a multi-site trip.
+function diverTankLabel(tanks: DiveTank[], siteCount: number): string {
+  const nitroxSites: number[] = [];
+  const air15Sites: number[] = [];
+  for (let si = 0; si < siteCount; si++) {
+    const match = tanks.find((t) => t.siteIndex === si);
+    if (match?.tankType === "nitrox") nitroxSites.push(si + 1);
+    else if (match?.tankType === "air_15l") air15Sites.push(si + 1);
+  }
+  const parts: string[] = [];
+  if (nitroxSites.length > 0) parts.push(`Nitrox D${nitroxSites.join(",")}`);
+  if (air15Sites.length > 0) parts.push(`15L D${air15Sites.join(",")}`);
+  return parts.join(", ");
+}
+
+function diverLine(d: ScheduleDiverRow, siteCount: number): string {
+  const name = `${d.firstName} ${d.lastName}`;
+  if (d.experienceType === "dive_course") {
+    return `  - ${name} - Course${d.courseName ? ` - ${d.courseName}` : ""}`;
+  }
+  const tankLabel = diverTankLabel(d.tanks, siteCount);
+  return `  - ${name}${tankLabel ? ` - ${tankLabel}` : ""}`;
+}
+
+function groupByStaff(divers: ScheduleDiverRow[]): Map<string, ScheduleDiverRow[]> {
   const byStaff = new Map<string, ScheduleDiverRow[]>();
   divers.forEach((d) => {
     const key = d.staffId ?? "__unassigned__";
     if (!byStaff.has(key)) byStaff.set(key, []);
     byStaff.get(key)!.push(d);
   });
+  return byStaff;
+}
+
+function resolveStaffName(staffId: string, staffNameById: Map<string, string>): string {
+  return staffId === "__unassigned__" ? "Unassigned" : (staffNameById.get(staffId) ?? "Staff");
+}
+
+// Matches scheduling.html's real buildPreview()/tripImageRows() section
+// order: boat/date/time/captain, the dive-site line, a blank line, each
+// staff group's divers (course divers show their course, fun divers show
+// per-dive tank detail), the tank tally last, then join-ride/notes.
+function tripPreviewText(
+  detail: TripDetail,
+  boat: BoatOption | null,
+  diveSites: DiveSiteOption[],
+  divers: ScheduleDiverRow[],
+  staffTanks: StaffDiveTanks[],
+  staffNameById: Map<string, string>,
+): string {
+  const byStaff = groupByStaff(divers);
+  const siteCount = detail.siteIds.length;
+  const siteNameById = new Map(diveSites.map((s) => [s.id, s.siteName]));
+  const staffTanksByName = new Map(staffTanks.map((s) => [s.staffName, s.siteIndexes]));
 
   const lines: string[] = [];
   lines.push(detail.isJoiner ? (detail.joinerBoatName ?? "Join Ride") : (boat?.name ?? "Boat"));
   lines.push(`Date: ${detail.scheduleDate}`);
   if (detail.departureTime) lines.push(`Departure: ${detail.departureTime}`);
   if (boat?.captain) lines.push(`Captain: ${boat.captain}`);
-  if (detail.notes) lines.push(`Notes: ${detail.notes}`);
-  lines.push("");
-  for (const [staffId, group] of byStaff) {
-    lines.push(`${staffId === "__unassigned__" ? "Unassigned" : (staffNameById.get(staffId) ?? "Staff")}:`);
-    group.forEach((d) => {
-      const flags = [d.nitroxRequested ? "Nitrox" : null, d.is15L ? "15L" : null].filter(Boolean).join(", ");
-      lines.push(`  - ${d.firstName} ${d.lastName}${flags ? ` (${flags})` : ""}`);
-    });
+  if (siteCount > 0) {
+    lines.push(detail.siteIds.map((id, i) => `Dive ${i + 1} - ${siteNameById.get(id) ?? "Site"}`).join(" | "));
   }
+  lines.push("");
+
+  const staffNitroxByTeam: number[][] = [];
+  if (byStaff.size === 0) {
+    lines.push("No divers assigned.");
+  } else {
+    for (const [staffId, group] of byStaff) {
+      const staffName = resolveStaffName(staffId, staffNameById);
+      lines.push(`${staffName}:`);
+      if (group.length === 0) lines.push("  - No divers assigned");
+      else group.forEach((d) => lines.push(diverLine(d, siteCount)));
+      staffNitroxByTeam.push(staffTanksByName.get(staffName) ?? []);
+      lines.push("");
+    }
+  }
+
+  const tally = computeTankTally({
+    siteCount,
+    diverTanks: divers.map((d) => d.tanks),
+    staffNitroxSiteIndexesByTeam: staffNitroxByTeam,
+  });
+  lines.push(`Tank Tally: ${formatTankLine(tally)}`);
+
+  if (detail.guestDiversCount) {
+    lines.push(
+      `Joining us: ${detail.guestDiversCount} diver(s) from ${detail.guestDiveCenterName ?? "another dive center"}`,
+    );
+  }
+  if (detail.notes) lines.push(`Notes: ${detail.notes}`);
+
   return lines.join("\n");
 }
 
@@ -61,16 +136,19 @@ function downloadTripImage(text: string, fileName: string) {
 function TripSummaryCard({
   scheduleId,
   boats,
+  diveSites,
   staffOptions,
   onReturned,
 }: {
   scheduleId: string;
   boats: BoatOption[];
+  diveSites: DiveSiteOption[];
   staffOptions: StaffOption[];
   onReturned: () => void;
 }) {
   const [detail, setDetail] = useState<TripDetail | null>(null);
   const [divers, setDivers] = useState<ScheduleDiverRow[]>([]);
+  const [staffTanks, setStaffTanks] = useState<StaffDiveTanks[]>([]);
   const [fuelLiters, setFuelLiters] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[] | null>(null);
@@ -80,6 +158,7 @@ function TripSummaryCard({
   function refresh() {
     getTripDetail(scheduleId).then(setDetail);
     getScheduleDivers(scheduleId).then(setDivers);
+    getStaffDiveTanks(scheduleId).then(setStaffTanks);
   }
 
   useEffect(refresh, [scheduleId]);
@@ -88,17 +167,17 @@ function TripSummaryCard({
   const boat = detail.boatId ? (boats.find((b) => b.id === detail.boatId) ?? null) : null;
   const staffNameById = new Map(staffOptions.map((s) => [s.id, s.fullName]));
 
-  const byStaff = new Map<string, ScheduleDiverRow[]>();
-  divers.forEach((d) => {
-    const key = d.staffId ?? "__unassigned__";
-    if (!byStaff.has(key)) byStaff.set(key, []);
-    byStaff.get(key)!.push(d);
+  const byStaff = groupByStaff(divers);
+  const siteCount = detail.siteIds.length;
+  const staffTanksByName = new Map(staffTanks.map((s) => [s.staffName, s.siteIndexes]));
+  const staffNitroxByTeam = [...byStaff.keys()].map(
+    (staffId) => staffTanksByName.get(resolveStaffName(staffId, staffNameById)) ?? [],
+  );
+  const tally = computeTankTally({
+    siteCount,
+    diverTanks: divers.map((d) => d.tanks),
+    staffNitroxSiteIndexesByTeam: staffNitroxByTeam,
   });
-  const tally = {
-    tank12L: divers.filter((d) => !d.is15L && !d.nitroxRequested).length,
-    tank15L: divers.filter((d) => d.is15L).length,
-    nitrox: divers.filter((d) => d.nitroxRequested).length,
-  };
 
   function returnBoat(options: { excludeDiverIds?: string[]; forceProceed?: boolean } = {}) {
     setError(null);
@@ -137,7 +216,7 @@ function TripSummaryCard({
           <button
             onClick={() =>
               downloadTripImage(
-                tripPreviewText(detail, boat, divers, staffNameById),
+                tripPreviewText(detail, boat, diveSites, divers, staffTanks, staffNameById),
                 `${detail.scheduleDate} - ${boat?.name ?? detail.joinerBoatName ?? "trip"} - ${detail.departureTime ?? ""}.png`,
               )
             }
@@ -180,29 +259,29 @@ function TripSummaryCard({
         </div>
       )}
 
-      <div className="flex gap-4 text-xs text-gray-500">
-        <span>12L: {tally.tank12L}</span>
-        <span>15L: {tally.tank15L}</span>
-        <span>Nitrox: {tally.nitrox}</span>
-        {detail.guestDiversCount ? (
-          <span>Joining us: {detail.guestDiversCount} ({detail.guestDiveCenterName})</span>
-        ) : null}
-      </div>
-
       {divers.length === 0 ? (
         <div className="text-sm text-gray-400">No divers assigned.</div>
       ) : (
         <div className="grid gap-2">
           {[...byStaff.entries()].map(([staffId, group]) => (
             <div key={staffId} className="border border-gray-100 rounded-lg p-2">
-              <div className="text-xs font-semibold text-navy mb-1">
-                {staffId === "__unassigned__" ? "Unassigned" : (staffNameById.get(staffId) ?? "Staff")}
-              </div>
+              <div className="text-xs font-semibold text-navy mb-1">{resolveStaffName(staffId, staffNameById)}</div>
               <div className="text-xs text-gray-600">{group.map((d) => `${d.firstName} ${d.lastName}`).join(", ")}</div>
             </div>
           ))}
         </div>
       )}
+
+      {/* Tank tally sits after the diver list, matching the old app's
+          consistent bottom-of-block placement in every rendering context. */}
+      <div className="flex gap-4 text-xs text-gray-500">
+        <span>12L: {tally.air12l}</span>
+        <span>15L: {tally.air15l}</span>
+        <span>Nitrox: {tally.nitrox}</span>
+        {detail.guestDiversCount ? (
+          <span>Joining us: {detail.guestDiversCount} ({detail.guestDiveCenterName})</span>
+        ) : null}
+      </div>
 
       {!detail.closed && !detail.cancelled && !duplicates && (
         <div className="border-t border-gray-200 pt-3 flex items-end gap-3 flex-wrap">
@@ -234,42 +313,46 @@ function TripSummaryCard({
 export function PhaseThreePanel({
   trips,
   boats,
+  diveSites,
   staffOptions,
-  readOnly,
   onChanged,
 }: {
   trips: TripSummary[];
   boats: BoatOption[];
+  diveSites: DiveSiteOption[];
   staffOptions: StaffOption[];
-  readOnly: boolean;
   onChanged: () => void;
 }) {
   const [crewToken, setCrewToken] = useState<string | null>(null);
-  const [tokenPending, startTokenTransition] = useTransition();
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Matches scheduling.html's real behavior: the token is (re)computed
+  // silently every time Phase 3 is viewed, whenever none exists yet for
+  // today — there's no manual "Generate" click anywhere in the old app.
   useEffect(() => {
-    getCrewTokenToday().then(setCrewToken);
-  }, []);
-
-  function generateToken() {
-    startTokenTransition(async () => {
-      const res = await generateCrewToken();
-      if (res.token) setCrewToken(res.token);
+    getCrewTokenToday().then((existing) => {
+      if (existing) setCrewToken(existing);
+      else generateCrewToken().then((res) => setCrewToken(res.token ?? null));
     });
-  }
+  }, []);
 
   async function copyAllPreview() {
     const texts = await Promise.all(
       saved.map(async (t) => {
-        const [detail, divers] = await Promise.all([getTripDetail(t.scheduleId), getScheduleDivers(t.scheduleId)]);
+        const [detail, divers, staffTanks] = await Promise.all([
+          getTripDetail(t.scheduleId),
+          getScheduleDivers(t.scheduleId),
+          getStaffDiveTanks(t.scheduleId),
+        ]);
         if (!detail) return "";
         const boat = detail.boatId ? (boats.find((b) => b.id === detail.boatId) ?? null) : null;
         const staffNameById = new Map(staffOptions.map((s) => [s.id, s.fullName]));
-        return tripPreviewText(detail, boat, divers, staffNameById);
+        return tripPreviewText(detail, boat, diveSites, divers, staffTanks, staffNameById);
       }),
     );
-    const combined = texts.filter(Boolean).join("\n------\n") + (crewToken ? `\n\nToken for the day: ${crewToken}` : "");
+    const combined =
+      texts.filter(Boolean).join("\n\n------------------------------\n\n") +
+      (crewToken ? `\n\n------------------------------\n\nSchedule Token: ${crewToken}` : "");
     await navigator.clipboard.writeText(combined);
     window.alert("Copied.");
   }
@@ -280,15 +363,11 @@ export function PhaseThreePanel({
     <div className="grid gap-4" ref={previewRef}>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 text-xs">
+          <span className="text-gray-400">Crew Code:</span>
           {crewToken ? (
             <span className="font-mono font-semibold text-navy bg-off-white px-2 py-1 rounded">{crewToken}</span>
           ) : (
-            <span className="text-gray-400">No crew code today</span>
-          )}
-          {!readOnly && (
-            <button onClick={generateToken} disabled={tokenPending} className="text-teal hover:underline disabled:opacity-60">
-              {tokenPending ? "…" : crewToken ? "Regenerate" : "Generate"}
-            </button>
+            <span className="text-gray-400">Generating…</span>
           )}
         </div>
         {saved.length > 0 && (
@@ -311,6 +390,7 @@ export function PhaseThreePanel({
             key={t.scheduleId}
             scheduleId={t.scheduleId}
             boats={boats}
+            diveSites={diveSites}
             staffOptions={staffOptions}
             onReturned={onChanged}
           />

@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getPaidAmount } from "@/lib/payments";
-import { isDiverActive, isGroupActive } from "./visibility";
+import { isDiverActive } from "./visibility";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -238,45 +238,19 @@ export async function loadGroups(diveCenterId: string): Promise<GroupSummary[]> 
     memberIdsByGroup.set(m.group_id, list);
   });
 
-  const allMemberIds = (memberRows ?? []).map((m) => m.id);
-  const memberCards = await buildDiverCards(supabase, diveCenterId, allMemberIds);
-  const memberCardById = new Map(memberCards.map((c) => [c.id, c]));
-
-  return (groups ?? [])
-    .map((g) => {
-      const memberIds = memberIdsByGroup.get(g.id) ?? [];
-      const members = memberIds.flatMap((id) => {
-        const c = memberCardById.get(id);
-        return c
-          ? [
-              {
-                arrivalDate: c.arrivalDate,
-                departureDate: c.departureDate,
-                hasOpenVisit: c.alreadyInScheduling,
-                billFullyClosed: c.billFullyClosed,
-              },
-            ]
-          : [];
-      });
-      const active = isGroupActive(
-        { arrivalDate: g.arrival_date, departureDate: g.departure_date },
-        members,
-      );
-      return {
-        active,
-        summary: {
-          id: g.id,
-          groupName: g.group_name,
-          leaderName: g.leader_name,
-          arrivalDate: g.arrival_date,
-          departureDate: g.departure_date,
-          expectedCount: g.expected_count,
-          memberCount: memberIds.length,
-        } satisfies GroupSummary,
-      };
-    })
-    .filter((g) => g.active)
-    .map((g) => g.summary);
+  // Group Management shows every created group unconditionally, regardless
+  // of arrival date — unlike Individual Management, which is deliberately
+  // date-gated (isDiverActive). is_active above is a separate soft-delete
+  // flag, unrelated to this.
+  return (groups ?? []).map((g) => ({
+    id: g.id,
+    groupName: g.group_name,
+    leaderName: g.leader_name,
+    arrivalDate: g.arrival_date,
+    departureDate: g.departure_date,
+    expectedCount: g.expected_count,
+    memberCount: (memberIdsByGroup.get(g.id) ?? []).length,
+  }));
 }
 
 export async function loadGroupMemberCards(diveCenterId: string, groupId: string): Promise<DiverCard[]> {

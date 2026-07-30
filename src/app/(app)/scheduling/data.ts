@@ -261,6 +261,8 @@ async function buildDiverPickResults(
   });
 }
 
+export type DiveTank = { siteIndex: number; tankType: "nitrox" | "air_15l" };
+
 export type ScheduleDiverRow = {
   diverId: string;
   firstName: string;
@@ -270,8 +272,10 @@ export type ScheduleDiverRow = {
   staffId: string | null;
   sourceClipId: string | null;
   experienceType: "fun_diving" | "dive_course" | null;
+  courseName: string | null;
   is15L: boolean;
   nitroxRequested: boolean;
+  tanks: DiveTank[];
 };
 
 export async function loadScheduleDivers(
@@ -281,22 +285,54 @@ export async function loadScheduleDivers(
   const supabase = await createClient();
   const { data: rows } = await supabase
     .from("schedule_divers")
-    .select("diver_id, staff_id, source_clip_id, experience_type, is_15l, nitrox_requested")
+    .select("id, diver_id, staff_id, source_clip_id, experience_type, is_15l, nitrox_requested")
     .eq("dive_center_id", diveCenterId)
     .eq("schedule_id", scheduleId);
 
   const diverIds = (rows ?? []).map((r) => r.diver_id);
   if (diverIds.length === 0) return [];
 
-  const { data: divers } = await supabase
-    .from("divers")
-    .select("id, first_name, last_name, certification_level, nitrox_certified")
-    .in("id", diverIds);
+  const scheduleDiverIds = (rows ?? []).map((r) => r.id);
+  const [{ data: divers }, { data: tankRows }, { data: openVisits }] = await Promise.all([
+    supabase
+      .from("divers")
+      .select("id, first_name, last_name, certification_level, nitrox_certified")
+      .in("id", diverIds),
+    supabase
+      .from("schedule_diver_dive_tanks")
+      .select("schedule_diver_id, site_index, tank_type")
+      .in("schedule_diver_id", scheduleDiverIds),
+    supabase
+      .from("visits")
+      .select("diver_id, course_rate_id, created_at")
+      .in("diver_id", diverIds)
+      .eq("is_active", true)
+      .eq("visit_status", "open")
+      .order("created_at", { ascending: false }),
+  ]);
   const diverById = new Map((divers ?? []).map((d) => [d.id, d]));
+  const tanksByScheduleDiverId = new Map<string, DiveTank[]>();
+  (tankRows ?? []).forEach((t) => {
+    const list = tanksByScheduleDiverId.get(t.schedule_diver_id) ?? [];
+    list.push({ siteIndex: t.site_index, tankType: t.tank_type as "nitrox" | "air_15l" });
+    tanksByScheduleDiverId.set(t.schedule_diver_id, list);
+  });
+  const courseRateIdByDiver = new Map<string, string>();
+  (openVisits ?? []).forEach((v) => {
+    if (!courseRateIdByDiver.has(v.diver_id) && v.course_rate_id) {
+      courseRateIdByDiver.set(v.diver_id, v.course_rate_id);
+    }
+  });
+  const courseRateIds = [...new Set(courseRateIdByDiver.values())];
+  const { data: courseRates } = courseRateIds.length
+    ? await supabase.from("course_rates").select("id, course_name").in("id", courseRateIds)
+    : { data: [] };
+  const courseNameById = new Map((courseRates ?? []).map((c) => [c.id, c.course_name]));
 
   return (rows ?? []).flatMap((r) => {
     const d = diverById.get(r.diver_id);
     if (!d) return [];
+    const courseRateId = courseRateIdByDiver.get(r.diver_id);
     return [
       {
         diverId: r.diver_id,
@@ -307,11 +343,35 @@ export async function loadScheduleDivers(
         staffId: r.staff_id,
         sourceClipId: r.source_clip_id,
         experienceType: r.experience_type,
+        courseName: courseRateId ? (courseNameById.get(courseRateId) ?? null) : null,
         is15L: r.is_15l,
         nitroxRequested: r.nitrox_requested,
+        tanks: tanksByScheduleDiverId.get(r.id) ?? [],
       },
     ];
   });
+}
+
+export type StaffDiveTanks = { staffName: string; siteIndexes: number[] };
+
+export async function loadStaffDiveTanks(
+  diveCenterId: string,
+  scheduleId: string,
+): Promise<StaffDiveTanks[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("schedule_staff_dive_tanks")
+    .select("staff_name, site_index")
+    .eq("dive_center_id", diveCenterId)
+    .eq("schedule_id", scheduleId);
+
+  const bySite = new Map<string, number[]>();
+  (data ?? []).forEach((r) => {
+    const list = bySite.get(r.staff_name) ?? [];
+    list.push(r.site_index);
+    bySite.set(r.staff_name, list);
+  });
+  return [...bySite.entries()].map(([staffName, siteIndexes]) => ({ staffName, siteIndexes }));
 }
 
 // All clips for a date (feeds Phase 2's "+ Add Team" picker — the caller
@@ -643,9 +703,10 @@ export async function loadPhaseOneData(diveCenterId: string, date: string, userI
 
   const excludedSet = await loadExcludedDiverIds(diveCenterId, date);
   const readyPool = await loadReadyPool(diveCenterId, date, null);
-  const clippedIds = new Set(
-    clips.flatMap((c) => c.members.filter((m) => !m.excluded).map((m) => m.diverId)),
-  );
+  // A diver excluded from a clip (excluded_on_date) stays "handled" by
+  // that clip — they must not fall back into the loose pool, matching
+  // scheduling.html's allClipDiverIds(), which is unfiltered by exclusion.
+  const clippedIds = new Set(clips.flatMap((c) => c.members.map((m) => m.diverId)));
   const looseDivers = readyPool.filter(
     (d) => !clippedIds.has(d.id) && !excludedSet.has(d.id) && !d.alreadyScheduledToday,
   );

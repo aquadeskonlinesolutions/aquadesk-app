@@ -6,6 +6,7 @@ import {
   getPhaseOneData,
   createClip,
   excludeDiverFromClip,
+  includeDiverInClip,
   moveDiverToClip,
   deleteClip,
   updateClipStaff,
@@ -154,20 +155,17 @@ function DiverInfoCard({
 }) {
   const isCourse = d.experienceType === "dive_course";
   return (
-    <div className={`pl-2 border-l-4 ${isCourse ? "border-orange" : "border-transparent"}`}>
-      <div className="font-bold text-navy text-sm leading-tight">
+    <div className={`pl-1.5 border-l-2 ${isCourse ? "border-orange" : "border-transparent"}`}>
+      <div className="font-bold text-navy text-xs leading-none">
         {d.firstName} {d.lastName}
       </div>
-      <div className="text-teal text-xs font-bold leading-tight">
-        {d.nationality || "Unknown"} · {d.certificationLevel || "No cert"}
+      <div className="text-teal text-[11px] font-semibold leading-tight mt-0.5">
+        {d.nationality || "Unknown"} · {d.certificationLevel || "No cert"} · {d.loggedDives}{" "}
+        dive{d.loggedDives === 1 ? "" : "s"} · {d.age != null ? `${d.age}y` : "age n/a"}
       </div>
-      <div className="text-gray-400 text-xs leading-tight">
-        {d.loggedDives} Dive{d.loggedDives === 1 ? "" : "s"}
-        {d.age != null ? `, ${d.age} Years old` : ", age not set"}
-      </div>
-      {d.experienceType && (
-        <div className="text-xs text-gray-500 leading-tight">
-          {isCourse ? `Course${d.courseName ? ` - ${d.courseName}` : ""}` : "Fun Diving"}
+      {isCourse && (
+        <div className="text-[11px] text-gray-500 leading-tight">
+          Course{d.courseName ? ` - ${d.courseName}` : ""}
         </div>
       )}
     </div>
@@ -201,28 +199,52 @@ function ClipMemberRow({
 
   return (
     <div className={`rounded-md ${moving ? "bg-off-white" : ""}`}>
-      <div className="flex items-center justify-between gap-3 py-1.5">
-        <DiverInfoCard d={member} />
+      <div className={`flex items-center justify-between gap-3 py-1.5 ${member.excluded ? "opacity-50" : ""}`}>
+        <div className="flex items-center gap-2">
+          <DiverInfoCard d={member} />
+          {member.excluded && (
+            <span className="shrink-0 text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
+              Not diving this trip
+            </span>
+          )}
+        </div>
         {!readOnly && (
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={onStartMove}
-              className="px-2 py-1 text-xs font-medium text-navy border border-gray-200 rounded-md hover:bg-gray-100"
-            >
-              Move
-            </button>
-            <button
-              onClick={() =>
-                startTransition(async () => {
-                  await excludeDiverFromClip(clip.id, member.diverId);
-                  onChanged();
-                })
-              }
-              disabled={pending}
-              className="px-2 py-1 text-xs font-medium text-red border border-red/30 rounded-md hover:bg-red-light"
-            >
-              Exclude
-            </button>
+            {member.excluded ? (
+              <button
+                onClick={() =>
+                  startTransition(async () => {
+                    await includeDiverInClip(clip.id, member.diverId);
+                    onChanged();
+                  })
+                }
+                disabled={pending}
+                className="px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
+              >
+                Include
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={onStartMove}
+                  className="px-2 py-1 text-xs font-medium text-navy border border-gray-200 rounded-md hover:bg-gray-100"
+                >
+                  Move
+                </button>
+                <button
+                  onClick={() =>
+                    startTransition(async () => {
+                      await excludeDiverFromClip(clip.id, member.diverId);
+                      onChanged();
+                    })
+                  }
+                  disabled={pending}
+                  className="px-2 py-1 text-xs font-medium text-red border border-red/30 rounded-md hover:bg-red-light"
+                >
+                  Exclude
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -276,7 +298,9 @@ function ClipCard({
   const [editingStaff, setEditingStaff] = useState(false);
   const [movingDiverId, setMovingDiverId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const members = clip.members.filter((m) => !m.excluded);
+  // Excluded members stay listed (grayed, "Not diving this trip") rather
+  // than disappearing — see includeDiverInClip/excludeDiverFromClip.
+  const members = clip.members;
 
   function saveStaff(v: { staffId: string | null; staffName: string; isFreelancer: boolean }) {
     startTransition(async () => {

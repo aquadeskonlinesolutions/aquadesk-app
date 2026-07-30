@@ -7,12 +7,14 @@ import {
   loadTripsForDate,
   loadTripDetail,
   loadScheduleDivers,
+  loadStaffDiveTanks,
   loadClipsForDate,
   loadDayAssignmentsForWarnings,
   loadPhaseOneData,
   type TripSummary,
   type TripDetail,
   type ScheduleDiverRow,
+  type StaffDiveTanks,
   type DayAssignment,
   type PhaseOneData,
   type Clip,
@@ -31,6 +33,11 @@ export async function getTripDetail(scheduleId: string): Promise<TripDetail | nu
 export async function getScheduleDivers(scheduleId: string): Promise<ScheduleDiverRow[]> {
   const user = await getCurrentUser();
   return loadScheduleDivers(user.diveCenterId, scheduleId);
+}
+
+export async function getStaffDiveTanks(scheduleId: string): Promise<StaffDiveTanks[]> {
+  const user = await getCurrentUser();
+  return loadStaffDiveTanks(user.diveCenterId, scheduleId);
 }
 
 export async function getDayAssignmentsForWarnings(scheduleDate: string): Promise<DayAssignment[]> {
@@ -199,14 +206,23 @@ export async function cancelTrip(scheduleId: string): Promise<{ error?: string }
 // the shared clip). Matches scheduling.html's real Phase 2 mechanism: a
 // clip is dropped onto a boat wholesale via "+ Add Team," never a single
 // loose diver assigned directly.
+//
+// Per-dive tank choice: a diver/staff member can be nitrox on one dive and
+// plain air on another within the same multi-site trip — schedule_divers'
+// own is_15l/nitrox_requested stay single booleans (derived "at least one
+// dive uses this tank," read by /crew and other existing consumers
+// unchanged); the real per-dive detail lives in the two additive tables
+// this writes below, keyed by site index (matching schedule_sites'
+// sort_order for the same trip — both derived from the same filtered,
+// ordered site list at save time).
 export type TripTeamInput = {
   staffId: string | null;
   staffName: string;
   sourceClipId: string | null;
+  staffNitroxSiteIndexes: number[];
   divers: {
     diverId: string;
-    is15L: boolean;
-    nitroxRequested: boolean;
+    tanks: { siteIndex: number; tankType: "nitrox" | "air_15l" }[];
     experienceType: "fun_diving" | "dive_course" | null;
   }[];
 };
@@ -229,7 +245,11 @@ export async function saveTripTeams(
 
   // schedule_divers has no independent identity beyond the trip — delete +
   // reinsert fresh on every save, same reasoning as schedule_sites.
+  // schedule_diver_dive_tanks cascades from schedule_divers automatically;
+  // schedule_staff_dive_tanks is keyed by schedule_id directly and needs
+  // its own delete.
   await supabase.from("schedule_divers").delete().eq("schedule_id", scheduleId);
+  await supabase.from("schedule_staff_dive_tanks").delete().eq("schedule_id", scheduleId);
 
   const rows = teams.flatMap((t) =>
     t.divers.map((d) => ({
@@ -238,14 +258,50 @@ export async function saveTripTeams(
       diver_id: d.diverId,
       staff_id: t.staffId,
       source_clip_id: t.sourceClipId,
-      is_15l: d.is15L,
-      nitrox_requested: d.nitroxRequested,
+      is_15l: d.tanks.some((tk) => tk.tankType === "air_15l"),
+      nitrox_requested: d.tanks.some((tk) => tk.tankType === "nitrox"),
       experience_type: d.experienceType,
     })),
   );
   if (rows.length > 0) {
-    const { error: insertError } = await supabase.from("schedule_divers").insert(rows);
+    const { data: inserted, error: insertError } = await supabase
+      .from("schedule_divers")
+      .insert(rows)
+      .select("id, diver_id");
     if (insertError) return fail(insertError.message);
+
+    const scheduleDiverIdByDiverId = new Map((inserted ?? []).map((r) => [r.diver_id, r.id]));
+    const tankRows = teams.flatMap((t) =>
+      t.divers.flatMap((d) => {
+        const scheduleDiverId = scheduleDiverIdByDiverId.get(d.diverId);
+        if (!scheduleDiverId) return [];
+        return d.tanks.map((tk) => ({
+          dive_center_id: user.diveCenterId,
+          schedule_diver_id: scheduleDiverId,
+          site_index: tk.siteIndex,
+          tank_type: tk.tankType,
+        }));
+      }),
+    );
+    if (tankRows.length > 0) {
+      const { error: tankError } = await supabase.from("schedule_diver_dive_tanks").insert(tankRows);
+      if (tankError) return fail(tankError.message);
+    }
+  }
+
+  const staffTankRows = teams.flatMap((t) =>
+    t.staffNitroxSiteIndexes.map((siteIndex) => ({
+      dive_center_id: user.diveCenterId,
+      schedule_id: scheduleId,
+      staff_name: t.staffName,
+      site_index: siteIndex,
+    })),
+  );
+  if (staffTankRows.length > 0) {
+    const { error: staffTankError } = await supabase
+      .from("schedule_staff_dive_tanks")
+      .insert(staffTankRows);
+    if (staffTankError) return fail(staffTankError.message);
   }
 
   return ok();
@@ -315,6 +371,21 @@ export async function excludeDiverFromClip(clipId: string, diverId: string): Pro
   const { error } = await supabase
     .from("schedule_team_clip_divers")
     .update({ excluded_on_date: true })
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("clip_id", clipId)
+    .eq("diver_id", diverId);
+  if (error) return fail(error.message);
+  return ok();
+}
+
+// Mirror of excludeDiverFromClip — the diver stays on the same clip either
+// way, this just flips excluded_on_date back off.
+export async function includeDiverInClip(clipId: string, diverId: string): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("schedule_team_clip_divers")
+    .update({ excluded_on_date: false })
     .eq("dive_center_id", user.diveCenterId)
     .eq("clip_id", clipId)
     .eq("diver_id", diverId);

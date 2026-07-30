@@ -301,6 +301,16 @@ export type RegistrationRecord = {
   medicalFlag: boolean;
   privacyNoticeSnapshot: string | null;
   privacyConsentAt: string | null;
+  // Identity snapshot, frozen at signing time (migration 017) — null on
+  // registrations from before that migration, in which case the caller
+  // should fall back to the diver's current profile fields.
+  firstName: string | null;
+  lastName: string | null;
+  birthday: string | null;
+  nationality: string | null;
+  email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
 };
 
 export async function loadDiverRegistrations(diverId: string): Promise<RegistrationRecord[]> {
@@ -308,7 +318,7 @@ export async function loadDiverRegistrations(diverId: string): Promise<Registrat
   const { data } = await supabase
     .from("diver_registrations")
     .select(
-      "id, created_at, arrival_date, departure_date, accommodation, certification_level, waiver_content_snapshot, waiver_date, waiver_signature_url, waiver_signed, medical_answers_snapshot, medical_flag, privacy_notice_snapshot, privacy_consent_at",
+      "id, created_at, arrival_date, departure_date, accommodation, certification_level, waiver_content_snapshot, waiver_date, waiver_signature_url, waiver_signed, medical_answers_snapshot, medical_flag, privacy_notice_snapshot, privacy_consent_at, first_name, last_name, birthday, nationality, email, phone, whatsapp",
     )
     .eq("diver_id", diverId)
     .order("created_at", { ascending: false });
@@ -329,6 +339,13 @@ export async function loadDiverRegistrations(diverId: string): Promise<Registrat
     medicalFlag: !!r.medical_flag,
     privacyNoticeSnapshot: r.privacy_notice_snapshot,
     privacyConsentAt: r.privacy_consent_at,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    birthday: r.birthday,
+    nationality: r.nationality,
+    email: r.email,
+    phone: r.phone,
+    whatsapp: r.whatsapp,
   }));
 }
 

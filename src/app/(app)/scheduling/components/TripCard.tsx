@@ -9,6 +9,7 @@ import {
   cancelTrip,
   getTripDetail,
   getScheduleDivers,
+  getStaffDiveTanks,
   getClipsForDate,
   saveTripTeams,
   type TripFormInput,
@@ -16,6 +17,9 @@ import {
 } from "../actions";
 import { BOAT_MODE_OPTIONS } from "../constants";
 import { WarningsBanner } from "./WarningsBanner";
+import { computeTankTally } from "../tanks";
+
+type DiverTank = { siteIndex: number; tankType: "nitrox" | "air_15l" };
 
 type TeamDiver = {
   diverId: string;
@@ -23,8 +27,7 @@ type TeamDiver = {
   lastName: string;
   certificationLevel: string;
   nitroxCertified: boolean;
-  is15L: boolean;
-  nitroxRequested: boolean;
+  tanks: DiverTank[];
   experienceType: "fun_diving" | "dive_course" | null;
 };
 
@@ -32,8 +35,25 @@ type Team = {
   staffId: string | null;
   staffName: string;
   sourceClipId: string | null;
+  staffNitroxSiteIndexes: number[];
   divers: TeamDiver[];
 };
+
+function tankAt(tanks: DiverTank[], siteIndex: number): "air_12l" | "nitrox" | "air_15l" {
+  return tanks.find((t) => t.siteIndex === siteIndex)?.tankType ?? "air_12l";
+}
+
+// Dive-site slots are shown as 3 default dropdown rows ("Dive Site 1/2/3"),
+// matching scheduling.html's real sites:['','',''] seeding — an empty
+// string is an unfilled slot, not a real selection. "+ Add Dive Site"
+// appends more. Filtered down to real, non-empty ids only at save time.
+const MIN_SITE_SLOTS = 3;
+
+function padSiteSlots(siteIds: string[]): string[] {
+  const slots = [...siteIds];
+  while (slots.length < MIN_SITE_SLOTS) slots.push("");
+  return slots;
+}
 
 function emptyForm(scheduleDate: string): TripFormInput {
   return {
@@ -42,7 +62,7 @@ function emptyForm(scheduleDate: string): TripFormInput {
     boatId: null,
     joinerBoatName: "",
     departureTime: "",
-    siteIds: [],
+    siteIds: padSiteSlots([]),
     notes: "",
     guestDiversCount: null,
     guestDiveCenterName: "",
@@ -57,7 +77,7 @@ function fromDetail(detail: TripDetail): TripFormInput {
     boatId: detail.boatId,
     joinerBoatName: detail.joinerBoatName ?? "",
     departureTime: detail.departureTime ?? "",
-    siteIds: detail.siteIds,
+    siteIds: padSiteSlots(detail.siteIds),
     notes: detail.notes ?? "",
     guestDiversCount: detail.guestDiversCount,
     guestDiveCenterName: detail.guestDiveCenterName ?? "",
@@ -70,6 +90,7 @@ function clipToTeam(clip: Clip): Team {
     staffId: clip.staffId,
     staffName: clip.staffName,
     sourceClipId: clip.id,
+    staffNitroxSiteIndexes: [],
     divers: clip.members
       .filter((m) => !m.excluded)
       .map((m) => ({
@@ -78,8 +99,7 @@ function clipToTeam(clip: Clip): Team {
         lastName: m.lastName,
         certificationLevel: m.certificationLevel,
         nitroxCertified: m.nitroxCertified,
-        is15L: false,
-        nitroxRequested: false,
+        tanks: [],
         experienceType: m.experienceType,
       })),
   };
@@ -182,54 +202,62 @@ export function TripCard({
 
   useEffect(() => {
     if (!initialScheduleId) return;
-    Promise.all([getTripDetail(initialScheduleId), getScheduleDivers(initialScheduleId)]).then(
-      ([d, rows]) => {
-        if (d) {
-          setForm(fromDetail(d));
-          setDetail(d);
-        }
-        const byKey = new Map<string, Team>();
-        rows.forEach((r) => {
-          const key = `${r.staffId ?? "none"}::${r.sourceClipId ?? "none"}`;
-          const team = byKey.get(key) ?? {
-            staffId: r.staffId,
-            staffName: "",
-            sourceClipId: r.sourceClipId,
-            divers: [],
-          };
-          team.divers.push({
-            diverId: r.diverId,
-            firstName: r.firstName,
-            lastName: r.lastName,
-            certificationLevel: r.certificationLevel,
-            nitroxCertified: r.nitroxCertified,
-            is15L: r.is15L,
-            nitroxRequested: r.nitroxRequested,
-            experienceType: r.experienceType,
-          });
-          byKey.set(key, team);
+    Promise.all([
+      getTripDetail(initialScheduleId),
+      getScheduleDivers(initialScheduleId),
+      getStaffDiveTanks(initialScheduleId),
+    ]).then(([d, rows, staffTanks]) => {
+      if (d) {
+        setForm(fromDetail(d));
+        setDetail(d);
+      }
+      const byKey = new Map<string, Team>();
+      rows.forEach((r) => {
+        const key = `${r.staffId ?? "none"}::${r.sourceClipId ?? "none"}`;
+        const team = byKey.get(key) ?? {
+          staffId: r.staffId,
+          staffName: "",
+          sourceClipId: r.sourceClipId,
+          staffNitroxSiteIndexes: [],
+          divers: [],
+        };
+        team.divers.push({
+          diverId: r.diverId,
+          firstName: r.firstName,
+          lastName: r.lastName,
+          certificationLevel: r.certificationLevel,
+          nitroxCertified: r.nitroxCertified,
+          tanks: r.tanks,
+          experienceType: r.experienceType,
         });
-        // Resolve staff names from staffOptions since schedule_divers doesn't store the name.
-        const resolved = [...byKey.values()].map((t) => ({
-          ...t,
-          staffName: staffOptions.find((s) => s.id === t.staffId)?.fullName ?? "Unassigned",
-        }));
-        setTeams(resolved);
-        setLoading(false);
-      },
-    );
+        byKey.set(key, team);
+      });
+      // Resolve staff names from staffOptions since schedule_divers doesn't store the name,
+      // then match each team's per-site nitrox selection by that resolved name (how it was saved).
+      const staffTanksByName = new Map(staffTanks.map((s) => [s.staffName, s.siteIndexes]));
+      const resolved = [...byKey.values()].map((t) => {
+        const staffName = staffOptions.find((s) => s.id === t.staffId)?.fullName ?? "Unassigned";
+        return { ...t, staffName, staffNitroxSiteIndexes: staffTanksByName.get(staffName) ?? [] };
+      });
+      setTeams(resolved);
+      setLoading(false);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialScheduleId]);
 
   const locked = readOnly || (detail?.closed ?? false);
   const placedDiverIds = new Set(teams.flatMap((t) => t.divers.map((d) => d.diverId)));
 
-  function toggleSite(siteId: string) {
-    setForm((f) =>
-      f.siteIds.includes(siteId)
-        ? { ...f, siteIds: f.siteIds.filter((id) => id !== siteId) }
-        : { ...f, siteIds: [...f.siteIds, siteId] },
-    );
+  function setSiteSlot(index: number, siteId: string) {
+    setForm((f) => {
+      const siteIds = [...f.siteIds];
+      siteIds[index] = siteId;
+      return { ...f, siteIds };
+    });
+  }
+
+  function addSiteSlot() {
+    setForm((f) => ({ ...f, siteIds: [...f.siteIds, ""] }));
   }
 
   function removeDiverFromTeam(teamIndex: number, diverId: string) {
@@ -240,18 +268,38 @@ export function TripCard({
     });
   }
 
-  function toggleDiverFlag(teamIndex: number, diverId: string, flag: "is15L" | "nitroxRequested") {
+  // Cycles one diver's tank choice for one specific dive site: Air 12L →
+  // Nitrox → Air 15L → Air 12L — matching scheduling.html's per-dive
+  // exclusivity (a single dive is never both nitrox and 15L at once, but
+  // different dives on the same trip can differ).
+  function cycleDiverTank(teamIndex: number, diverId: string, siteIndex: number) {
     setTeams((prev) => {
       const next = [...prev];
       next[teamIndex] = {
         ...next[teamIndex],
-        divers: next[teamIndex].divers.map((d) =>
-          d.diverId === diverId
-            ? flag === "is15L"
-              ? { ...d, is15L: !d.is15L, nitroxRequested: false }
-              : { ...d, nitroxRequested: !d.nitroxRequested, is15L: false }
-            : d,
-        ),
+        divers: next[teamIndex].divers.map((d) => {
+          if (d.diverId !== diverId) return d;
+          const current = tankAt(d.tanks, siteIndex);
+          const nextType = current === "air_12l" ? "nitrox" : current === "nitrox" ? "air_15l" : null;
+          const tanks = d.tanks.filter((t) => t.siteIndex !== siteIndex);
+          if (nextType) tanks.push({ siteIndex, tankType: nextType });
+          return { ...d, tanks };
+        }),
+      };
+      return next;
+    });
+  }
+
+  function toggleStaffNitrox(teamIndex: number, siteIndex: number) {
+    setTeams((prev) => {
+      const next = [...prev];
+      const team = next[teamIndex];
+      const has = team.staffNitroxSiteIndexes.includes(siteIndex);
+      next[teamIndex] = {
+        ...team,
+        staffNitroxSiteIndexes: has
+          ? team.staffNitroxSiteIndexes.filter((i) => i !== siteIndex)
+          : [...team.staffNitroxSiteIndexes, siteIndex],
       };
       return next;
     });
@@ -259,7 +307,8 @@ export function TripCard({
 
   async function save() {
     setError(null);
-    if (form.siteIds.length === 0) {
+    const realSiteIds = form.siteIds.filter(Boolean);
+    if (realSiteIds.length === 0) {
       setError("At least one dive site is required.");
       return;
     }
@@ -276,10 +325,12 @@ export function TripCard({
       return;
     }
 
+    const payload: TripFormInput = { ...form, siteIds: realSiteIds };
+
     startTransition(async () => {
       let id = scheduleId;
       if (!id) {
-        const res = await createTrip(form);
+        const res = await createTrip(payload);
         if (res.error) {
           setError(res.error);
           return;
@@ -287,7 +338,7 @@ export function TripCard({
         id = res.scheduleId!;
         setScheduleId(id);
       } else {
-        const res = await updateTrip(id, form);
+        const res = await updateTrip(id, payload);
         if (res.error) {
           setError(res.error);
           return;
@@ -298,10 +349,10 @@ export function TripCard({
         staffId: t.staffId,
         staffName: t.staffName,
         sourceClipId: t.sourceClipId,
+        staffNitroxSiteIndexes: t.staffNitroxSiteIndexes,
         divers: t.divers.map((d) => ({
           diverId: d.diverId,
-          is15L: d.is15L,
-          nitroxRequested: d.nitroxRequested,
+          tanks: d.tanks,
           experienceType: d.experienceType,
         })),
       }));
@@ -350,24 +401,19 @@ export function TripCard({
     );
   }
 
-  const diveCount = form.siteIds.length || 1;
-  let air12l = 0;
-  let air15l = 0;
-  let nitrox = 0;
-  teams.forEach((t) =>
-    t.divers.forEach((d) => {
-      if (d.nitroxRequested) nitrox += diveCount;
-      else if (d.is15L) air15l += diveCount;
-      else air12l += diveCount;
-    }),
-  );
+  const realSiteIds = form.siteIds.filter(Boolean);
+  const tally = computeTankTally({
+    siteCount: realSiteIds.length,
+    diverTanks: teams.flatMap((t) => t.divers.map((d) => d.tanks)),
+    staffNitroxSiteIndexesByTeam: teams.map((t) => t.staffNitroxSiteIndexes),
+  });
 
   const warningAssignments = teams.flatMap((t) =>
     t.divers.map((d) => ({
       diverId: d.diverId,
       staffId: t.staffId,
       certificationLevel: d.certificationLevel,
-      nitroxRequested: d.nitroxRequested,
+      nitroxRequested: d.tanks.some((tk) => tk.tankType === "nitrox"),
     })),
   );
   const boat = form.boatId ? boats.find((b) => b.id === form.boatId) : null;
@@ -492,26 +538,36 @@ export function TripCard({
           )}
 
           <div className="col-span-2">
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-medium text-gray-600">Dive Sites</label>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {diveSites.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  disabled={locked}
-                  onClick={() => toggleSite(s.id)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md border ${
-                    form.siteIds.includes(s.id)
-                      ? "bg-navy text-white border-navy"
-                      : "bg-white text-gray-600 border-gray-300"
-                  } disabled:opacity-60`}
-                >
-                  {s.siteName}
-                </button>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Dive Sites</label>
+            <div className="grid gap-2">
+              {form.siteIds.map((siteId, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-16 shrink-0">Dive Site {i + 1}</span>
+                  <select
+                    disabled={locked}
+                    value={siteId}
+                    onChange={(e) => setSiteSlot(i, e.target.value)}
+                    className="flex-1 border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                  >
+                    <option value="">— Select site —</option>
+                    {diveSites.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.siteName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               ))}
             </div>
+            {!locked && (
+              <button
+                type="button"
+                onClick={addSiteSlot}
+                className="mt-2 px-2.5 py-1 text-xs font-medium text-navy border border-gray-300 rounded-md hover:bg-gray-100"
+              >
+                + Add Dive Site
+              </button>
+            )}
           </div>
 
           <div className="col-span-2">
@@ -539,13 +595,43 @@ export function TripCard({
             )}
           </div>
 
+          {realSiteIds.length > 0 && teams.length > 0 && (
+            <div className="text-[10px] text-gray-400 mb-2">
+              Tank pill per dive site — click to cycle Air 12L → Nitrox → Air 15L. Staff only get Nitrox or Air 12L.
+            </div>
+          )}
+
           {teams.length === 0 ? (
             <div className="text-xs text-gray-400">No teams assigned yet.</div>
           ) : (
             <div className="grid gap-2">
               {teams.map((t, ti) => (
                 <div key={`${t.staffId ?? "none"}-${t.sourceClipId ?? ti}`} className="border border-gray-200 rounded-lg p-3">
-                  <div className="text-sm font-medium text-navy mb-1">{t.staffName}</div>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-sm font-medium text-navy">{t.staffName}</div>
+                    {realSiteIds.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-gray-400 mr-1">Staff O2:</span>
+                        {realSiteIds.map((_, si) => {
+                          const active = t.staffNitroxSiteIndexes.includes(si);
+                          return (
+                            <button
+                              key={si}
+                              type="button"
+                              disabled={locked}
+                              onClick={() => toggleStaffNitrox(ti, si)}
+                              title={diveSites.find((s) => s.id === realSiteIds[si])?.siteName ?? `Dive ${si + 1}`}
+                              className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${
+                                active ? "bg-teal text-white border-teal" : "bg-white text-gray-500 border-gray-300"
+                              } disabled:opacity-60`}
+                            >
+                              D{si + 1}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                   <div className="grid gap-1">
                     {t.divers.map((d) => (
                       <div key={d.diverId} className="flex items-center justify-between text-xs">
@@ -553,29 +639,34 @@ export function TripCard({
                           {d.firstName} {d.lastName}{" "}
                           <span className="text-gray-400">({d.certificationLevel})</span>
                         </span>
-                        <div className="flex items-center gap-2">
-                          <label className="flex items-center gap-1 text-gray-500">
-                            <input
-                              type="checkbox"
-                              disabled={locked}
-                              checked={d.is15L}
-                              onChange={() => toggleDiverFlag(ti, d.diverId, "is15L")}
-                            />
-                            15L
-                          </label>
-                          <label className="flex items-center gap-1 text-gray-500">
-                            <input
-                              type="checkbox"
-                              disabled={locked}
-                              checked={d.nitroxRequested}
-                              onChange={() => toggleDiverFlag(ti, d.diverId, "nitroxRequested")}
-                            />
-                            Nitrox
-                          </label>
+                        <div className="flex items-center gap-1.5">
+                          {realSiteIds.map((siteId, si) => {
+                            const tank = tankAt(d.tanks, si);
+                            const label = tank === "nitrox" ? "N" : tank === "air_15l" ? "15L" : "12L";
+                            const siteName = diveSites.find((s) => s.id === siteId)?.siteName ?? `Dive ${si + 1}`;
+                            return (
+                              <button
+                                key={si}
+                                type="button"
+                                disabled={locked}
+                                title={siteName}
+                                onClick={() => cycleDiverTank(ti, d.diverId, si)}
+                                className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${
+                                  tank === "nitrox"
+                                    ? "bg-teal text-white border-teal"
+                                    : tank === "air_15l"
+                                      ? "bg-navy text-white border-navy"
+                                      : "bg-white text-gray-500 border-gray-300"
+                                } disabled:opacity-60`}
+                              >
+                                D{si + 1}:{label}
+                              </button>
+                            );
+                          })}
                           {!locked && (
                             <button
                               onClick={() => removeDiverFromTeam(ti, d.diverId)}
-                              className="text-red text-xs hover:underline"
+                              className="text-red text-xs hover:underline ml-1"
                             >
                               Remove
                             </button>
@@ -591,9 +682,9 @@ export function TripCard({
 
           {teams.length > 0 && (
             <div className="flex gap-2 mt-2 text-xs">
-              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Air 12L: {air12l}</span>
-              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Air 15L: {air15l}</span>
-              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Nitrox: {nitrox}</span>
+              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Air 12L: {tally.air12l}</span>
+              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Air 15L: {tally.air15l}</span>
+              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Nitrox: {tally.nitrox}</span>
             </div>
           )}
 

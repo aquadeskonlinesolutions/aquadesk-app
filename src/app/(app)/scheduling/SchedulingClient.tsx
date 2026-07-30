@@ -127,8 +127,8 @@ export function SchedulingClient({
             <PhaseThreePanel
               trips={trips}
               boats={boats}
+              diveSites={diveSites}
               staffOptions={staffOptions}
-              readOnly={isPastDate}
               onChanged={refreshInPlace}
             />
           )}

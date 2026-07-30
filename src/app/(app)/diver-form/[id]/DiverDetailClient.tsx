@@ -140,7 +140,7 @@ export function DiverDetailClient({
         />
       )}
 
-      <DocumentsViewer registrations={registrations} />
+      <DocumentsViewer registrations={registrations} diver={diver} />
 
       <NotesPanel diverId={diver.id} initialNotes={initialNotes} isOwner={isOwner} />
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { RegistrationRecord } from "../data";
+import type { DiverDetail, RegistrationRecord } from "../data";
 
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -17,7 +17,31 @@ function fmtDateTime(ts: string | null): string {
   return d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
 }
 
-export function DocumentsViewer({ registrations }: { registrations: RegistrationRecord[] }) {
+// Registrations from before migration 017 have no identity snapshot of
+// their own — fall back to the diver's current profile for those only, so
+// old records don't show blank. Anything signed after the migration
+// always reads its own frozen fields, never the live diver record, so a
+// later name correction can't retroactively change what an old signed
+// document appears to say.
+function resolveIdentity(selected: RegistrationRecord, diver: DiverDetail) {
+  return {
+    firstName: selected.firstName ?? diver.firstName,
+    lastName: selected.lastName ?? diver.lastName,
+    birthday: selected.birthday ?? diver.birthday,
+    nationality: selected.nationality ?? diver.nationality,
+    email: selected.email ?? diver.email,
+    phone: selected.phone ?? diver.phone,
+    whatsapp: selected.whatsapp ?? diver.whatsapp,
+  };
+}
+
+export function DocumentsViewer({
+  registrations,
+  diver,
+}: {
+  registrations: RegistrationRecord[];
+  diver: DiverDetail;
+}) {
   const [selectedId, setSelectedId] = useState(registrations[0]?.id ?? null);
 
   if (registrations.length === 0) {
@@ -29,6 +53,7 @@ export function DocumentsViewer({ registrations }: { registrations: Registration
   }
 
   const selected = registrations.find((r) => r.id === selectedId) ?? registrations[0];
+  const identity = resolveIdentity(selected, diver);
   const yesAnswers = selected.medicalAnswersSnapshot.filter((a) => a.answer === true || a.answer === "yes");
 
   return (
@@ -65,6 +90,18 @@ export function DocumentsViewer({ registrations }: { registrations: Registration
       )}
 
       <div className="print:hidden p-5 grid gap-4">
+        <div className="border border-gray-200 rounded-lg p-3 bg-off-white">
+          <div className="text-sm font-extrabold text-navy">
+            {identity.firstName} {identity.lastName}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            {identity.nationality || "Nationality not on file"}
+            {identity.birthday ? ` · Born ${fmtDate(identity.birthday)}` : ""}
+            {identity.email ? ` · ${identity.email}` : ""}
+            {identity.phone ? ` · ${identity.phone}` : ""}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Arrival</div>
@@ -139,7 +176,18 @@ export function DocumentsViewer({ registrations }: { registrations: Registration
           the flagged ones), the full waiver text with no scroll clipping,
           and the signature. */}
       <div className="hidden print:block p-6">
-        <div className="text-lg font-extrabold text-navy mb-4">Signed Documents — {fmtDateTime(selected.createdAt)}</div>
+        <div className="text-lg font-extrabold text-navy mb-1">
+          {identity.firstName} {identity.lastName}
+        </div>
+        <div className="text-sm text-gray-600 mb-4">
+          {identity.nationality || "Nationality not on file"}
+          {identity.birthday ? ` · Born ${fmtDate(identity.birthday)}` : ""}
+          {identity.email ? ` · ${identity.email}` : ""}
+          {identity.phone ? ` · ${identity.phone}` : ""}
+          {identity.whatsapp ? ` · WhatsApp ${identity.whatsapp}` : ""}
+          {" · Signed "}
+          {fmtDateTime(selected.createdAt)}
+        </div>
 
         <div className="grid grid-cols-4 gap-4 mb-4">
           <div>

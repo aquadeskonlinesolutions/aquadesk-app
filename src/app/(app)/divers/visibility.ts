@@ -39,20 +39,3 @@ export function isDiverActive(diver: {
 
   return !diver.billFullyClosed;
 }
-
-export function isGroupActive(
-  group: { arrivalDate: string | null; departureDate: string | null },
-  members: {
-    arrivalDate: string | null;
-    departureDate: string | null;
-    hasOpenVisit: boolean;
-    billFullyClosed: boolean;
-  }[],
-): boolean {
-  if (members.length > 0) return members.some(isDiverActive);
-
-  const today = todayManila();
-  if (!group.arrivalDate) return true;
-  const arrivesFrom = shiftDateStr(group.arrivalDate, -1);
-  return arrivesFrom <= today && (!group.departureDate || group.departureDate >= today);
-}
