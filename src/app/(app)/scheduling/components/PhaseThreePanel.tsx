@@ -14,6 +14,31 @@ import { computeTankTally, formatTankLine } from "../tanks";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 
+// Manila-anchored "now", evaluated client-side — same Intl.DateTimeFormat
+// en-CA pattern as scheduling/actions.ts's server-side nowManilaMinute(),
+// so the client-side gate below agrees with markBoatReturned's own check.
+function nowManilaMinute(): string {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date()).map((p) => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function formatTime12h(time24: string): string {
+  const [hStr, mStr] = time24.split(":");
+  const h24 = parseInt(hStr, 10);
+  const ampm = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${mStr} ${ampm}`;
+}
+
 // "Nitrox D1,D2" / "15L D1" — which dives (1-based) use which tank, for a
 // diver whose choice can vary per dive on a multi-site trip.
 function diverTankLabel(tanks: DiveTank[], siteCount: number): string {
@@ -201,34 +226,65 @@ function TripSummaryCard({
     });
   }
 
+  const siteNameById = new Map(diveSites.map((s) => [s.id, s.siteName]));
+  const canReturn = !detail.departureTime || nowManilaMinute() >= `${detail.scheduleDate}T${detail.departureTime.slice(0, 5)}`;
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-      <div className="bg-navy text-white px-4 py-3 flex items-center justify-between gap-3">
-        <div>
+      <div className="bg-navy text-white px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
           <div className="font-extrabold text-sm">
             {detail.isJoiner ? (detail.joinerBoatName ?? "Join Ride") : (boat?.name ?? "Boat")}
           </div>
-          <div className="text-xs text-white/70">
-            {detail.departureTime ?? "No time"} {detail.captain ? `· Captain ${detail.captain}` : ""}
-            {detail.crew.length > 0 ? ` · Crew: ${detail.crew.join(", ")}` : ""}
+          <div className="flex items-center gap-2 shrink-0">
+            {detail.closed && (
+              <span className="text-xs bg-teal/30 text-white px-2 py-0.5 rounded-full">Returned</span>
+            )}
+            {detail.cancelled && (
+              <span className="text-xs bg-red/30 text-white px-2 py-0.5 rounded-full">Cancelled</span>
+            )}
+            <button
+              onClick={() =>
+                downloadTripImage(
+                  tripPreviewText(detail, boat, diveSites, divers, staffTanks, staffNameById),
+                  `${detail.scheduleDate} - ${boat?.name ?? detail.joinerBoatName ?? "trip"} - ${detail.departureTime ?? ""}.png`,
+                )
+              }
+              className="text-xs font-medium text-white/80 border border-white/30 rounded-md px-2 py-1 hover:bg-white/10"
+            >
+              Download Image
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {detail.closed && <span className="text-xs bg-teal/30 text-white px-2 py-0.5 rounded-full">Returned</span>}
-          {detail.cancelled && (
-            <span className="text-xs bg-red/30 text-white px-2 py-0.5 rounded-full">Cancelled</span>
+        {/* Meta row — matches scheduling.html's confirmTripHTML() real
+            .confirm-meta block, visible on screen, not just in the
+            clipboard "Copy Preview"/Download Image text. */}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/70 mt-1.5">
+          <span>Date: {detail.scheduleDate}</span>
+          <span>Departure: {detail.departureTime || "No time"}</span>
+          {!detail.isJoiner && <span>Captain: {detail.captain || "-"}</span>}
+          {!detail.isJoiner && <span>Crew: {detail.crew.length ? detail.crew.join(", ") : "-"}</span>}
+          <span>
+            {divers.length} diver{divers.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        {/* Site chips — matches scheduling.html's real .site-chips row,
+            also never shown on screen before this. */}
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {detail.siteIds.length > 0 ? (
+            detail.siteIds.map((id, i) => (
+              <span
+                key={`${id}-${i}`}
+                className="text-[10px] font-semibold bg-white/10 border border-white/20 text-white px-2 py-0.5 rounded-full"
+              >
+                Dive {i + 1} - {siteNameById.get(id) ?? "Site"}
+              </span>
+            ))
+          ) : (
+            <span className="text-[10px] font-semibold bg-white/10 border border-white/20 text-white px-2 py-0.5 rounded-full">
+              No dives
+            </span>
           )}
-          <button
-            onClick={() =>
-              downloadTripImage(
-                tripPreviewText(detail, boat, diveSites, divers, staffTanks, staffNameById),
-                `${detail.scheduleDate} - ${boat?.name ?? detail.joinerBoatName ?? "trip"} - ${detail.departureTime ?? ""}.png`,
-              )
-            }
-            className="text-xs font-medium text-white/80 border border-white/30 rounded-md px-2 py-1 hover:bg-white/10"
-          >
-            Download Image
-          </button>
         </div>
       </div>
 
@@ -290,9 +346,26 @@ function TripSummaryCard({
                 Fuel Consumed: <span className="font-medium text-navy">{detail.fuelConsumedLiters} L</span>
               </div>
             )}
-            <Button variant="secondary" size="md" onClick={() => returnBoat()} disabled={pending || divers.length === 0}>
-              {pending ? "Closing…" : "Boat Returned"}
-            </Button>
+            {canReturn ? (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => returnBoat()}
+                disabled={pending || divers.length === 0}
+              >
+                {pending ? "Closing…" : "Boat Returned"}
+              </Button>
+            ) : (
+              // Matches scheduling.html's real return-bar "wait" state —
+              // disabled until departure time passes, instead of letting
+              // the click reach the server just to fail there.
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <span className="px-3 py-1.5 border border-gray-200 rounded-md bg-gray-50 text-gray-400 font-medium">
+                  Boat Returned
+                </span>
+                <span>Available at {formatTime12h(detail.departureTime!)}</span>
+              </div>
+            )}
           </div>
         )}
       </div>

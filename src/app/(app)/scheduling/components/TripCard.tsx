@@ -15,10 +15,11 @@ import {
   type TripFormInput,
   type TripTeamInput,
 } from "../actions";
-import { BOAT_MODE_OPTIONS } from "../constants";
+import { BOAT_MODE_OPTIONS, CERT_LEVEL_LABELS } from "../constants";
 import { WarningsBanner } from "./WarningsBanner";
 import { computeTankTally } from "../tanks";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { SectionBox } from "@/components/ui/SectionBox";
 
@@ -246,6 +247,7 @@ export function TripCard({
   const [showAddTeam, setShowAddTeam] = useState(false);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const showToast = useToast();
   // Matches scheduling.html's real collapsible trip cards: a saved trip
   // defaults to its compact summary, a brand-new one starts open so it
   // can be filled in immediately.
@@ -331,19 +333,53 @@ export function TripCard({
     });
   }
 
-  // Cycles one diver's tank choice for one specific dive site: Air 12L →
-  // Nitrox → Air 15L → Air 12L — matching scheduling.html's per-dive
-  // exclusivity (a single dive is never both nitrox and 15L at once, but
-  // different dives on the same trip can differ).
-  function cycleDiverTank(teamIndex: number, diverId: string, siteIndex: number) {
+  // Two labeled toggles per dive site — matching scheduling.html's real
+  // diverFlagsHTML()/toggleNitrox()/toggle15l(): a "Nitrox" checkbox row and
+  // a separate "15L" checkbox row per diver, mutually exclusive per dive
+  // (checking one while the other is already set for that same dive is
+  // rejected with a toast, not silently overwritten) — clearer than a
+  // single ambiguous cycling pill, and it's what the checked/unchecked
+  // state actually communicates rather than requiring three clicks to
+  // discover what each stage means.
+  function toggleDiverNitrox(teamIndex: number, diverId: string, siteIndex: number) {
+    const diver = teams[teamIndex]?.divers.find((d) => d.diverId === diverId);
+    if (!diver) return;
+    const current = tankAt(diver.tanks, siteIndex);
+    if (current === "air_15l") {
+      showToast("Choose either Nitrox or 15L for that dive.", "error");
+      return;
+    }
+    const nextType = current === "nitrox" ? null : "nitrox";
     setTeams((prev) => {
       const next = [...prev];
       next[teamIndex] = {
         ...next[teamIndex],
         divers: next[teamIndex].divers.map((d) => {
           if (d.diverId !== diverId) return d;
-          const current = tankAt(d.tanks, siteIndex);
-          const nextType = current === "air_12l" ? "nitrox" : current === "nitrox" ? "air_15l" : null;
+          const tanks = d.tanks.filter((t) => t.siteIndex !== siteIndex);
+          if (nextType) tanks.push({ siteIndex, tankType: nextType });
+          return { ...d, tanks };
+        }),
+      };
+      return next;
+    });
+  }
+
+  function toggleDiverTank15l(teamIndex: number, diverId: string, siteIndex: number) {
+    const diver = teams[teamIndex]?.divers.find((d) => d.diverId === diverId);
+    if (!diver) return;
+    const current = tankAt(diver.tanks, siteIndex);
+    if (current === "nitrox") {
+      showToast("Choose either Nitrox or 15L for that dive.", "error");
+      return;
+    }
+    const nextType = current === "air_15l" ? null : "air_15l";
+    setTeams((prev) => {
+      const next = [...prev];
+      next[teamIndex] = {
+        ...next[teamIndex],
+        divers: next[teamIndex].divers.map((d) => {
+          if (d.diverId !== diverId) return d;
           const tanks = d.tanks.filter((t) => t.siteIndex !== siteIndex);
           if (nextType) tanks.push({ siteIndex, tankType: nextType });
           return { ...d, tanks };
@@ -753,7 +789,7 @@ export function TripCard({
 
           {realSiteIds.length > 0 && teams.length > 0 && (
             <div className="text-[10px] text-gray-400 mb-2">
-              Tank pill per dive site — click to cycle Air 12L → Nitrox → Air 15L. Staff only get Nitrox or Air 12L.
+              Per dive site — choose either Nitrox or 15L for the same dive.
             </div>
           )}
 
@@ -766,71 +802,107 @@ export function TripCard({
                   key={`${t.staffId ?? "none"}-${t.sourceClipId ?? ti}`}
                   className={`border border-gray-200 border-l-4 ${TEAM_ACCENT_COLORS[ti % TEAM_ACCENT_COLORS.length]} rounded-lg p-3`}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="text-sm font-medium text-navy">{t.staffName}</div>
-                    {realSiteIds.length > 0 && (
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-gray-400 mr-1">Staff O2:</span>
-                        {realSiteIds.map((_, si) => {
-                          const active = t.staffNitroxSiteIndexes.includes(si);
-                          return (
-                            <button
-                              key={si}
-                              type="button"
-                              disabled={locked}
-                              onClick={() => toggleStaffNitrox(ti, si)}
-                              title={diveSites.find((s) => s.id === realSiteIds[si])?.siteName ?? `Dive ${si + 1}`}
-                              className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${
-                                active ? "bg-teal text-white border-teal" : "bg-white text-gray-500 border-gray-300"
-                              } disabled:opacity-60`}
-                            >
-                              D{si + 1}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <div className="grid gap-1">
+                  <div className="text-sm font-medium text-navy mb-1">{t.staffName}</div>
+                  {realSiteIds.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <span className="text-[10px] font-semibold text-gray-500 w-16 shrink-0">Staff Nitrox</span>
+                      {realSiteIds.map((siteId, si) => {
+                        const active = t.staffNitroxSiteIndexes.includes(si);
+                        const siteName = diveSites.find((s) => s.id === siteId)?.siteName ?? `Dive ${si + 1}`;
+                        return (
+                          <button
+                            key={si}
+                            type="button"
+                            disabled={locked}
+                            onClick={() => toggleStaffNitrox(ti, si)}
+                            title={`Nitrox – Dive ${si + 1} (${siteName})`}
+                            className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${
+                              active ? "bg-teal text-white border-teal" : "bg-white text-gray-500 border-gray-300"
+                            } disabled:opacity-60`}
+                          >
+                            D{si + 1}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="grid gap-2">
                     {t.divers.map((d) => (
-                      <div key={d.diverId} className="flex items-center justify-between text-xs">
-                        <span className="text-gray-700">
-                          {d.firstName} {d.lastName}{" "}
-                          <span className="text-gray-400">({d.certificationLevel})</span>
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {realSiteIds.map((siteId, si) => {
-                            const tank = tankAt(d.tanks, si);
-                            const label = tank === "nitrox" ? "N" : tank === "air_15l" ? "15L" : "12L";
-                            const siteName = diveSites.find((s) => s.id === siteId)?.siteName ?? `Dive ${si + 1}`;
-                            return (
-                              <button
-                                key={si}
-                                type="button"
-                                disabled={locked}
-                                title={siteName}
-                                onClick={() => cycleDiverTank(ti, d.diverId, si)}
-                                className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${
-                                  tank === "nitrox"
-                                    ? "bg-teal text-white border-teal"
-                                    : tank === "air_15l"
-                                      ? "bg-navy text-white border-navy"
-                                      : "bg-white text-gray-500 border-gray-300"
-                                } disabled:opacity-60`}
-                              >
-                                D{si + 1}:{label}
-                              </button>
-                            );
-                          })}
+                      <div key={d.diverId} className="border border-gray-100 rounded-md px-2 py-1.5">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-gray-700">
+                            {d.firstName} {d.lastName}{" "}
+                            <span className="text-gray-400">
+                              ({CERT_LEVEL_LABELS[d.certificationLevel] ?? d.certificationLevel})
+                            </span>
+                          </span>
                           {!locked && (
                             <button
                               onClick={() => removeDiverFromTeam(ti, d.diverId)}
-                              className="text-red text-xs hover:underline ml-1"
+                              className="text-red text-xs hover:underline"
                             >
                               Remove
                             </button>
                           )}
                         </div>
+                        {realSiteIds.length > 0 && (
+                          <div className="grid gap-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-semibold text-gray-500 w-10 shrink-0">Nitrox</span>
+                              {d.nitroxCertified ? (
+                                realSiteIds.map((siteId, si) => {
+                                  const checked = tankAt(d.tanks, si) === "nitrox";
+                                  const siteName = diveSites.find((s) => s.id === siteId)?.siteName ?? `Dive ${si + 1}`;
+                                  return (
+                                    <label
+                                      key={si}
+                                      title={siteName}
+                                      className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded border cursor-pointer ${
+                                        checked ? "bg-teal text-white border-teal" : "bg-white text-gray-500 border-gray-300"
+                                      } ${locked ? "opacity-60 pointer-events-none" : ""}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={locked}
+                                        onChange={() => toggleDiverNitrox(ti, d.diverId, si)}
+                                        className="hidden"
+                                      />
+                                      D{si + 1}
+                                    </label>
+                                  );
+                                })
+                              ) : (
+                                <span className="text-[10px] text-gray-400 italic">Not nitrox certified</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-semibold text-gray-500 w-10 shrink-0">15L</span>
+                              {realSiteIds.map((siteId, si) => {
+                                const checked = tankAt(d.tanks, si) === "air_15l";
+                                const siteName = diveSites.find((s) => s.id === siteId)?.siteName ?? `Dive ${si + 1}`;
+                                return (
+                                  <label
+                                    key={si}
+                                    title={siteName}
+                                    className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded border cursor-pointer ${
+                                      checked ? "bg-navy text-white border-navy" : "bg-white text-gray-500 border-gray-300"
+                                    } ${locked ? "opacity-60 pointer-events-none" : ""}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={locked}
+                                      onChange={() => toggleDiverTank15l(ti, d.diverId, si)}
+                                      className="hidden"
+                                    />
+                                    D{si + 1}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
