@@ -11,7 +11,7 @@ type Assignment = {
 
 function ratioBadgeClass(count: number): string {
   if (count > 6) return "bg-red/10 text-red";
-  if (count > 4) return "bg-amber-100 text-amber-700";
+  if (count > 4) return "bg-orange-light text-orange";
   return "bg-teal/10 text-teal";
 }
 
@@ -98,7 +98,7 @@ export function WarningsBanner({
         </div>
       )}
       {[...warnings, ...mixedWarnings].map((w, i) => (
-        <div key={i} className="text-xs bg-amber-100 text-amber-700 px-3 py-2 rounded-md">
+        <div key={i} className="text-xs bg-orange-light text-orange border border-orange/20 px-3 py-2 rounded-md">
           ⚠️ {w}
         </div>
       ))}

@@ -12,6 +12,7 @@ import {
 } from "../actions";
 import { DiverCard } from "./DiverCard";
 import { ExperienceTagModal, type PendingTag } from "./ExperienceTagModal";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 export function IndividualManagementTab({
   courseRates,
@@ -30,6 +31,7 @@ export function IndividualManagementTab({
   const [pending, startTransition] = useTransition();
   const [pendingTagDivers, setPendingTagDivers] = useState<DiverCardType[] | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirm = useConfirm();
 
   function load() {
     startTransition(async () => setCards(await getRecentDiverCards()));
@@ -104,9 +106,12 @@ export function IndividualManagementTab({
     });
   }
 
-  function removeCard(diverId: string, name: string) {
-    if (!window.confirm(`Remove ${name}? This deletes their diver record entirely and cannot be undone. If this was a mistake, they'll need to re-register.`))
-      return;
+  async function removeCard(diverId: string, name: string) {
+    const ok = await confirm(
+      `Remove ${name}? This deletes their diver record entirely and cannot be undone. If this was a mistake, they'll need to re-register.`,
+      { danger: true },
+    );
+    if (!ok) return;
     startTransition(async () => {
       const res = await removeDiver(diverId);
       if (res.error) setError(res.error);

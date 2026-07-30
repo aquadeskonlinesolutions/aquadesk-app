@@ -11,18 +11,29 @@ import { createClient } from "@/lib/supabase/server";
 // calculate_visit_total's trivial aggregate — neither does rate lookup, and
 // every other money-sensitive feature already computes in TS).
 //
-// One deliberate deviation from the old app (diver-form.html), verified
-// against this rebuild's real schema/Settings UI, not assumed: package-mode
-// dive-rate resolution uses dive_sites.linked_package_id (a real, already-
-// shipped Settings > Dive Sites field — a direct FK, set once
-// per site) instead of the old app's fuzzy site-key text matching with a
-// mid-flow "which package?" picker. The FK already resolves the ambiguity
-// the old app needed a picker for, so no picker/visit_rate_selections use
-// is needed for the common case. visit_rate_selections stays in the schema
-// unused by this pass — a real UI for genuinely ambiguous multi-site rows
-// (see below) is a reasonable follow-up, not built here.
+// Package-mode dive-rate resolution matches the live app's real
+// diver-form.html/scheduling.html mechanism exactly (corrected in a later
+// session — an earlier version of this file used dive_sites.
+// linked_package_id, a 1-site-to-1-package FK, which can't represent a
+// real multi-site package like "Shark Diving" = "Kimud, Kimud, Monad").
+// A package's dive_site column (already real,
+// settings/pricing/PackagesSection.tsx's "Dive Site Combination" field)
+// is a free-text, ordered, repeatable list of every real site visit the
+// package covers. Matching normalizes both sides the same way the live
+// app's normalizePackageSites()/findPackageBySiteKey() do — split, trim,
+// lowercase, sort, join — and compares the *whole trip's* site
+// combination (Scheduling's markBoatReturned now writes exactly this
+// combined string for package-mode trips) against every package's own
+// normalized dive_site. linked_package_id stays untouched and unread by
+// pricing — confirmed the live app also keeps its site->package FK as a
+// pure Settings-UI cross-reference label, never used for pricing.
 //
-// Scoped gap, documented rather than half-built: package-mode nitrox/15L
+// Scoped gap, documented rather than half-built: 0-or-2+ package matches
+// just fall back to "enter manually" (same as no match) — the live app's
+// ambiguous-match picker (visit_rate_selections.site_key) is a real
+// schema-already-exists follow-up, not built here.
+//
+// Separate scoped gap, unrelated to the above: package-mode nitrox/15L
 // add-on pricing has no equally clean dedicated mechanism (unlike tier mode,
 // which has first-class rate_tiers rows for exactly this) and no default
 // Settings item to match against — left as manual entry in package mode.
@@ -62,7 +73,7 @@ async function lookupOtherCharge(
   return Number(data?.amount) || 0;
 }
 
-type SiteMeta = { linkedPackageId: string | null; fuelEstimate: "Low" | "Medium" | "High"; sharkFee: boolean };
+type SiteMeta = { fuelEstimate: "Low" | "Medium" | "High"; sharkFee: boolean };
 
 async function resolveSite(diveCenterId: string, diveSiteText: string): Promise<SiteMeta | null> {
   const firstSiteName = diveSiteText
@@ -74,17 +85,46 @@ async function resolveSite(diveCenterId: string, diveSiteText: string): Promise<
   const supabase = await createClient();
   const { data } = await supabase
     .from("dive_sites")
-    .select("linked_package_id, fuel_estimate, shark_fee")
+    .select("fuel_estimate, shark_fee")
     .eq("dive_center_id", diveCenterId)
     .ilike("site_name", firstSiteName)
     .maybeSingle();
 
   if (!data) return null;
   return {
-    linkedPackageId: data.linked_package_id,
     fuelEstimate: data.fuel_estimate as "Low" | "Medium" | "High",
     sharkFee: !!data.shark_fee,
   };
+}
+
+// Matches diver-form.html's normalizePackageSites(): split on common
+// separators, trim, lowercase, sort, join — order-independent so
+// "Kimud, Monad, Kimud" and "Kimud, Kimud, Monad" match the same package.
+function normalizeSiteKey(text: string): string {
+  return text
+    .split(/[,|+•;\n]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
+async function resolvePackageBySiteCombo(
+  diveCenterId: string,
+  diveSiteText: string,
+): Promise<{ price: number } | null> {
+  const key = normalizeSiteKey(diveSiteText);
+  if (!key) return null;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("packages")
+    .select("dive_site, price")
+    .eq("dive_center_id", diveCenterId)
+    .eq("is_active", true);
+
+  const match = (data ?? []).find((p) => normalizeSiteKey(p.dive_site ?? "") === key);
+  return match ? { price: Number(match.price) || 0 } : null;
 }
 
 async function otherChargesForSite(diveCenterId: string, site: SiteMeta | null): Promise<{ fuel: number; marine: number; shark: number }> {
@@ -118,26 +158,24 @@ export async function autoPriceCourseMode(diveCenterId: string, courseRateId: st
 }
 
 export async function autoPricePackageMode(diveCenterId: string, diveSiteText: string): Promise<AutoPriceResult> {
+  // Fuel/marine/shark stay resolved from the row's first real site name —
+  // unrelated to which package matched, unchanged from before.
   const site = await resolveSite(diveCenterId, diveSiteText);
   const { fuel, marine, shark } = await otherChargesForSite(diveCenterId, site);
 
-  if (!site) {
-    return { ...ZERO_RESULT, fuelSurcharge: fuel, marineTax: marine, sharkFee: shark, note: "No matching dive site configured — enter the dive rate manually." };
+  const pkg = await resolvePackageBySiteCombo(diveCenterId, diveSiteText);
+  if (!pkg) {
+    return {
+      ...ZERO_RESULT,
+      fuelSurcharge: fuel,
+      marineTax: marine,
+      sharkFee: shark,
+      note: "No matching package configured for this dive-site combination (set one in Settings > Pricing & Rates > Packages) — enter the dive rate manually.",
+    };
   }
-  if (!site.linkedPackageId) {
-    return { ...ZERO_RESULT, fuelSurcharge: fuel, marineTax: marine, sharkFee: shark, note: "This dive site has no linked package (set one in Settings > Dive Sites) — enter the dive rate manually." };
-  }
-
-  const supabase = await createClient();
-  const { data: pkg } = await supabase
-    .from("packages")
-    .select("price")
-    .eq("id", site.linkedPackageId)
-    .eq("dive_center_id", diveCenterId)
-    .maybeSingle();
 
   return {
-    diveRate: Number(pkg?.price) || 0,
+    diveRate: pkg.price,
     fuelSurcharge: fuel,
     marineTax: marine,
     sharkFee: shark,

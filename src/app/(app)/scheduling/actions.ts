@@ -74,10 +74,14 @@ async function replaceScheduleSites(
   diveCenterId: string,
   scheduleId: string,
   siteIds: string[],
-) {
+): Promise<{ error?: string }> {
   await supabase.from("schedule_sites").delete().eq("schedule_id", scheduleId);
-  if (siteIds.length === 0) return;
-  await supabase.from("schedule_sites").insert(
+  if (siteIds.length === 0) return {};
+  // One row per slot (sort_order), not per distinct site — a trip can
+  // genuinely revisit the same dive site more than once (e.g. a
+  // package's "Kimud, Kimud, Monad" itinerary), so this must never be
+  // deduped by dive_site_id.
+  const { error } = await supabase.from("schedule_sites").insert(
     siteIds.map((diveSiteId, index) => ({
       dive_center_id: diveCenterId,
       schedule_id: scheduleId,
@@ -85,6 +89,7 @@ async function replaceScheduleSites(
       sort_order: index,
     })),
   );
+  return error ? { error: error.message } : {};
 }
 
 async function replaceScheduleCrew(
@@ -150,10 +155,11 @@ export async function createTrip(
     .single();
 
   if (error) return fail(error.message);
-  await Promise.all([
+  const [sitesRes] = await Promise.all([
     replaceScheduleSites(supabase, user.diveCenterId, data.id, input.siteIds),
     replaceScheduleCrew(supabase, user.diveCenterId, data.id, isJoiner ? [] : input.crew),
   ]);
+  if (sitesRes.error) return fail(sitesRes.error);
 
   revalidatePath("/scheduling");
   return { scheduleId: data.id };
@@ -190,10 +196,11 @@ export async function updateTrip(
     .eq("dive_center_id", user.diveCenterId);
 
   if (error) return fail(error.message);
-  await Promise.all([
+  const [sitesRes] = await Promise.all([
     replaceScheduleSites(supabase, user.diveCenterId, scheduleId, input.siteIds),
     replaceScheduleCrew(supabase, user.diveCenterId, scheduleId, isJoiner ? [] : input.crew),
   ]);
+  if (sitesRes.error) return fail(sitesRes.error);
   return ok();
 }
 
@@ -565,6 +572,18 @@ export async function markBoatReturned(
   if (schedule.cancelled) return fail("A cancelled trip can't be closed.");
   const fuelLitersConsumed = schedule.fuel_consumed_liters;
 
+  // Package-mode trips log one combined activities row per diver for the
+  // whole trip (dive_site = every real site joined, e.g. "Kimud, Kimud,
+  // Monad"), matching scheduling.html's real boatReturnPackage — not one
+  // row per site, which is boatReturnTier's shape and stays the default
+  // for every other pricing mode.
+  const { data: dcPricingRow } = await supabase
+    .from("dive_centers")
+    .select("pricing_mode")
+    .eq("id", user.diveCenterId)
+    .single();
+  const isPackageMode = dcPricingRow?.pricing_mode === "package";
+
   if (schedule.departure_time) {
     const departureAt = `${schedule.schedule_date}T${schedule.departure_time.slice(0, 5)}`;
     if (nowManilaMinute() < departureAt) {
@@ -674,27 +693,49 @@ export async function markBoatReturned(
     }
 
     const staffName = row.staff_id ? staffNameById.get(row.staff_id) ?? null : null;
-    const sitesForRow = siteNames.length > 0 ? siteNames : [null];
     const diverTanks = tanksByScheduleDiver.get(row.id);
-    sitesForRow.forEach((siteName, siteIndex) => {
-      const tankType = diverTanks?.get(siteIndex) ?? null;
+
+    if (isPackageMode) {
+      // One combined row for the whole trip. Per-dive nitrox/15L has no
+      // natural single-row slot here — aggregate across every site index
+      // for this diver ("nitrox on *any* dive in this package trip"),
+      // same "at least one dive uses this tank" semantics schedule_divers.
+      // is_15l/nitrox_requested already use elsewhere in this schema.
+      const anyNitrox = diverTanks ? [...diverTanks.values()].some((t) => t === "nitrox") : false;
+      const any15l = diverTanks ? [...diverTanks.values()].some((t) => t === "air_15l") : false;
       activityRows.push({
         dive_center_id: user.diveCenterId,
         diver_id: row.diver_id,
         visit_id: visit.id,
         schedule_id: scheduleId,
         date: schedule.schedule_date,
-        dive_site: siteName,
+        dive_site: siteNames.length > 0 ? siteNames.join(", ") : null,
         staff_name: staffName,
         status: "completed",
-        flags:
-          tankType === "nitrox"
-            ? { nitrox_requested: true }
-            : tankType === "air_15l"
-              ? { tank_15l_requested: true }
-              : null,
+        flags: anyNitrox ? { nitrox_requested: true } : any15l ? { tank_15l_requested: true } : null,
       });
-    });
+    } else {
+      const sitesForRow = siteNames.length > 0 ? siteNames : [null];
+      sitesForRow.forEach((siteName, siteIndex) => {
+        const tankType = diverTanks?.get(siteIndex) ?? null;
+        activityRows.push({
+          dive_center_id: user.diveCenterId,
+          diver_id: row.diver_id,
+          visit_id: visit.id,
+          schedule_id: scheduleId,
+          date: schedule.schedule_date,
+          dive_site: siteName,
+          staff_name: staffName,
+          status: "completed",
+          flags:
+            tankType === "nitrox"
+              ? { nitrox_requested: true }
+              : tankType === "air_15l"
+                ? { tank_15l_requested: true }
+                : null,
+        });
+      });
+    }
   }
 
   if (activityRows.length > 0) {

@@ -18,6 +18,14 @@ import {
 import { BOAT_MODE_OPTIONS } from "../constants";
 import { WarningsBanner } from "./WarningsBanner";
 import { computeTankTally } from "../tanks";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Button } from "@/components/ui/Button";
+import { SectionBox } from "@/components/ui/SectionBox";
+
+// Cycled per team index, matching scheduling.html's real per-team
+// left-accent color coding (.team-card.c1..c6) — this app's palette has
+// no purple, so it cycles through the tokens that do exist.
+const TEAM_ACCENT_COLORS = ["border-navy", "border-teal", "border-orange", "border-green"];
 
 type DiverTank = { siteIndex: number; tankType: "nitrox" | "air_15l" };
 
@@ -237,6 +245,11 @@ export function TripCard({
   const [error, setError] = useState<string | null>(null);
   const [showAddTeam, setShowAddTeam] = useState(false);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
+  // Matches scheduling.html's real collapsible trip cards: a saved trip
+  // defaults to its compact summary, a brand-new one starts open so it
+  // can be filled in immediately.
+  const [expanded, setExpanded] = useState(!initialScheduleId);
 
   useEffect(() => {
     if (!initialScheduleId) return;
@@ -425,9 +438,9 @@ export function TripCard({
     });
   }
 
-  function remove() {
+  async function remove() {
     if (!scheduleId) return;
-    if (!window.confirm("Delete this trip? This can't be undone.")) return;
+    if (!(await confirm("Delete this trip? This can't be undone.", { danger: true }))) return;
     startTransition(async () => {
       const res = await deleteTrip(scheduleId);
       if (res.error) setError(res.error);
@@ -438,9 +451,10 @@ export function TripCard({
     });
   }
 
-  function cancel() {
+  async function cancel() {
     if (!scheduleId) return;
-    if (!window.confirm("Cancel this trip? It stays on record but no longer counts as active.")) return;
+    if (!(await confirm("Cancel this trip? It stays on record but no longer counts as active.", { danger: true })))
+      return;
     startTransition(async () => {
       const res = await cancelTrip(scheduleId);
       if (res.error) setError(res.error);
@@ -453,7 +467,7 @@ export function TripCard({
 
   if (loading) {
     return (
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-center text-gray-400 text-sm">
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 text-center text-gray-400 text-sm">
         Loading…
       </div>
     );
@@ -475,16 +489,49 @@ export function TripCard({
     })),
   );
   const boat = form.boatId ? boats.find((b) => b.id === form.boatId) : null;
+  const diverCount = teams.reduce((sum, t) => sum + t.divers.length, 0);
+  const headerTitle = form.boatMode === "own_boat" ? (boat?.name ?? "New Trip") : form.joinerBoatName || "New Trip";
+  const headerSub = [
+    form.departureTime || "No time",
+    `${diverCount} diver${diverCount === 1 ? "" : "s"}`,
+  ].join(" · ");
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
-      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-        <div className="text-sm font-semibold text-navy">{scheduleId ? "Trip" : "New Trip"}</div>
-        {detail?.cancelled && (
-          <span className="text-xs bg-red/10 text-red px-2 py-0.5 rounded-full">Cancelled</span>
-        )}
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-navy text-white px-4 py-3 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex-1 text-left min-w-0"
+        >
+          <div className="font-extrabold text-sm truncate">{headerTitle}</div>
+          <div className="text-xs text-white/70 truncate">{headerSub}</div>
+        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {detail?.cancelled && (
+            <span className="text-xs bg-red/20 text-white px-2 py-0.5 rounded-full">Cancelled</span>
+          )}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-xs font-medium text-white/80 border border-white/30 rounded-md px-2 py-1 hover:bg-white/10"
+          >
+            {expanded ? "Collapse" : "Expand"}
+          </button>
+          {!readOnly && scheduleId && !locked && (
+            <button
+              type="button"
+              onClick={remove}
+              disabled={pending}
+              className="text-xs font-medium text-white bg-red/80 rounded-md px-2 py-1 hover:bg-red disabled:opacity-60"
+            >
+              Delete
+            </button>
+          )}
+        </div>
       </div>
 
+      {expanded && (
       <div className="p-4 grid gap-4">
         {error && <div className="text-sm text-red">{error}</div>}
         {locked && (
@@ -493,225 +540,216 @@ export function TripCard({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Departure Time</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(() => {
-                const dt = to12h(form.departureTime);
-                return (
-                  <>
-                    <select
-                      disabled={locked}
-                      value={dt.hour}
-                      onChange={(e) =>
-                        setForm({ ...form, departureTime: to24h(e.target.value, dt.minute || "00", dt.ampm) })
-                      }
-                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                    >
-                      <option value="">Hour</option>
-                      {HOURS.map((h) => (
-                        <option key={h} value={h}>
-                          {h}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      disabled={locked}
-                      value={dt.minute}
-                      onChange={(e) =>
-                        setForm({ ...form, departureTime: to24h(dt.hour || "12", e.target.value, dt.ampm) })
-                      }
-                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                    >
-                      <option value="">Min</option>
-                      {MINUTES.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      disabled={locked}
-                      value={dt.ampm}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          departureTime: to24h(dt.hour || "12", dt.minute || "00", e.target.value as "AM" | "PM"),
-                        })
-                      }
-                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                    >
-                      <option value="AM">AM</option>
-                      <option value="PM">PM</option>
-                    </select>
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Boat</label>
-            <div className="inline-flex border border-gray-200 rounded-md overflow-hidden w-full">
-              {BOAT_MODE_OPTIONS.map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={locked}
-                  onClick={() => setForm({ ...form, boatMode: value as TripFormInput["boatMode"] })}
-                  className={`flex-1 px-2 py-1.5 text-xs font-medium ${
-                    form.boatMode === value ? "bg-navy text-white" : "bg-white text-gray-600 hover:bg-gray-100"
-                  } disabled:opacity-60`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {form.boatMode === "own_boat" ? (
+        <SectionBox title="Trip Details">
+          <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Which Boat</label>
-              <select
-                disabled={locked}
-                value={form.boatId ?? ""}
-                onChange={(e) => setForm({ ...form, boatId: e.target.value || null })}
-                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-              >
-                <option value="">Select a boat…</option>
-                {boats.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                    {b.capacity ? ` (capacity ${b.capacity})` : ""}
-                  </option>
-                ))}
-              </select>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Departure Time</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(() => {
+                  const dt = to12h(form.departureTime);
+                  return (
+                    <>
+                      <select
+                        disabled={locked}
+                        value={dt.hour}
+                        onChange={(e) =>
+                          setForm({ ...form, departureTime: to24h(e.target.value, dt.minute || "00", dt.ampm) })
+                        }
+                        className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                      >
+                        <option value="">Hour</option>
+                        {HOURS.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        disabled={locked}
+                        value={dt.minute}
+                        onChange={(e) =>
+                          setForm({ ...form, departureTime: to24h(dt.hour || "12", e.target.value, dt.ampm) })
+                        }
+                        className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                      >
+                        <option value="">Min</option>
+                        {MINUTES.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        disabled={locked}
+                        value={dt.ampm}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            departureTime: to24h(dt.hour || "12", dt.minute || "00", e.target.value as "AM" | "PM"),
+                          })
+                        }
+                        className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
-          ) : (
+
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                {form.boatMode === "rental" ? "Rental Boat Name" : "Their Boat Name"}
-              </label>
-              <input
-                disabled={locked}
-                value={form.joinerBoatName}
-                onChange={(e) => setForm({ ...form, joinerBoatName: e.target.value })}
-                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-              />
-            </div>
-          )}
-
-          {form.boatMode === "own_boat" && (
-            <>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Boat Captain</label>
-                <input
-                  disabled={locked}
-                  value={form.captain}
-                  onChange={(e) => setForm({ ...form, captain: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Fuel Consumption (L)</label>
-                <input
-                  type="number"
-                  min={0}
-                  disabled={locked}
-                  value={form.fuelConsumedLiters ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      fuelConsumedLiters: e.target.value === "" ? null : Number(e.target.value),
-                    })
-                  }
-                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                />
-              </div>
-
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Dive Crew</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {form.crew.map((name, i) => (
-                    <input
-                      key={i}
-                      disabled={locked}
-                      value={name}
-                      placeholder={`Crew ${i + 1}`}
-                      onChange={(e) => setCrewSlot(i, e.target.value)}
-                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                    />
-                  ))}
-                </div>
-                {!locked && (
+              <label className="block text-xs font-medium text-gray-600 mb-1">Boat</label>
+              <div className="inline-flex border border-gray-200 rounded-md overflow-hidden w-full">
+                {BOAT_MODE_OPTIONS.map(([value, label]) => (
                   <button
+                    key={value}
                     type="button"
-                    onClick={addCrewSlot}
-                    className="mt-2 px-2.5 py-1 text-xs font-medium text-navy border border-gray-300 rounded-md hover:bg-gray-100"
+                    disabled={locked}
+                    onClick={() => setForm({ ...form, boatMode: value as TripFormInput["boatMode"] })}
+                    className={`flex-1 px-2 py-1.5 text-xs font-medium ${
+                      form.boatMode === value ? "bg-navy text-white" : "bg-white text-gray-600 hover:bg-gray-100"
+                    } disabled:opacity-60`}
                   >
-                    + Add Crew
+                    {label}
                   </button>
-                )}
+                ))}
               </div>
-            </>
-          )}
+            </div>
 
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Dive Sites</label>
-            <div className="grid grid-cols-3 gap-2">
-              {form.siteIds.map((siteId, i) => (
+            {form.boatMode === "own_boat" ? (
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Which Boat</label>
                 <select
-                  key={i}
                   disabled={locked}
-                  value={siteId}
-                  onChange={(e) => setSiteSlot(i, e.target.value)}
+                  value={form.boatId ?? ""}
+                  onChange={(e) => setForm({ ...form, boatId: e.target.value || null })}
                   className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
                 >
-                  <option value="">Dive {i + 1} — Select site</option>
-                  {diveSites.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.siteName}
+                  <option value="">Select a boat…</option>
+                  {boats.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                      {b.capacity ? ` (capacity ${b.capacity})` : ""}
                     </option>
                   ))}
                 </select>
+              </div>
+            ) : (
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  {form.boatMode === "rental" ? "Rental Boat Name" : "Their Boat Name"}
+                </label>
+                <input
+                  disabled={locked}
+                  value={form.joinerBoatName}
+                  onChange={(e) => setForm({ ...form, joinerBoatName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                />
+              </div>
+            )}
+
+            {form.boatMode === "own_boat" && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Boat Captain</label>
+                  <input
+                    disabled={locked}
+                    value={form.captain}
+                    onChange={(e) => setForm({ ...form, captain: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Fuel Consumption (L)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    disabled={locked}
+                    value={form.fuelConsumedLiters ?? ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        fuelConsumedLiters: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </SectionBox>
+
+        {form.boatMode === "own_boat" && (
+          <SectionBox title="Dive Crew">
+            <div className="grid grid-cols-3 gap-2">
+              {form.crew.map((name, i) => (
+                <input
+                  key={i}
+                  disabled={locked}
+                  value={name}
+                  placeholder={`Crew ${i + 1}`}
+                  onChange={(e) => setCrewSlot(i, e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                />
               ))}
             </div>
             {!locked && (
-              <button
-                type="button"
-                onClick={addSiteSlot}
-                className="mt-2 px-2.5 py-1 text-xs font-medium text-navy border border-gray-300 rounded-md hover:bg-gray-100"
-              >
-                + Add Dive Site
-              </button>
+              <Button type="button" variant="ghost" size="sm" onClick={addCrewSlot} className="mt-2">
+                + Add Crew
+              </Button>
             )}
-          </div>
+          </SectionBox>
+        )}
 
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-            <textarea
-              disabled={locked}
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              rows={2}
-              className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-            />
-          </div>
-        </div>
-
-        <div className="border-t border-gray-200 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-semibold text-navy">Teams</div>
-            {!locked && (
-              <button
-                onClick={() => setShowAddTeam(true)}
-                className="px-3 py-1.5 text-xs font-medium text-navy border border-gray-300 rounded-md hover:bg-gray-100"
+        <SectionBox title="Dive Sites">
+          <div className="grid grid-cols-3 gap-2">
+            {form.siteIds.map((siteId, i) => (
+              <select
+                key={i}
+                disabled={locked}
+                value={siteId}
+                onChange={(e) => setSiteSlot(i, e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
               >
+                <option value="">Dive {i + 1} — Select site</option>
+                {diveSites.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.siteName}
+                  </option>
+                ))}
+              </select>
+            ))}
+          </div>
+          {!locked && (
+            <Button type="button" variant="ghost" size="sm" onClick={addSiteSlot} className="mt-2">
+              + Add Dive Site
+            </Button>
+          )}
+        </SectionBox>
+
+        <SectionBox title="Notes">
+          <textarea
+            disabled={locked}
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            rows={2}
+            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+          />
+        </SectionBox>
+
+        <SectionBox
+          title="Team Assignment"
+          action={
+            !locked && (
+              <Button variant="ghost" size="sm" onClick={() => setShowAddTeam(true)}>
                 + Add Team
-              </button>
-            )}
-          </div>
+              </Button>
+            )
+          }
+        >
 
           {realSiteIds.length > 0 && teams.length > 0 && (
             <div className="text-[10px] text-gray-400 mb-2">
@@ -724,7 +762,10 @@ export function TripCard({
           ) : (
             <div className="grid gap-2">
               {teams.map((t, ti) => (
-                <div key={`${t.staffId ?? "none"}-${t.sourceClipId ?? ti}`} className="border border-gray-200 rounded-lg p-3">
+                <div
+                  key={`${t.staffId ?? "none"}-${t.sourceClipId ?? ti}`}
+                  className={`border border-gray-200 border-l-4 ${TEAM_ACCENT_COLORS[ti % TEAM_ACCENT_COLORS.length]} rounded-lg p-3`}
+                >
                   <div className="flex items-center justify-between mb-1">
                     <div className="text-sm font-medium text-navy">{t.staffName}</div>
                     {realSiteIds.length > 0 && (
@@ -799,10 +840,10 @@ export function TripCard({
           )}
 
           {teams.length > 0 && (
-            <div className="flex gap-2 mt-2 text-xs">
-              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Air 12L: {tally.air12l}</span>
-              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Air 15L: {tally.air15l}</span>
-              <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Nitrox: {tally.nitrox}</span>
+            <div className="mt-3 bg-navy text-white rounded-md px-3 py-2.5 text-xs font-semibold flex gap-4">
+              <span>Air 12L: {tally.air12l}</span>
+              <span>Air 15L: {tally.air15l}</span>
+              <span>Nitrox: {tally.nitrox}</span>
             </div>
           )}
 
@@ -815,79 +856,60 @@ export function TripCard({
               staffOptions={staffOptions}
             />
           </div>
-        </div>
+        </SectionBox>
 
         {(form.boatMode === "own_boat" || form.boatMode === "rental") && (
-          <div className="grid grid-cols-3 gap-3 border border-gray-200 rounded-md p-3 bg-gray-50">
-            <div className="col-span-3 text-xs font-medium text-gray-500">
-              Other divers joining this boat (optional)
+          <SectionBox title="Other Divers Joining This Boat">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Divers Joining</label>
+                <input
+                  type="number"
+                  min={0}
+                  disabled={locked}
+                  value={form.guestDiversCount ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, guestDiversCount: e.target.value === "" ? null : Number(e.target.value) })
+                  }
+                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Their Dive Center</label>
+                <input
+                  disabled={locked}
+                  value={form.guestDiveCenterName}
+                  onChange={(e) => setForm({ ...form, guestDiveCenterName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                />
+              </div>
+              <div className="col-span-3">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                <textarea
+                  disabled={locked}
+                  value={form.guestNotes}
+                  onChange={(e) => setForm({ ...form, guestNotes: e.target.value })}
+                  rows={2}
+                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Divers Joining</label>
-              <input
-                type="number"
-                min={0}
-                disabled={locked}
-                value={form.guestDiversCount ?? ""}
-                onChange={(e) =>
-                  setForm({ ...form, guestDiversCount: e.target.value === "" ? null : Number(e.target.value) })
-                }
-                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Their Dive Center</label>
-              <input
-                disabled={locked}
-                value={form.guestDiveCenterName}
-                onChange={(e) => setForm({ ...form, guestDiveCenterName: e.target.value })}
-                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-              />
-            </div>
-            <div className="col-span-3">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-              <textarea
-                disabled={locked}
-                value={form.guestNotes}
-                onChange={(e) => setForm({ ...form, guestNotes: e.target.value })}
-                rows={2}
-                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-              />
-            </div>
-          </div>
+          </SectionBox>
         )}
       </div>
+      )}
 
-      {!readOnly && (
+      {!readOnly && expanded && (
         <div className="px-4 py-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
-          {scheduleId && !locked && (
-            <>
-              <button
-                onClick={remove}
-                disabled={pending}
-                className="px-3 py-1.5 text-xs font-medium text-red border border-red/30 rounded-md hover:bg-red/5"
-              >
-                Delete
-              </button>
-              {!detail?.cancelled && (
-                <button
-                  onClick={cancel}
-                  disabled={pending}
-                  className="px-3 py-1.5 text-xs font-medium text-navy border border-gray-300 rounded-md hover:bg-gray-100"
-                >
-                  Cancel Trip
-                </button>
-              )}
-            </>
+          {scheduleId && !locked && !detail?.cancelled && (
+            <Button variant="ghost" size="md" onClick={cancel} disabled={pending}>
+              Cancel Trip
+            </Button>
           )}
           {!locked && (
-            <button
-              onClick={save}
-              disabled={pending}
-              className="px-4 py-2 bg-navy text-white text-sm font-medium rounded-lg hover:bg-navy-dark disabled:opacity-60"
-            >
+            <Button variant="primary" size="md" onClick={save} disabled={pending}>
               {pending ? "Saving…" : "Save Trip"}
-            </button>
+            </Button>
           )}
         </div>
       )}

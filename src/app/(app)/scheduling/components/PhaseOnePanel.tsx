@@ -13,6 +13,8 @@ import {
   excludeDiverForDay,
   includeDiverForDay,
 } from "../actions";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Button } from "@/components/ui/Button";
 
 function StaffPicker({
   staffOptions,
@@ -298,6 +300,7 @@ function ClipCard({
   const [editingStaff, setEditingStaff] = useState(false);
   const [movingDiverId, setMovingDiverId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
   // Excluded members stay listed (grayed, "Not diving this trip") rather
   // than disappearing — see includeDiverInClip/excludeDiverFromClip.
   const members = clip.members;
@@ -338,8 +341,8 @@ function ClipCard({
         )}
         {!readOnly && (
           <button
-            onClick={() => {
-              if (window.confirm("Delete this clip? Members return to the loose pool."))
+            onClick={async () => {
+              if (await confirm("Delete this clip? Members return to the loose pool.", { danger: true }))
                 startTransition(async () => {
                   await deleteClip(clip.id);
                   onChanged();
@@ -387,6 +390,7 @@ export function PhaseOnePanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showCreateClip, setShowCreateClip] = useState(false);
   const [, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   function refresh() {
     getPhaseOneData(scheduleDate).then(setData);
@@ -413,19 +417,17 @@ export function PhaseOnePanel({
     });
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (data!.looseDivers.length > 0) {
       const names = data!.looseDivers
         .slice(0, 12)
         .map((d) => `${d.firstName} ${d.lastName}`)
         .join(", ");
       const more = data!.looseDivers.length > 12 ? ` and ${data!.looseDivers.length - 12} more` : "";
-      if (
-        !window.confirm(
-          `${data!.looseDivers.length} diver(s) still aren't in a team clip: ${names}${more}. Continue to Build anyway?`,
-        )
-      )
-        return;
+      const ok = await confirm(
+        `${data!.looseDivers.length} diver(s) still aren't in a team clip: ${names}${more}. Continue to Build anyway?`,
+      );
+      if (!ok) return;
     }
     onNext();
   }
@@ -443,12 +445,9 @@ export function PhaseOnePanel({
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-navy">Loose Divers ({data.looseDivers.length})</h3>
             {!readOnly && selected.size > 0 && (
-              <button
-                onClick={() => setShowCreateClip(true)}
-                className="px-3 py-1.5 text-xs font-medium bg-navy text-white rounded-md hover:bg-navy-dark"
-              >
+              <Button variant="primary" size="sm" onClick={() => setShowCreateClip(true)}>
                 Add to Clip ({selected.size})
-              </button>
+              </Button>
             )}
           </div>
           {data.looseDivers.length === 0 ? (
@@ -554,12 +553,9 @@ export function PhaseOnePanel({
 
       {!readOnly && (
         <div className="flex justify-end">
-          <button
-            onClick={handleNext}
-            className="px-4 py-2 bg-teal text-white text-sm font-medium rounded-lg hover:bg-teal-dark transition-colors"
-          >
+          <Button variant="secondary" size="md" onClick={handleNext}>
             Next →
-          </button>
+          </Button>
         </div>
       )}
 

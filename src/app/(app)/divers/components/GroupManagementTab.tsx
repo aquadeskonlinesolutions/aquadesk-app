@@ -14,6 +14,7 @@ import {
 } from "../actions";
 import { DiverCard } from "./DiverCard";
 import { ExperienceTagModal, type PendingTag } from "./ExperienceTagModal";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 export function GroupManagementTab({
   courseRates,
@@ -42,6 +43,7 @@ export function GroupManagementTab({
     notes: "",
   });
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   function refreshGroups() {
     startTransition(async () => setGroups(await getGroups()));
@@ -85,7 +87,7 @@ export function GroupManagementTab({
         );
         return;
       }
-      if (!window.confirm(`Delete "${groupName}"? This can't be undone.`)) return;
+      if (!(await confirm(`Delete "${groupName}"? This can't be undone.`, { danger: true }))) return;
       const res = await deleteGroup(groupId);
       if (res.error) setError(res.error);
       else {
@@ -122,9 +124,12 @@ export function GroupManagementTab({
     });
   }
 
-  function removeMember(diverId: string, name: string) {
-    if (!window.confirm(`Remove ${name}? This deletes their diver record entirely and cannot be undone. If this was a mistake, they'll need to re-register.`))
-      return;
+  async function removeMember(diverId: string, name: string) {
+    const ok = await confirm(
+      `Remove ${name}? This deletes their diver record entirely and cannot be undone. If this was a mistake, they'll need to re-register.`,
+      { danger: true },
+    );
+    if (!ok) return;
     startTransition(async () => {
       const res = await removeDiver(diverId);
       if (res.error) setError(res.error);

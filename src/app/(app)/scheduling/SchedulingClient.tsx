@@ -65,7 +65,7 @@ export function SchedulingClient({
 
   return (
     <div className="grid gap-5">
-      <div className="flex items-start justify-between mb-1 gap-4 flex-wrap">
+      <div className="bg-white border border-gray-200 rounded-lg px-5 py-4 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-3xl text-navy mb-1">Scheduling</h1>
           <p className="text-gray-600 text-sm">Trip/schedule builder, boat and staff assignment.</p>
@@ -75,13 +75,13 @@ export function SchedulingClient({
             type="date"
             value={date}
             onChange={(e) => changeDate(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            className="border border-gray-300 rounded-md px-3 py-2 text-sm"
           />
         </div>
       </div>
 
       {!date ? (
-        <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center text-gray-400 text-sm">
+        <div className="bg-white border border-gray-200 rounded-lg p-10 text-center text-gray-400 text-sm">
           Select a schedule date to begin.
         </div>
       ) : pending && trips.length === 0 ? (

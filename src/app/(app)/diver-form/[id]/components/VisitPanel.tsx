@@ -12,6 +12,7 @@ import {
   type ActivityFields,
 } from "../actions";
 import type { Activity, Visit, CourseRateOption } from "../data";
+import { useToast } from "@/components/ui/Toast";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -248,6 +249,7 @@ export function VisitPanel({
   const [choosingCourse, setChoosingCourse] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState(courseRates[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
+  const showToast = useToast();
 
   function startNewVisit(experienceType: "fun_diving" | "dive_course", courseRateId: string | null) {
     setError(null);
@@ -319,11 +321,16 @@ export function VisitPanel({
         return;
       }
       if (res.missingRateCount) {
-        window.alert(
+        showToast(
           `Charges applied. ${res.missingRateCount} row(s) have no configured dive rate — enter those manually.`,
+          "error",
         );
+        // Give the toast a moment on screen before the reload wipes it —
+        // unlike the window.alert() it replaces, a toast doesn't block.
+        setTimeout(() => window.location.reload(), 1800);
+      } else {
+        window.location.reload();
       }
-      window.location.reload();
     });
   }
 

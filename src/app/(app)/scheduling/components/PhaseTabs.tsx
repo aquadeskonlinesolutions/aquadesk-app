@@ -2,6 +2,9 @@
 
 export type Phase = "phase1" | "phase2" | "phase3";
 
+// Matches scheduling.html's real filled pill tabs (navy when active,
+// each with a sub-label — "Phase 1 / Prepare divers" etc.), not a plain
+// underline-tab idiom.
 export function PhaseTabs({
   phase,
   onChange,
@@ -11,26 +14,27 @@ export function PhaseTabs({
   onChange: (p: Phase) => void;
   readOnly: boolean;
 }) {
-  const tabs: { id: Phase; label: string; disabled: boolean }[] = [
-    { id: "phase1", label: "1. Prepare", disabled: readOnly },
-    { id: "phase2", label: "2. Build", disabled: readOnly },
-    { id: "phase3", label: readOnly ? "History" : "3. Complete", disabled: false },
+  const tabs: { id: Phase; title: string; sub: string; disabled: boolean }[] = [
+    { id: "phase1", title: "Phase 1", sub: "Prepare divers", disabled: readOnly },
+    { id: "phase2", title: "Phase 2", sub: "Build trips", disabled: readOnly },
+    { id: "phase3", title: "Phase 3", sub: readOnly ? "History" : "Final schedule", disabled: false },
   ];
 
   return (
-    <div className="flex gap-1 border-b border-gray-200">
+    <div className="flex gap-2">
       {tabs.map((t) => (
         <button
           key={t.id}
           disabled={t.disabled}
           onClick={() => onChange(t.id)}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+          className={`px-4 py-2 rounded-lg text-left border transition-colors ${
             phase === t.id
-              ? "border-teal text-navy"
-              : "border-transparent text-gray-600 hover:text-navy disabled:text-gray-300 disabled:hover:text-gray-300"
+              ? "bg-navy text-white border-navy"
+              : "bg-white text-navy border-gray-200 hover:border-navy/40 disabled:text-gray-300 disabled:hover:border-gray-200"
           }`}
         >
-          {t.label}
+          <div className="text-xs font-extrabold leading-none">{t.title}</div>
+          <div className={`text-[11px] mt-1 ${phase === t.id ? "text-white/70" : "text-gray-400"}`}>{t.sub}</div>
         </button>
       ))}
     </div>

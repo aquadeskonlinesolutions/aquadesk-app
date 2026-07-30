@@ -7,6 +7,7 @@ import { toggleStaffActive, deleteStaffMember } from "./actions";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { StaffFormModal } from "./components/StaffFormModal";
 import { CertificationsSection } from "./components/CertificationsSection";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 export function StaffRosterSection({
   roster,
@@ -21,6 +22,7 @@ export function StaffRosterSection({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   function toggleActive(staffId: string, isActive: boolean) {
     startTransition(async () => {
@@ -29,8 +31,8 @@ export function StaffRosterSection({
     });
   }
 
-  function remove(staffId: string, name: string) {
-    if (!window.confirm(`Remove ${name} from the staff roster? This cannot be undone.`)) return;
+  async function remove(staffId: string, name: string) {
+    if (!(await confirm(`Remove ${name} from the staff roster? This cannot be undone.`, { danger: true }))) return;
     startTransition(async () => {
       const res = await deleteStaffMember(staffId);
       if (res.error) setError(res.error);

@@ -11,6 +11,8 @@ import {
   generateCrewToken,
 } from "../actions";
 import { computeTankTally, formatTankLine } from "../tanks";
+import { useToast } from "@/components/ui/Toast";
+import { Button } from "@/components/ui/Button";
 
 // "Nitrox D1,D2" / "15L D1" — which dives (1-based) use which tank, for a
 // diver whose choice can vary per dive on a multi-site trip.
@@ -200,21 +202,21 @@ function TripSummaryCard({
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 grid gap-3">
-      <div className="flex items-center justify-between">
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-navy text-white px-4 py-3 flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-navy">
+          <div className="font-extrabold text-sm">
             {detail.isJoiner ? (detail.joinerBoatName ?? "Join Ride") : (boat?.name ?? "Boat")}
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-white/70">
             {detail.departureTime ?? "No time"} {detail.captain ? `· Captain ${detail.captain}` : ""}
             {detail.crew.length > 0 ? ` · Crew: ${detail.crew.join(", ")}` : ""}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {detail.closed && <span className="text-xs bg-teal/10 text-teal px-2 py-0.5 rounded-full">Returned</span>}
+        <div className="flex items-center gap-2 shrink-0">
+          {detail.closed && <span className="text-xs bg-teal/30 text-white px-2 py-0.5 rounded-full">Returned</span>}
           {detail.cancelled && (
-            <span className="text-xs bg-red/10 text-red px-2 py-0.5 rounded-full">Cancelled</span>
+            <span className="text-xs bg-red/30 text-white px-2 py-0.5 rounded-full">Cancelled</span>
           )}
           <button
             onClick={() =>
@@ -223,85 +225,77 @@ function TripSummaryCard({
                 `${detail.scheduleDate} - ${boat?.name ?? detail.joinerBoatName ?? "trip"} - ${detail.departureTime ?? ""}.png`,
               )
             }
-            className="text-xs text-navy border border-gray-300 rounded-md px-2 py-1 hover:bg-gray-100"
+            className="text-xs font-medium text-white/80 border border-white/30 rounded-md px-2 py-1 hover:bg-white/10"
           >
             Download Image
           </button>
         </div>
       </div>
 
-      {error && <div className="text-sm text-red">{error}</div>}
-      {skipped && (
-        <div className="text-xs bg-amber-100 text-amber-700 px-3 py-2 rounded-md">
-          No open visit found for: {skipped.join(", ")} — their activity rows were skipped.
-        </div>
-      )}
-      {duplicates && (
-        <div className="text-xs bg-amber-100 text-amber-700 px-3 py-2 rounded-md grid gap-2">
-          <div>
-            Activities already logged today for: {duplicates.map((d) => d.name).join(", ")}. Log again anyway, or
-            exclude them from this return?
+      <div className="p-4 grid gap-3">
+        {error && <div className="text-sm text-red">{error}</div>}
+        {skipped && (
+          <div className="text-xs bg-orange-light text-orange border border-orange/20 px-3 py-2 rounded-md">
+            No open visit found for: {skipped.join(", ")} — their activity rows were skipped.
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => returnBoat({ excludeDiverIds: duplicates.map((d) => d.diverId) })}
-              className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
-            >
-              Exclude Divers
-            </button>
-            <button
-              onClick={() => returnBoat({ forceProceed: true })}
-              className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
-            >
-              Proceed Anyway
-            </button>
-            <button onClick={() => setDuplicates(null)} className="px-2 py-1 text-gray-500">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {divers.length === 0 ? (
-        <div className="text-sm text-gray-400">No divers assigned.</div>
-      ) : (
-        <div className="grid gap-2">
-          {[...byStaff.entries()].map(([staffId, group]) => (
-            <div key={staffId} className="border border-gray-100 rounded-lg p-2">
-              <div className="text-xs font-semibold text-navy mb-1">{resolveStaffName(staffId, staffNameById)}</div>
-              <div className="text-xs text-gray-600">{group.map((d) => `${d.firstName} ${d.lastName}`).join(", ")}</div>
+        )}
+        {duplicates && (
+          <div className="text-xs bg-orange-light text-orange border border-orange/20 px-3 py-2 rounded-md grid gap-2">
+            <div>
+              Activities already logged today for: {duplicates.map((d) => d.name).join(", ")}. Log again anyway, or
+              exclude them from this return?
             </div>
-          ))}
-        </div>
-      )}
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => returnBoat({ excludeDiverIds: duplicates.map((d) => d.diverId) })}>
+                Exclude Divers
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => returnBoat({ forceProceed: true })}>
+                Proceed Anyway
+              </Button>
+              <button onClick={() => setDuplicates(null)} className="px-2 py-1 text-gray-500 text-xs">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
-      {/* Tank tally sits after the diver list, matching the old app's
-          consistent bottom-of-block placement in every rendering context. */}
-      <div className="flex gap-4 text-xs text-gray-500">
-        <span>12L: {tally.air12l}</span>
-        <span>15L: {tally.air15l}</span>
-        <span>Nitrox: {tally.nitrox}</span>
-        {detail.guestDiversCount ? (
-          <span>Joining us: {detail.guestDiversCount} ({detail.guestDiveCenterName})</span>
-        ) : null}
+        {divers.length === 0 ? (
+          <div className="text-sm text-gray-400">No divers assigned.</div>
+        ) : (
+          <div className="grid gap-2">
+            {[...byStaff.entries()].map(([staffId, group]) => (
+              <div key={staffId} className="border border-gray-100 rounded-lg p-2">
+                <div className="text-xs font-semibold text-navy mb-1">{resolveStaffName(staffId, staffNameById)}</div>
+                <div className="text-xs text-gray-600">{group.map((d) => `${d.firstName} ${d.lastName}`).join(", ")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tank tally sits after the diver list, matching the old app's
+            consistent bottom-of-block placement in every rendering context. */}
+        <div className="bg-navy text-white rounded-md px-3 py-2.5 text-xs font-semibold flex gap-4 flex-wrap">
+          <span>12L: {tally.air12l}</span>
+          <span>15L: {tally.air15l}</span>
+          <span>Nitrox: {tally.nitrox}</span>
+          {detail.guestDiversCount ? (
+            <span>Joining us: {detail.guestDiversCount} ({detail.guestDiveCenterName})</span>
+          ) : null}
+        </div>
+
+        {!detail.closed && !detail.cancelled && !duplicates && (
+          <div className="border-t border-gray-200 pt-3 flex items-end gap-3 flex-wrap">
+            {!detail.isJoiner && detail.fuelConsumedLiters != null && (
+              <div className="text-xs text-gray-500">
+                Fuel Consumed: <span className="font-medium text-navy">{detail.fuelConsumedLiters} L</span>
+              </div>
+            )}
+            <Button variant="secondary" size="md" onClick={() => returnBoat()} disabled={pending || divers.length === 0}>
+              {pending ? "Closing…" : "Boat Returned"}
+            </Button>
+          </div>
+        )}
       </div>
-
-      {!detail.closed && !detail.cancelled && !duplicates && (
-        <div className="border-t border-gray-200 pt-3 flex items-end gap-3 flex-wrap">
-          {!detail.isJoiner && detail.fuelConsumedLiters != null && (
-            <div className="text-xs text-gray-500">
-              Fuel Consumed: <span className="font-medium text-navy">{detail.fuelConsumedLiters} L</span>
-            </div>
-          )}
-          <button
-            onClick={() => returnBoat()}
-            disabled={pending || divers.length === 0}
-            className="px-4 py-2 bg-teal text-white text-sm font-medium rounded-lg hover:bg-teal-mid disabled:opacity-60"
-          >
-            {pending ? "Closing…" : "Boat Returned"}
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -321,6 +315,7 @@ export function PhaseThreePanel({
 }) {
   const [crewToken, setCrewToken] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const showToast = useToast();
 
   // Matches scheduling.html's real behavior: the token is (re)computed
   // silently every time Phase 3 is viewed, whenever none exists yet for
@@ -350,7 +345,7 @@ export function PhaseThreePanel({
       texts.filter(Boolean).join("\n\n------------------------------\n\n") +
       (crewToken ? `\n\n------------------------------\n\nSchedule Token: ${crewToken}` : "");
     await navigator.clipboard.writeText(combined);
-    window.alert("Copied.");
+    showToast("Copied.");
   }
 
   const saved = trips.filter((t) => !t.cancelled);
@@ -367,17 +362,14 @@ export function PhaseThreePanel({
           )}
         </div>
         {saved.length > 0 && (
-          <button
-            onClick={copyAllPreview}
-            className="text-xs text-navy border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-100"
-          >
+          <Button variant="ghost" size="sm" onClick={copyAllPreview}>
             Copy Preview
-          </button>
+          </Button>
         )}
       </div>
 
       {saved.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center text-gray-400 text-sm">
+        <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-gray-400 text-sm">
           No saved trips for this date yet.
         </div>
       ) : (
