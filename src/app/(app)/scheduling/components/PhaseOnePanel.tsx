@@ -14,8 +14,9 @@ import {
   includeDiverForDay,
 } from "../actions";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
-import { CERT_LEVEL_LABELS } from "../constants";
+import { CERT_LEVEL_LABELS, ratioBadgeClass } from "../constants";
 
 function StaffPicker({
   staffOptions,
@@ -82,6 +83,7 @@ function CreateClipModal({
   const [isFreelancer, setIsFreelancer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const showToast = useToast();
 
   function confirm() {
     setError(null);
@@ -89,6 +91,7 @@ function CreateClipModal({
       const res = await createClip(scheduleDate, staffId, staffName, isFreelancer, diverIds);
       if (res.error) setError(res.error);
       else {
+        if (res.merged) showToast(`Merged into ${staffName.trim()}'s existing clip for today.`);
         onCreated();
         onClose();
       }
@@ -311,13 +314,16 @@ function ClipCard({
   const [movingDiverId, setMovingDiverId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const showToast = useToast();
   // Excluded members stay listed (grayed, "Not diving this trip") rather
   // than disappearing — see includeDiverInClip/excludeDiverFromClip.
   const members = clip.members;
+  const activeCount = members.filter((m) => !m.excluded).length;
 
   function saveStaff(v: { staffId: string | null; staffName: string; isFreelancer: boolean }) {
     startTransition(async () => {
-      await updateClipStaff(clip.id, v.staffId, v.staffName, v.isFreelancer);
+      const res = await updateClipStaff(clip.id, v.staffId, v.staffName, v.isFreelancer);
+      if (res.merged) showToast(`Merged into ${v.staffName.trim()}'s existing clip.`);
       setEditingStaff(false);
       onChanged();
     });
@@ -347,6 +353,9 @@ function ClipCard({
             {clip.source === "carryover" && (
               <span className="ml-2 text-xs bg-teal/10 text-teal px-1.5 py-0.5 rounded-full">Carried over</span>
             )}
+            <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded-full ${ratioBadgeClass(activeCount)}`}>
+              {activeCount}/4
+            </span>
           </button>
         )}
         {!readOnly && (

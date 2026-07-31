@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { TripSummary, BoatOption, DiveSiteOption, StaffOption, DayAssignment } from "./data";
+import type { TripSummary, BoatOption, DiveSiteOption, StaffOption, DayAssignment, TripTypeOption } from "./data";
 import { getTripsForDate, getDayAssignmentsForWarnings } from "./actions";
 import { PhaseTabs, type Phase } from "./components/PhaseTabs";
 import { PhaseOnePanel } from "./components/PhaseOnePanel";
@@ -21,10 +21,12 @@ export function SchedulingClient({
   boats,
   diveSites,
   staffOptions,
+  tripTypeOptions,
 }: {
   boats: BoatOption[];
   diveSites: DiveSiteOption[];
   staffOptions: StaffOption[];
+  tripTypeOptions: TripTypeOption[];
 }) {
   const [date, setDate] = useState("");
   const [trips, setTrips] = useState<TripSummary[]>([]);
@@ -113,6 +115,7 @@ export function SchedulingClient({
               boats={boats}
               diveSites={diveSites}
               staffOptions={staffOptions}
+              tripTypeOptions={tripTypeOptions}
               dayContext={dayContext}
               readOnly={isPastDate}
               onChanged={refreshInPlace}

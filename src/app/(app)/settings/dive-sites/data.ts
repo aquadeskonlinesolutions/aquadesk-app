@@ -16,16 +16,27 @@ export type PackageOption = {
   package_name: string;
 };
 
+export type TripType = {
+  id: string;
+  name: string;
+  travel_out_minutes: number;
+  travel_back_minutes: number;
+  dive_minutes: number;
+  surface_interval_minutes: number;
+  is_active: boolean;
+};
+
 export type DiveSitesData = {
   diveSites: DiveSite[];
   packages: PackageOption[];
   pricingMode: string | null;
+  tripTypes: TripType[];
 };
 
 export async function loadDiveSitesData(diveCenterId: string): Promise<DiveSitesData> {
   const supabase = await createClient();
 
-  const [{ data: diveSites }, { data: packages }, { data: dc }] = await Promise.all([
+  const [{ data: diveSites }, { data: packages }, { data: dc }, { data: tripTypes }] = await Promise.all([
     supabase
       .from("dive_sites")
       .select("id, site_name, distance, fuel_estimate, shark_fee, linked_package_id, is_active")
@@ -41,11 +52,17 @@ export async function loadDiveSitesData(diveCenterId: string): Promise<DiveSites
       .select("pricing_mode")
       .eq("id", diveCenterId)
       .single(),
+    supabase
+      .from("trip_types")
+      .select("id, name, travel_out_minutes, travel_back_minutes, dive_minutes, surface_interval_minutes, is_active")
+      .eq("dive_center_id", diveCenterId)
+      .order("name"),
   ]);
 
   return {
     diveSites: diveSites ?? [],
     packages: packages ?? [],
     pricingMode: dc?.pricing_mode ?? null,
+    tripTypes: tripTypes ?? [],
   };
 }

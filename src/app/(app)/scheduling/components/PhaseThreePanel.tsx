@@ -328,6 +328,11 @@ function TripSummaryCard({
               <div key={staffId} className="border border-gray-100 rounded-lg p-2">
                 <div className="text-xs font-semibold text-navy mb-1">{resolveStaffName(staffId, staffNameById)}</div>
                 <div className="text-xs text-gray-600">{group.map((d) => `${d.firstName} ${d.lastName}`).join(", ")}</div>
+                {group.length > 4 && (
+                  <div className="text-xs text-orange bg-orange-light border border-orange/20 rounded-md px-2 py-1 mt-1">
+                    This team is over the 1:4 ratio. Please check the plan.
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -51,3 +51,43 @@ export async function deleteDiveSite(id: string) {
   if (error) return fail(error.message);
   return ok();
 }
+
+export async function saveTripType(
+  id: string | null,
+  name: string,
+  travelOutMinutes: number,
+  travelBackMinutes: number,
+  diveMinutes: number,
+  surfaceIntervalMinutes: number,
+) {
+  const user = await requireOwner();
+  if (!name.trim()) return fail("Trip type name is required.");
+  const supabase = await createClient();
+
+  const payload = {
+    dive_center_id: user.diveCenterId,
+    name: name.trim(),
+    travel_out_minutes: travelOutMinutes,
+    travel_back_minutes: travelBackMinutes,
+    dive_minutes: diveMinutes,
+    surface_interval_minutes: surfaceIntervalMinutes,
+    is_active: true,
+  };
+  const { error } = id
+    ? await supabase.from("trip_types").update(payload).eq("id", id)
+    : await supabase.from("trip_types").insert(payload);
+  if (error) return fail(error.message);
+  return ok();
+}
+
+export async function deleteTripType(id: string) {
+  const user = await requireOwner();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("trip_types")
+    .delete()
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId);
+  if (error) return fail(error.message);
+  return ok();
+}

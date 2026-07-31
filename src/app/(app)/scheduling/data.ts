@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import type { TripTypeDurations } from "./tripWindow";
 
 // Plain calendar-year arithmetic, same as the old app's diverAge() — no
 // timezone risk since a birthday is a date-only value with no time
@@ -155,6 +156,7 @@ export type TripDetail = {
   isJoiner: boolean;
   joinerBoatName: string | null;
   departureTime: string | null;
+  tripTypeId: string | null;
   captain: string | null;
   crew: string[];
   notes: string | null;
@@ -404,6 +406,29 @@ export async function loadStaffOptions(diveCenterId: string): Promise<StaffOptio
   }));
 }
 
+export type TripTypeOption = { id: string; name: string; durations: TripTypeDurations };
+
+export async function loadTripTypeOptions(diveCenterId: string): Promise<TripTypeOption[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("trip_types")
+    .select("id, name, travel_out_minutes, travel_back_minutes, dive_minutes, surface_interval_minutes")
+    .eq("dive_center_id", diveCenterId)
+    .eq("is_active", true)
+    .order("name");
+
+  return (data ?? []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    durations: {
+      travelOutMinutes: t.travel_out_minutes,
+      travelBackMinutes: t.travel_back_minutes,
+      diveMinutes: t.dive_minutes,
+      surfaceIntervalMinutes: t.surface_interval_minutes,
+    },
+  }));
+}
+
 // scheduleId is included so each TripCard can filter out its own
 // assignments client-side — a shared whole-day fetch (one query) rather
 // than a separate excluded-self query per card, but still avoiding the
@@ -414,6 +439,9 @@ export type DayAssignment = {
   staffId: string | null;
   boatId: string | null;
   scheduleId: string;
+  departureTime: string | null;
+  diveCount: number;
+  tripTypeDurations: TripTypeDurations | null;
 };
 
 export async function loadDayAssignmentsForWarnings(
@@ -424,7 +452,7 @@ export async function loadDayAssignmentsForWarnings(
 
   const { data: schedules } = await supabase
     .from("schedules")
-    .select("id, boat_id")
+    .select("id, boat_id, departure_time, trip_type_id")
     .eq("dive_center_id", diveCenterId)
     .eq("schedule_date", scheduleDate)
     .eq("cancelled", false);
@@ -432,7 +460,38 @@ export async function loadDayAssignmentsForWarnings(
   const scheduleIds = (schedules ?? []).map((s) => s.id);
   if (scheduleIds.length === 0) return [];
 
+  const tripTypeIds = [...new Set((schedules ?? []).map((s) => s.trip_type_id).filter(Boolean))] as string[];
+  const [{ data: siteRows }, { data: tripTypeRows }] = await Promise.all([
+    supabase.from("schedule_sites").select("schedule_id").in("schedule_id", scheduleIds),
+    tripTypeIds.length
+      ? supabase
+          .from("trip_types")
+          .select("id, travel_out_minutes, travel_back_minutes, dive_minutes, surface_interval_minutes")
+          .in("id", tripTypeIds)
+      : Promise.resolve({ data: [] as { id: string; travel_out_minutes: number; travel_back_minutes: number; dive_minutes: number; surface_interval_minutes: number }[] }),
+  ]);
+
+  const diveCountByScheduleId = new Map<string, number>();
+  (siteRows ?? []).forEach((r) => {
+    diveCountByScheduleId.set(r.schedule_id, (diveCountByScheduleId.get(r.schedule_id) ?? 0) + 1);
+  });
+  const durationsByTripTypeId = new Map(
+    (tripTypeRows ?? []).map((t) => [
+      t.id,
+      {
+        travelOutMinutes: t.travel_out_minutes,
+        travelBackMinutes: t.travel_back_minutes,
+        diveMinutes: t.dive_minutes,
+        surfaceIntervalMinutes: t.surface_interval_minutes,
+      } as TripTypeDurations,
+    ]),
+  );
+
   const boatByScheduleId = new Map((schedules ?? []).map((s) => [s.id, s.boat_id]));
+  const departureByScheduleId = new Map((schedules ?? []).map((s) => [s.id, s.departure_time]));
+  const durationsForSchedule = new Map(
+    (schedules ?? []).map((s) => [s.id, s.trip_type_id ? durationsByTripTypeId.get(s.trip_type_id) ?? null : null]),
+  );
 
   const { data: rows } = await supabase
     .from("schedule_divers")
@@ -444,6 +503,9 @@ export async function loadDayAssignmentsForWarnings(
     staffId: r.staff_id,
     boatId: boatByScheduleId.get(r.schedule_id) ?? null,
     scheduleId: r.schedule_id,
+    departureTime: departureByScheduleId.get(r.schedule_id) ?? null,
+    diveCount: diveCountByScheduleId.get(r.schedule_id) ?? 0,
+    tripTypeDurations: durationsForSchedule.get(r.schedule_id) ?? null,
   }));
 }
 
@@ -502,6 +564,38 @@ export type Clip = {
   carryForward: boolean;
   members: ClipMember[];
 };
+
+// Mirrors scheduling.html's real findExistingStaffClip() — the live app
+// doesn't block clipping the same staff member twice, it merges the two
+// clips into one (a confirm modal on create, a background consolidation
+// pass on every render). This rebuild does the merge as a real DB write at
+// clip-creation/staff-edit time instead of an in-memory consolidation pass,
+// since every clip write already goes through these two actions.
+export async function findMatchingClip(
+  diveCenterId: string,
+  scheduleDate: string,
+  staffId: string | null,
+  staffName: string,
+  isFreelancer: boolean,
+  excludeClipId?: string,
+): Promise<string | null> {
+  const supabase = await createClient();
+  let query = supabase
+    .from("schedule_team_clips")
+    .select("id, staff_id, staff_name, is_freelancer")
+    .eq("dive_center_id", diveCenterId)
+    .eq("schedule_date", scheduleDate);
+  if (excludeClipId) query = query.neq("id", excludeClipId);
+  const { data: clips } = await query;
+
+  const nameKey = staffName.trim().toLowerCase();
+  const match = (clips ?? []).find((c) =>
+    isFreelancer || !staffId
+      ? c.is_freelancer && c.staff_name.trim().toLowerCase() === nameKey
+      : !c.is_freelancer && c.staff_id === staffId,
+  );
+  return match?.id ?? null;
+}
 
 export async function loadExcludedDiverIds(diveCenterId: string, date: string): Promise<Set<string>> {
   const supabase = await createClient();
@@ -727,7 +821,7 @@ export async function loadTripDetail(
   const { data: schedule } = await supabase
     .from("schedules")
     .select(
-      "id, schedule_date, boat_id, is_joiner, joiner_boat_name, departure_time, captain, notes, fuel_consumed_liters, closed, cancelled, guest_divers_count, guest_dive_center_name, guest_notes",
+      "id, schedule_date, boat_id, is_joiner, joiner_boat_name, departure_time, trip_type_id, captain, notes, fuel_consumed_liters, closed, cancelled, guest_divers_count, guest_dive_center_name, guest_notes",
     )
     .eq("id", scheduleId)
     .eq("dive_center_id", diveCenterId)
@@ -747,6 +841,7 @@ export async function loadTripDetail(
     isJoiner: schedule.is_joiner,
     joinerBoatName: schedule.joiner_boat_name,
     departureTime: schedule.departure_time,
+    tripTypeId: schedule.trip_type_id,
     captain: schedule.captain,
     crew: (crewRows ?? []).map((r) => r.crew_name),
     notes: schedule.notes,

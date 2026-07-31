@@ -24,3 +24,14 @@ export const CERT_LEVEL_LABELS: Record<string, string> = {
   divemaster: "Divemaster",
   instructor: "Instructor",
 };
+
+// Shared 1:4 staff:diver ratio badge threshold — matches scheduling.html's
+// real count>6?'danger':(count>4?'warn':'') formula, used identically at
+// clip creation (Phase 1), trip building (Phase 2's WarningsBanner), and
+// the confirm screen (Phase 3) rather than duplicating the thresholds
+// three times.
+export function ratioBadgeClass(count: number): string {
+  if (count > 6) return "bg-red/10 text-red";
+  if (count > 4) return "bg-orange-light text-orange";
+  return "bg-teal/10 text-teal";
+}

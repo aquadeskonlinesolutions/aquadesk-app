@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { TripSummary, BoatOption, DiveSiteOption, StaffOption, DayAssignment } from "../data";
+import type { TripSummary, BoatOption, DiveSiteOption, StaffOption, DayAssignment, TripTypeOption } from "../data";
 import { TripCard } from "./TripCard";
 import { Button } from "@/components/ui/Button";
 
@@ -11,6 +11,7 @@ export function PhaseTwoPanel({
   boats,
   diveSites,
   staffOptions,
+  tripTypeOptions,
   dayContext,
   readOnly,
   onChanged,
@@ -21,6 +22,7 @@ export function PhaseTwoPanel({
   boats: BoatOption[];
   diveSites: DiveSiteOption[];
   staffOptions: StaffOption[];
+  tripTypeOptions: TripTypeOption[];
   dayContext: DayAssignment[];
   readOnly: boolean;
   onChanged: () => void;
@@ -49,6 +51,7 @@ export function PhaseTwoPanel({
           boats={boats}
           diveSites={diveSites}
           staffOptions={staffOptions}
+          tripTypeOptions={tripTypeOptions}
           dayContext={dayContext}
           readOnly={readOnly}
           onSaved={onChanged}
@@ -65,6 +68,7 @@ export function PhaseTwoPanel({
           boats={boats}
           diveSites={diveSites}
           staffOptions={staffOptions}
+          tripTypeOptions={tripTypeOptions}
           dayContext={dayContext}
           readOnly={readOnly}
           onSaved={() => {

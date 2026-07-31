@@ -11,6 +11,7 @@ import {
   loadClipsForDate,
   loadDayAssignmentsForWarnings,
   loadPhaseOneData,
+  findMatchingClip,
   type TripSummary,
   type TripDetail,
   type ScheduleDiverRow,
@@ -59,6 +60,7 @@ export type TripFormInput = {
   boatId: string | null;
   joinerBoatName: string;
   departureTime: string;
+  tripTypeId: string | null;
   captain: string;
   crew: string[];
   siteIds: string[];
@@ -163,6 +165,7 @@ export async function createTrip(
       is_joiner: isJoiner,
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
+      trip_type_id: input.tripTypeId,
       captain: isJoiner ? null : input.captain.trim() || null,
       notes: input.notes.trim() || null,
       fuel_consumed_liters: isJoiner ? null : input.fuelConsumedLiters,
@@ -206,6 +209,7 @@ export async function updateTrip(
       is_joiner: isJoiner,
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
+      trip_type_id: input.tripTypeId,
       captain: isJoiner ? null : input.captain.trim() || null,
       notes: input.notes.trim() || null,
       fuel_consumed_liters: isJoiner ? null : input.fuelConsumedLiters,
@@ -402,10 +406,39 @@ export async function createClip(
   staffName: string,
   isFreelancer: boolean,
   diverIds: string[],
-): Promise<{ error?: string; clipId?: string }> {
+): Promise<{ error?: string; clipId?: string; merged?: boolean }> {
   const user = await getCurrentUser();
   if (!staffName.trim()) return fail("A staff name is required.");
   const supabase = await createClient();
+
+  // scheduling.html doesn't block clipping the same staff member twice —
+  // it merges (findExistingStaffClip / confirmClipMerge). Mirrored here as
+  // a real DB write: if this staff already has a clip today, add the
+  // selected divers to that existing clip instead of creating a duplicate.
+  const existingClipId = await findMatchingClip(user.diveCenterId, scheduleDate, staffId, staffName, isFreelancer);
+  if (existingClipId) {
+    if (diverIds.length > 0) {
+      const { data: existingMembers } = await supabase
+        .from("schedule_team_clip_divers")
+        .select("diver_id")
+        .eq("clip_id", existingClipId);
+      const alreadyIn = new Set((existingMembers ?? []).map((m) => m.diver_id));
+      const newIds = diverIds.filter((id) => !alreadyIn.has(id));
+      if (newIds.length > 0) {
+        const { error: memberError } = await supabase.from("schedule_team_clip_divers").insert(
+          newIds.map((id) => ({
+            dive_center_id: user.diveCenterId,
+            clip_id: existingClipId,
+            diver_id: id,
+            excluded_on_date: false,
+          })),
+        );
+        if (memberError) return fail(memberError.message);
+      }
+    }
+    revalidatePath("/scheduling");
+    return { clipId: existingClipId, merged: true };
+  }
 
   const { data, error } = await supabase
     .from("schedule_team_clips")
@@ -512,10 +545,63 @@ export async function updateClipStaff(
   staffId: string | null,
   staffName: string,
   isFreelancer: boolean,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; merged?: boolean }> {
   const user = await getCurrentUser();
   if (!staffName.trim()) return fail("A staff name is required.");
   const supabase = await createClient();
+
+  const { data: thisClip } = await supabase
+    .from("schedule_team_clips")
+    .select("schedule_date")
+    .eq("id", clipId)
+    .eq("dive_center_id", user.diveCenterId)
+    .single();
+  if (!thisClip) return fail("Clip not found.");
+
+  // Same merge behavior as createClip: if the newly-chosen staff already
+  // has a different clip today, fold this clip's members into that one
+  // and remove this now-redundant clip, rather than leaving one staff
+  // split across two clips.
+  const targetClipId = await findMatchingClip(
+    user.diveCenterId,
+    thisClip.schedule_date,
+    staffId,
+    staffName,
+    isFreelancer,
+    clipId,
+  );
+  if (targetClipId) {
+    const { data: myMembers } = await supabase
+      .from("schedule_team_clip_divers")
+      .select("diver_id, excluded_on_date")
+      .eq("clip_id", clipId);
+    const { data: targetMembers } = await supabase
+      .from("schedule_team_clip_divers")
+      .select("diver_id")
+      .eq("clip_id", targetClipId);
+    const alreadyIn = new Set((targetMembers ?? []).map((m) => m.diver_id));
+    const toMove = (myMembers ?? []).filter((m) => !alreadyIn.has(m.diver_id));
+    if (toMove.length > 0) {
+      const { error: moveError } = await supabase.from("schedule_team_clip_divers").insert(
+        toMove.map((m) => ({
+          dive_center_id: user.diveCenterId,
+          clip_id: targetClipId,
+          diver_id: m.diver_id,
+          excluded_on_date: m.excluded_on_date,
+        })),
+      );
+      if (moveError) return fail(moveError.message);
+    }
+    const { error: deleteError } = await supabase
+      .from("schedule_team_clips")
+      .delete()
+      .eq("id", clipId)
+      .eq("dive_center_id", user.diveCenterId);
+    if (deleteError) return fail(deleteError.message);
+    revalidatePath("/scheduling");
+    return { merged: true };
+  }
+
   const { error } = await supabase
     .from("schedule_team_clips")
     .update({ staff_id: staffId, staff_name: staffName.trim(), is_freelancer: isFreelancer })

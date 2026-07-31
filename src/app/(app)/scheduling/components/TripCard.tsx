@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import type { BoatOption, DiveSiteOption, TripDetail, StaffOption, Clip, DayAssignment } from "../data";
+import type { BoatOption, DiveSiteOption, TripDetail, StaffOption, Clip, DayAssignment, TripTypeOption } from "../data";
 import {
   createTrip,
   updateTrip,
@@ -103,6 +103,7 @@ function emptyForm(scheduleDate: string): TripFormInput {
     boatId: null,
     joinerBoatName: "",
     departureTime: "",
+    tripTypeId: null,
     captain: "",
     crew: padCrewSlots([]),
     siteIds: padSiteSlots([]),
@@ -122,6 +123,7 @@ function fromDetail(detail: TripDetail): TripFormInput {
     boatId: detail.boatId,
     joinerBoatName: detail.joinerBoatName ?? "",
     departureTime: detail.departureTime ?? "",
+    tripTypeId: detail.tripTypeId,
     captain: detail.captain ?? "",
     crew: padCrewSlots(detail.crew),
     siteIds: padSiteSlots(detail.siteIds),
@@ -223,6 +225,7 @@ export function TripCard({
   boats,
   diveSites,
   staffOptions,
+  tripTypeOptions,
   dayContext,
   readOnly,
   onSaved,
@@ -234,6 +237,7 @@ export function TripCard({
   boats: BoatOption[];
   diveSites: DiveSiteOption[];
   staffOptions: StaffOption[];
+  tripTypeOptions: TripTypeOption[];
   dayContext: DayAssignment[];
   readOnly: boolean;
   onSaved: (scheduleId: string) => void;
@@ -663,6 +667,23 @@ export function TripCard({
             </div>
 
             <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Trip Type</label>
+              <select
+                disabled={locked}
+                value={form.tripTypeId ?? ""}
+                onChange={(e) => setForm({ ...form, tripTypeId: e.target.value || null })}
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+              >
+                <option value="">Not set — used for turnaround-time conflict checks</option>
+                {tripTypeOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">Boat</label>
               <div className="inline-flex border border-gray-200 rounded-md overflow-hidden w-full">
                 {BOAT_MODE_OPTIONS.map(([value, label]) => (
@@ -1008,6 +1029,9 @@ export function TripCard({
               dayContext={dayContext.filter((d) => d.scheduleId !== scheduleId)}
               boatId={form.boatId}
               staffOptions={staffOptions}
+              departureTime={form.departureTime || null}
+              diveCount={realSiteIds.length}
+              tripTypeDurations={tripTypeOptions.find((t) => t.id === form.tripTypeId)?.durations ?? null}
             />
           </div>
         </SectionBox>
