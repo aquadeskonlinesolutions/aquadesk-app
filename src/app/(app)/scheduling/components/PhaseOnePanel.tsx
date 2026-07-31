@@ -8,6 +8,7 @@ import {
   excludeDiverFromClip,
   includeDiverInClip,
   moveDiverToClip,
+  moveDiverToNewClip,
   deleteClip,
   updateClipStaff,
   excludeDiverForDay,
@@ -173,13 +174,13 @@ function DiverInfoCard({
       <div className="font-bold text-navy text-xs leading-none">
         {d.firstName} {d.lastName}
       </div>
-      <div className="text-teal text-[11px] font-semibold leading-tight mt-0.5">
+      <div className="text-teal text-xs font-semibold leading-tight mt-0.5">
         {d.nationality || "Unknown"} ·{" "}
         {(d.certificationLevel && CERT_LEVEL_LABELS[d.certificationLevel]) || d.certificationLevel || "No cert"} ·{" "}
         {d.loggedDives} dive{d.loggedDives === 1 ? "" : "s"} · {d.age != null ? `${d.age}y` : "age n/a"}
       </div>
       {isCourse && (
-        <div className="text-[11px] text-gray-500 leading-tight">
+        <div className="text-xs text-gray-500 leading-tight">
           Course{d.courseName ? ` - ${d.courseName}` : ""}
         </div>
       )}
@@ -192,6 +193,8 @@ function ClipMemberRow({
   allClips,
   member,
   readOnly,
+  scheduleDate,
+  staffOptions,
   moving,
   onStartMove,
   onCancelMove,
@@ -201,15 +204,31 @@ function ClipMemberRow({
   allClips: Clip[];
   member: ClipMember;
   readOnly: boolean;
+  scheduleDate: string;
+  staffOptions: StaffOption[];
   moving: boolean;
   onStartMove: () => void;
   onCancelMove: () => void;
   onChanged: () => void;
 }) {
   const [pending, startTransition] = useTransition();
+  const [creatingNewTeam, setCreatingNewTeam] = useState(false);
+  const [newStaffId, setNewStaffId] = useState<string | null>(null);
+  const [newStaffName, setNewStaffName] = useState("");
+  const [newIsFreelancer, setNewIsFreelancer] = useState(false);
 
   function clipLabel(c: Clip) {
     return c.source === "manual" ? c.staffName : `${c.staffName} (${c.source === "carryover" ? "carried over" : "returned"})`;
+  }
+
+  function confirmCreateNewTeam() {
+    if (!newStaffName.trim()) return;
+    startTransition(async () => {
+      await moveDiverToNewClip(scheduleDate, member.diverId, clip.id, newStaffId, newStaffName, newIsFreelancer);
+      setCreatingNewTeam(false);
+      onCancelMove();
+      onChanged();
+    });
   }
 
   return (
@@ -218,7 +237,7 @@ function ClipMemberRow({
         <div className="flex items-center gap-2">
           <DiverInfoCard d={member} />
           {member.excluded && (
-            <span className="shrink-0 text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
+            <span className="shrink-0 text-xs font-medium text-orange bg-orange-light px-1.5 py-0.5 rounded-full">
               Not diving this trip
             </span>
           )}
@@ -264,7 +283,7 @@ function ClipMemberRow({
         )}
       </div>
 
-      {moving && (
+      {moving && !creatingNewTeam && (
         <div className="pl-2 pb-2 border-t border-gray-100 pt-2">
           <div className="text-xs text-gray-500 mb-1">
             Move {member.firstName} {member.lastName} to:
@@ -287,8 +306,45 @@ function ClipMemberRow({
                   {clipLabel(c)}
                 </button>
               ))}
+            <button
+              onClick={() => setCreatingNewTeam(true)}
+              className="px-2 py-1 text-xs border border-teal/30 rounded-md hover:bg-teal-light bg-white text-teal"
+            >
+              + Create New Team
+            </button>
             <button onClick={onCancelMove} className="px-2 py-1 text-xs text-gray-500">
               Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {moving && creatingNewTeam && (
+        <div className="pl-2 pb-2 border-t border-gray-100 pt-2">
+          <div className="text-xs text-gray-500 mb-1">
+            New team for {member.firstName} {member.lastName}:
+          </div>
+          <div className="flex items-end gap-2 flex-wrap">
+            <StaffPicker
+              staffOptions={staffOptions}
+              staffId={newStaffId}
+              staffName={newStaffName}
+              isFreelancer={newIsFreelancer}
+              onChange={(v) => {
+                setNewStaffId(v.staffId);
+                setNewStaffName(v.staffName);
+                setNewIsFreelancer(v.isFreelancer);
+              }}
+            />
+            <button
+              onClick={confirmCreateNewTeam}
+              disabled={pending || !newStaffName.trim()}
+              className="px-2 py-1 text-xs font-medium bg-navy text-white rounded-md hover:bg-navy-dark disabled:opacity-60"
+            >
+              Confirm
+            </button>
+            <button onClick={() => setCreatingNewTeam(false)} className="px-2 py-1 text-xs text-gray-500">
+              Back
             </button>
           </div>
         </div>
@@ -301,12 +357,14 @@ function ClipCard({
   clip,
   allClips,
   staffOptions,
+  scheduleDate,
   readOnly,
   onChanged,
 }: {
   clip: Clip;
   allClips: Clip[];
   staffOptions: StaffOption[];
+  scheduleDate: string;
   readOnly: boolean;
   onChanged: () => void;
 }) {
@@ -351,7 +409,7 @@ function ClipCard({
             {clip.staffName}
             {clip.isFreelancer && <span className="ml-2 text-xs text-gray-400">(Freelancer)</span>}
             {clip.source === "carryover" && (
-              <span className="ml-2 text-xs bg-teal/10 text-teal px-1.5 py-0.5 rounded-full">Carried over</span>
+              <span className="ml-2 text-xs bg-teal-light text-teal-mid px-1.5 py-0.5 rounded-full">Carried over</span>
             )}
             <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded-full ${ratioBadgeClass(activeCount)}`}>
               {activeCount}/4
@@ -382,6 +440,8 @@ function ClipCard({
             allClips={allClips}
             member={m}
             readOnly={readOnly}
+            scheduleDate={scheduleDate}
+            staffOptions={staffOptions}
             moving={movingDiverId === m.diverId}
             onStartMove={() => setMovingDiverId(m.diverId)}
             onCancelMove={() => setMovingDiverId(null)}
@@ -523,6 +583,7 @@ export function PhaseOnePanel({
                 clip={c}
                 allClips={data.clips}
                 staffOptions={staffOptions}
+                scheduleDate={scheduleDate}
                 readOnly={readOnly}
                 onChanged={refresh}
               />

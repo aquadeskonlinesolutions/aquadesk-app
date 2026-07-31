@@ -91,7 +91,7 @@ export function SchedulingClient({
       ) : (
         <>
           {isPastDate && (
-            <div className="text-xs bg-teal/10 text-teal px-3 py-2 rounded-md">
+            <div className="text-xs bg-teal-light text-teal-mid px-3 py-2 rounded-md">
               Past schedule — you can review this date. Only unclosed trips can still be marked Boat Returned.
             </div>
           )}

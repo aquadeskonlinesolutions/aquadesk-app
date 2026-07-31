@@ -99,36 +99,36 @@ export function DiverCard({
 
       <div className="flex flex-wrap gap-1.5">
         {card.alreadyInScheduling && (
-          <span className="text-[11px] font-medium bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+          <span className="text-xs font-medium bg-orange-light text-orange px-1.5 py-0.5 rounded">
             Already in Scheduling
           </span>
         )}
         {card.billClosed && (
-          <span className="text-[11px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+          <span className="text-xs font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
             ✓ Bill Closed{card.billClosedAt ? ` ${fmtDate(card.billClosedAt)}` : ""}
           </span>
         )}
         {card.medicalFlag &&
           (card.medicalAcknowledged ? (
-            <span className="text-[11px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+            <span className="text-xs font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
               ⚕ Medical Note
             </span>
           ) : (
             <button
               type="button"
               onClick={onAcknowledgeMedical}
-              className="text-[11px] font-medium bg-red-light text-red px-1.5 py-0.5 rounded hover:underline"
+              className="text-xs font-medium bg-red-light text-red px-1.5 py-0.5 rounded hover:underline"
             >
               🚨 Medical Flag — tap to acknowledge
             </button>
           ))}
         {card.isMinor && (
-          <span className="text-[11px] font-medium bg-orange-light text-orange px-1.5 py-0.5 rounded">
+          <span className="text-xs font-medium bg-orange-light text-orange px-1.5 py-0.5 rounded">
             👶 Minor
           </span>
         )}
         {card.staleDive && (
-          <span className="text-[11px] font-medium bg-orange-light text-orange px-1.5 py-0.5 rounded">
+          <span className="text-xs font-medium bg-orange-light text-orange px-1.5 py-0.5 rounded">
             🕐 Last dive 6mo+ ago
           </span>
         )}

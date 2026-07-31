@@ -34,7 +34,7 @@ export function PhaseTabs({
           }`}
         >
           <div className="text-xs font-extrabold leading-none">{t.title}</div>
-          <div className={`text-[11px] mt-1 ${phase === t.id ? "text-white/70" : "text-gray-400"}`}>{t.sub}</div>
+          <div className={`text-xs mt-1 ${phase === t.id ? "text-white/70" : "text-gray-400"}`}>{t.sub}</div>
         </button>
       ))}
     </div>

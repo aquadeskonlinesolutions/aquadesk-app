@@ -195,7 +195,7 @@ function LeaderTable({
                     <td className="px-4 py-3 text-right">
                       {r.divers}
                       {overRatio && ratioBonusEnabled && (
-                        <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-light text-orange">
+                        <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-bold bg-orange-light text-orange">
                           &gt;4
                         </span>
                       )}

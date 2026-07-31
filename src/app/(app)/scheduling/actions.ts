@@ -528,6 +528,34 @@ export async function moveDiverToClip(
   return ok();
 }
 
+// The live app's real Move modal always offers "Create new team" alongside
+// existing clips (scheduling.html's openMoveDiverModal/confirmMoveDiver) —
+// this rebuild's picker had no equivalent, so Move was a dead end whenever
+// only one clip existed for the day (nothing to move to but "Cancel").
+// Reuses createClip's already-built merge-or-create logic rather than
+// duplicating it — moving into a brand-new clip is just "remove from the
+// old one, then createClip with just this diver."
+export async function moveDiverToNewClip(
+  scheduleDate: string,
+  diverId: string,
+  fromClipId: string,
+  staffId: string | null,
+  staffName: string,
+  isFreelancer: boolean,
+): Promise<{ error?: string; clipId?: string; merged?: boolean }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  await supabase
+    .from("schedule_team_clip_divers")
+    .delete()
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("clip_id", fromClipId)
+    .eq("diver_id", diverId);
+
+  return createClip(scheduleDate, staffId, staffName, isFreelancer, [diverId]);
+}
+
 export async function deleteClip(clipId: string): Promise<{ error?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();

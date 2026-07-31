@@ -8,8 +8,8 @@ function expiryBadge(expiryDate: string | null): { label: string; className: str
   if (!expiryDate) return null;
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
   const days = (new Date(expiryDate).getTime() - new Date(today).getTime()) / 86_400_000;
-  if (days < 0) return { label: "Expired", className: "bg-red/10 text-red" };
-  if (days <= 30) return { label: "Expires soon", className: "bg-amber-100 text-amber-700" };
+  if (days < 0) return { label: "Expired", className: "bg-red-light text-red" };
+  if (days <= 30) return { label: "Expires soon", className: "bg-orange-light text-orange" };
   return null;
 }
 

@@ -280,13 +280,13 @@ function TripSummaryCard({
             detail.siteIds.map((id, i) => (
               <span
                 key={`${id}-${i}`}
-                className="text-[10px] font-semibold bg-white/10 border border-white/20 text-white px-2 py-0.5 rounded-full"
+                className="text-xs font-semibold bg-white/10 border border-white/20 text-white px-2 py-0.5 rounded-full"
               >
                 Dive {i + 1} - {siteNameById.get(id) ?? "Site"}
               </span>
             ))
           ) : (
-            <span className="text-[10px] font-semibold bg-white/10 border border-white/20 text-white px-2 py-0.5 rounded-full">
+            <span className="text-xs font-semibold bg-white/10 border border-white/20 text-white px-2 py-0.5 rounded-full">
               No dives
             </span>
           )}

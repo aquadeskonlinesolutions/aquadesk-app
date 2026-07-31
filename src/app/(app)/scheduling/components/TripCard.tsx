@@ -602,7 +602,7 @@ export function TripCard({
       <div className="p-4 grid gap-4">
         {error && <div className="text-sm text-red">{error}</div>}
         {locked && (
-          <div className="text-xs bg-teal/10 text-teal px-3 py-2 rounded-md">
+          <div className="text-xs bg-teal-light text-teal-mid px-3 py-2 rounded-md">
             This trip is locked — fields can&apos;t be edited.
           </div>
         )}
@@ -891,7 +891,7 @@ export function TripCard({
         >
 
           {realSiteIds.length > 0 && teams.length > 0 && (
-            <div className="text-[10px] text-gray-400 mb-2">
+            <div className="text-xs text-gray-400 mb-2">
               Per dive site — choose either Nitrox or 15L for the same dive.
             </div>
           )}
@@ -908,7 +908,7 @@ export function TripCard({
                   <div className="text-sm font-medium text-navy mb-1">{t.staffName}</div>
                   {realSiteIds.length > 0 && (
                     <div className="flex items-center gap-2 flex-wrap mb-2">
-                      <span className="text-[10px] font-semibold text-gray-500 w-16 shrink-0">Staff Nitrox</span>
+                      <span className="text-xs font-semibold text-gray-500 w-16 shrink-0">Staff Nitrox</span>
                       {realSiteIds.map((siteId, si) => {
                         const active = t.staffNitroxSiteIndexes.includes(si);
                         const siteName = diveSites.find((s) => s.id === siteId)?.siteName ?? `Dive ${si + 1}`;
@@ -919,7 +919,7 @@ export function TripCard({
                             disabled={locked}
                             onClick={() => toggleStaffNitrox(ti, si)}
                             title={`Nitrox – Dive ${si + 1} (${siteName})`}
-                            className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${
+                            className={`px-1.5 py-0.5 text-xs font-semibold rounded border ${
                               active ? "bg-teal text-white border-teal" : "bg-white text-gray-500 border-gray-300"
                             } disabled:opacity-60`}
                           >
@@ -951,7 +951,7 @@ export function TripCard({
                         {realSiteIds.length > 0 && (
                           <div className="grid gap-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[10px] font-semibold text-gray-500 w-10 shrink-0">Nitrox</span>
+                              <span className="text-xs font-semibold text-gray-500 w-10 shrink-0">Nitrox</span>
                               {d.nitroxCertified ? (
                                 realSiteIds.map((siteId, si) => {
                                   const checked = tankAt(d.tanks, si) === "nitrox";
@@ -960,7 +960,7 @@ export function TripCard({
                                     <label
                                       key={si}
                                       title={siteName}
-                                      className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded border cursor-pointer ${
+                                      className={`inline-flex items-center px-1.5 py-0.5 text-xs font-semibold rounded border cursor-pointer ${
                                         checked ? "bg-teal text-white border-teal" : "bg-white text-gray-500 border-gray-300"
                                       } ${locked ? "opacity-60 pointer-events-none" : ""}`}
                                     >
@@ -976,11 +976,11 @@ export function TripCard({
                                   );
                                 })
                               ) : (
-                                <span className="text-[10px] text-gray-400 italic">Not nitrox certified</span>
+                                <span className="text-xs text-gray-400 italic">Not nitrox certified</span>
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[10px] font-semibold text-gray-500 w-10 shrink-0">15L</span>
+                              <span className="text-xs font-semibold text-gray-500 w-10 shrink-0">15L</span>
                               {realSiteIds.map((siteId, si) => {
                                 const checked = tankAt(d.tanks, si) === "air_15l";
                                 const siteName = diveSites.find((s) => s.id === siteId)?.siteName ?? `Dive ${si + 1}`;
@@ -988,7 +988,7 @@ export function TripCard({
                                   <label
                                     key={si}
                                     title={siteName}
-                                    className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded border cursor-pointer ${
+                                    className={`inline-flex items-center px-1.5 py-0.5 text-xs font-semibold rounded border cursor-pointer ${
                                       checked ? "bg-navy text-white border-navy" : "bg-white text-gray-500 border-gray-300"
                                     } ${locked ? "opacity-60 pointer-events-none" : ""}`}
                                   >

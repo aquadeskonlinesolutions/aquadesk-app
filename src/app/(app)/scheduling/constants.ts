@@ -31,7 +31,7 @@ export const CERT_LEVEL_LABELS: Record<string, string> = {
 // the confirm screen (Phase 3) rather than duplicating the thresholds
 // three times.
 export function ratioBadgeClass(count: number): string {
-  if (count > 6) return "bg-red/10 text-red";
+  if (count > 6) return "bg-red-light text-red";
   if (count > 4) return "bg-orange-light text-orange";
-  return "bg-teal/10 text-teal";
+  return "bg-teal-light text-teal-mid";
 }
