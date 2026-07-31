@@ -82,6 +82,7 @@ export function ProfileHeader({
         <Field label="Equipment" value={equipmentSummary(diver)} />
         <Field label="Nationality" value={diver.nationality ?? ""} />
         <Field label="Logged Dives" value={String(diver.loggedDives)} />
+        <Field label="Last Dive Date" value={fmtDate(diver.lastDiveDate)} />
         <Field label="Nitrox Certified" value={diver.nitroxCertified ? "Yes" : "No"} />
         <Field label="WhatsApp" value={diver.whatsapp ?? ""} />
         <Field label="Email" value={diver.email ?? ""} />

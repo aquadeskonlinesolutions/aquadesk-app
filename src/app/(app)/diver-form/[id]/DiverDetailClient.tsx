@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ProfileHeader } from "./components/ProfileHeader";
 import { FlagsBanner } from "./components/FlagsBanner";
@@ -78,6 +78,26 @@ export function DiverDetailClient({
   const [deposits, setDeposits] = useState(initialDeposits);
   const [invoice, setInvoice] = useState(initialInvoice);
   const [unlockOpen, setUnlockOpen] = useState(false);
+  // This page has two independent print-only sections (Invoice, Signed
+  // Documents) that each render via a plain CSS `hidden print:block` —
+  // with no coordination, a bare window.print() from either one's
+  // button would print BOTH simultaneously, since both are print:block
+  // at the same time. printTarget scopes which one is actually visible
+  // during the print job that's currently in progress.
+  const [printTarget, setPrintTarget] = useState<"invoice" | "documents" | null>(null);
+
+  useEffect(() => {
+    if (!printTarget) return;
+    window.print();
+  }, [printTarget]);
+
+  useEffect(() => {
+    function reset() {
+      setPrintTarget(null);
+    }
+    window.addEventListener("afterprint", reset);
+    return () => window.removeEventListener("afterprint", reset);
+  }, []);
 
   async function handleCheckedOut(invoiceId: string) {
     if (!visit) return;
@@ -143,6 +163,8 @@ export function DiverDetailClient({
           invoice={invoice}
           onSent={() => setInvoice((prev) => (prev ? { ...prev, emailDeliveryStatus: "sent", emailSentAt: new Date().toISOString() } : prev))}
           onUnlockClick={() => setUnlockOpen(true)}
+          isPrintTarget={printTarget === "invoice"}
+          onPrintClick={() => setPrintTarget("invoice")}
         />
       )}
 
@@ -155,7 +177,12 @@ export function DiverDetailClient({
         />
       )}
 
-      <DocumentsViewer registrations={registrations} diver={diver} />
+      <DocumentsViewer
+        registrations={registrations}
+        diver={diver}
+        isPrintTarget={printTarget === "documents"}
+        onPrintClick={() => setPrintTarget("documents")}
+      />
 
       <NotesPanel diverId={diver.id} initialNotes={initialNotes} isOwner={isOwner} />
 

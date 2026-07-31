@@ -39,9 +39,13 @@ function resolveIdentity(selected: RegistrationRecord, diver: DiverDetail) {
 export function DocumentsViewer({
   registrations,
   diver,
+  isPrintTarget,
+  onPrintClick,
 }: {
   registrations: RegistrationRecord[];
   diver: DiverDetail;
+  isPrintTarget: boolean;
+  onPrintClick: () => void;
 }) {
   const [selectedId, setSelectedId] = useState(registrations[0]?.id ?? null);
 
@@ -67,7 +71,7 @@ export function DocumentsViewer({
           </div>
         </div>
         <button
-          onClick={() => window.print()}
+          onClick={onPrintClick}
           className="px-3 py-1.5 bg-white border border-gray-300 text-navy text-xs font-medium rounded-md hover:bg-gray-50"
         >
           🖨 Print
@@ -180,7 +184,7 @@ export function DocumentsViewer({
           version above: every medical question with its answer (not just
           the flagged ones), the full waiver text with no scroll clipping,
           and the signature. */}
-      <div className="hidden print:block p-6">
+      <div className={`hidden p-6 ${isPrintTarget ? "print:block" : ""}`}>
         <div className="text-lg font-extrabold text-navy mb-1">
           {identity.firstName} {identity.lastName}
         </div>

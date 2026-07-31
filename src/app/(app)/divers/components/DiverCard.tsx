@@ -127,10 +127,20 @@ export function DiverCard({
             👶 Minor
           </span>
         )}
+        {card.staleDive && (
+          <span className="text-[11px] font-medium bg-orange-light text-orange px-1.5 py-0.5 rounded">
+            🕐 Last dive 6mo+ ago
+          </span>
+        )}
       </div>
 
       <div className="flex items-center justify-between mt-auto pt-1">
-        <Link href={`/diver-form/${card.id}`} className="text-xs text-teal hover:underline">
+        <Link
+          href={`/diver-form/${card.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-teal hover:underline"
+        >
           Open Form ↗
         </Link>
         <div className="flex gap-2">

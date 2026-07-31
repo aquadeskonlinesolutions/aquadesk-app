@@ -23,6 +23,7 @@ export type ProfileFormFields = {
   lastName: string;
   certificationLevel: string;
   loggedDives: number;
+  lastDiveDate: string;
   nitroxCertified: boolean;
   email: string;
   whatsapp: string;
@@ -52,6 +53,7 @@ export async function saveDiverProfile(
       last_name: fields.lastName.trim(),
       certification_level: fields.certificationLevel,
       logged_dives: fields.loggedDives,
+      last_dive_date: fields.lastDiveDate || null,
       nitrox_certified: fields.nitroxCertified,
       email: fields.email.trim() || null,
       whatsapp: fields.whatsapp.trim() || null,
@@ -912,7 +914,7 @@ export async function sendInvoice(diverId: string, invoiceEmailId: string): Prom
   if (!diver?.email) return { error: "This diver has no email address on file." };
 
   const html = buildInvoiceEmailHtml({
-    diveCenterName: dc?.name ?? "AquaDesk",
+    diveCenterName: dc?.name ?? "Your Dive Center",
     snapshot: (invoice.invoice_snapshot ?? {}) as Record<string, unknown>,
   });
 
@@ -920,7 +922,7 @@ export async function sendInvoice(diverId: string, invoiceEmailId: string): Prom
   const { error: sendError } = await resend.emails.send({
     from: RESEND_FROM_EMAIL,
     to: diver.email,
-    subject: `Your invoice from ${dc?.name ?? "AquaDesk"}`,
+    subject: `Your invoice from ${dc?.name ?? "Your Dive Center"}`,
     html,
   });
 

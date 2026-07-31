@@ -5,6 +5,26 @@ import { isDiverActive } from "./visibility";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
+// Duplicated from diver-form/[id]/components/FlagsBanner.tsx's own copy
+// (that one's a client component, this one's server-only, matching this
+// codebase's established small-helper-duplication precedent rather than
+// sharing across that boundary). Date.UTC here is only ever used to
+// produce a millisecond difference for comparison, never read back out as
+// a rolled-over Y-M-D value.
+function isDiveStale(lastDiveDate: string | null): boolean {
+  if (!lastDiveDate) return false;
+  const [ly, lm, ld] = lastDiveDate.split("-").map(Number);
+  const todayStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const [ty, tm, td] = todayStr.split("-").map(Number);
+  const daysSince = (Date.UTC(ty, tm - 1, td) - Date.UTC(ly, lm - 1, ld)) / 86400000;
+  return daysSince > 182;
+}
+
 export type DiverCard = {
   id: string;
   firstName: string;
@@ -15,6 +35,8 @@ export type DiverCard = {
   isMinor: boolean;
   medicalFlag: boolean;
   medicalAcknowledged: boolean;
+  lastDiveDate: string | null;
+  staleDive: boolean;
   arrivalDate: string | null;
   departureDate: string | null;
   alreadyInScheduling: boolean;
@@ -41,7 +63,7 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
   const [{ data: divers }, { data: registrations }, { data: visits }] = await Promise.all([
     supabase
       .from("divers")
-      .select("id, first_name, last_name, certification_level, group_id, is_minor, medical_acknowledged")
+      .select("id, first_name, last_name, certification_level, group_id, is_minor, medical_acknowledged, last_dive_date")
       .in("id", diverIds),
     supabase
       .from("diver_registrations")
@@ -146,6 +168,8 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
       isMinor: !!d.is_minor,
       medicalFlag: !!reg?.medical_flag,
       medicalAcknowledged: !!d.medical_acknowledged,
+      lastDiveDate: d.last_dive_date,
+      staleDive: isDiveStale(d.last_dive_date),
       arrivalDate: reg?.arrival_date ?? null,
       departureDate: reg?.departure_date ?? null,
       alreadyInScheduling,

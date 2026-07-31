@@ -19,6 +19,7 @@ export function EditProfileModal({
     lastName: diver.lastName,
     certificationLevel: diver.certificationLevel,
     loggedDives: diver.loggedDives,
+    lastDiveDate: diver.lastDiveDate ?? "",
     nitroxCertified: diver.nitroxCertified,
     email: diver.email ?? "",
     whatsapp: diver.whatsapp ?? "",
@@ -41,6 +42,14 @@ export function EditProfileModal({
       setError("First and last name are required.");
       return;
     }
+    // Matches the registration wizard's own conditional requirement
+    // (RegistrationWizard.tsx): a diver with any real certification level
+    // must have logged dives and a last dive date on file — a "None"
+    // cert diver (first-timer) is exempt from both.
+    if (form.certificationLevel !== "none" && !form.lastDiveDate) {
+      setError("Last dive date is required for certified divers.");
+      return;
+    }
     setError(null);
     startTransition(async () => {
       const res = await saveDiverProfile(diver.id, form);
@@ -53,6 +62,7 @@ export function EditProfileModal({
           lastName: form.lastName.trim(),
           certificationLevel: form.certificationLevel,
           loggedDives: form.loggedDives,
+          lastDiveDate: form.lastDiveDate || null,
           nitroxCertified: form.nitroxCertified,
           email: form.email.trim() || null,
           whatsapp: form.whatsapp.trim() || null,
@@ -123,6 +133,18 @@ export function EditProfileModal({
                 min={0}
                 value={form.loggedDives}
                 onChange={(e) => setForm({ ...form, loggedDives: parseInt(e.target.value, 10) || 0 })}
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Last Dive Date{form.certificationLevel !== "none" ? " *" : ""}
+              </label>
+              <input
+                type="date"
+                max={new Date().toISOString().slice(0, 10)}
+                value={form.lastDiveDate}
+                onChange={(e) => setForm({ ...form, lastDiveDate: e.target.value })}
                 className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
               />
             </div>

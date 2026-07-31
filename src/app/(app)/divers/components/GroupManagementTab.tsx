@@ -106,6 +106,22 @@ export function GroupManagementTab({
     });
   }
 
+  // "Select All" only ever selects the divers whose checkbox is actually
+  // selectable (DiverCard disables the box for alreadyInScheduling divers)
+  // — matches the same guard the checkboxes themselves already enforce.
+  function selectableIds(list: DiverCardType[]): string[] {
+    return list.filter((m) => !m.alreadyInScheduling).map((m) => m.id);
+  }
+
+  function allSelectableSelected(list: DiverCardType[]): boolean {
+    const ids = selectableIds(list);
+    return ids.length > 0 && ids.every((id) => selected.has(id));
+  }
+
+  function toggleSelectAll(list: DiverCardType[]) {
+    setSelected(allSelectableSelected(list) ? new Set() : new Set(selectableIds(list)));
+  }
+
   function openAddToSchedule() {
     setPendingTagDivers(members.filter((m) => selected.has(m.id)));
   }
@@ -247,34 +263,45 @@ export function GroupManagementTab({
 
               {openGroupId === g.id && (
                 <div className="border-t border-gray-200 p-3 grid gap-3">
-                  {selected.size > 0 && (
-                    <div className="flex items-center justify-between bg-off-white rounded-md px-3 py-2">
-                      <span className="text-xs text-gray-600">{selected.size} selected</span>
-                      <button
-                        onClick={openAddToSchedule}
-                        className="px-3 py-1 text-xs font-medium rounded-md bg-teal text-white hover:bg-teal-mid"
-                      >
-                        Add to Schedule
-                      </button>
-                    </div>
-                  )}
                   {members.length === 0 ? (
                     <div className="text-sm text-gray-400 text-center py-4">No members yet.</div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {members.map((m) => (
-                        <DiverCard
-                          key={m.id}
-                          card={m}
-                          variant="group-member"
-                          selected={selected.has(m.id)}
-                          onToggleSelect={(checked) => toggleSelect(m.id, checked)}
-                          showRemove
-                          onRemove={() => removeMember(m.id, `${m.firstName} ${m.lastName}`)}
-                          onAcknowledgeMedical={() => ackMedical(m.id)}
-                        />
-                      ))}
-                    </div>
+                    <>
+                      <div className="flex items-center justify-between bg-off-white rounded-md px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleSelectAll(members)}
+                          className="text-xs text-teal font-medium hover:underline"
+                        >
+                          {allSelectableSelected(members) ? "Clear Selection" : "Select All"}
+                        </button>
+                        {selected.size > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-600">{selected.size} selected</span>
+                            <button
+                              onClick={openAddToSchedule}
+                              className="px-3 py-1 text-xs font-medium rounded-md bg-teal text-white hover:bg-teal-mid"
+                            >
+                              Add to Schedule
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        {members.map((m) => (
+                          <DiverCard
+                            key={m.id}
+                            card={m}
+                            variant="group-member"
+                            selected={selected.has(m.id)}
+                            onToggleSelect={(checked) => toggleSelect(m.id, checked)}
+                            showRemove
+                            onRemove={() => removeMember(m.id, `${m.firstName} ${m.lastName}`)}
+                            onAcknowledgeMedical={() => ackMedical(m.id)}
+                          />
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
               )}

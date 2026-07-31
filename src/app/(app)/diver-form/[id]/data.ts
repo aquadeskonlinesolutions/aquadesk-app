@@ -14,6 +14,7 @@ export type DiverDetail = {
   certificationLevel: string;
   trainingAgency: string | null;
   loggedDives: number;
+  lastDiveDate: string | null;
   nitroxCertified: boolean;
   groupId: string | null;
   groupName: string | null;
@@ -46,7 +47,7 @@ export async function loadDiverDetail(diverId: string, diveCenterId: string): Pr
   const { data: diver } = await supabase
     .from("divers")
     .select(
-      "id, first_name, last_name, birthday, age, nationality, email, phone, whatsapp, certification_level, training_agency, logged_dives, nitrox_certified, group_id, needs_equipment, equipment_requested, medical_acknowledged_at, medical_acknowledged_by, cert_card_url, notes, accommodation, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, emergency_contact_whatsapp, emergency_contact_email, food_allergies, has_dive_insurance, insurance_provider, insurance_policy_number, is_minor",
+      "id, first_name, last_name, birthday, age, nationality, email, phone, whatsapp, certification_level, training_agency, logged_dives, last_dive_date, nitrox_certified, group_id, needs_equipment, equipment_requested, medical_acknowledged_at, medical_acknowledged_by, cert_card_url, notes, accommodation, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, emergency_contact_whatsapp, emergency_contact_email, food_allergies, has_dive_insurance, insurance_provider, insurance_policy_number, is_minor",
     )
     .eq("id", diverId)
     .eq("dive_center_id", diveCenterId)
@@ -80,6 +81,7 @@ export async function loadDiverDetail(diverId: string, diveCenterId: string): Pr
     certificationLevel: diver.certification_level,
     trainingAgency: diver.training_agency,
     loggedDives: diver.logged_dives ?? 0,
+    lastDiveDate: diver.last_dive_date,
     nitroxCertified: !!diver.nitrox_certified,
     groupId: diver.group_id,
     groupName: group?.group_name ?? null,
