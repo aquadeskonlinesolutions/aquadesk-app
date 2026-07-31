@@ -10,6 +10,7 @@ import {
   loadGroupMemberCards,
   checkGroupDeletionBlockers,
   loadEquipmentPrepDivers,
+  loadGearInventoryCounts,
   type DiverCard,
   type GroupSummary,
   type GroupDeletionBlocker,
@@ -55,6 +56,11 @@ export async function getGroupDeletionBlockers(groupId: string): Promise<GroupDe
 export async function getEquipmentPrepDivers(date: string): Promise<EquipmentPrepDiver[]> {
   const user = await getCurrentUser();
   return loadEquipmentPrepDivers(user.diveCenterId, date);
+}
+
+export async function getGearInventoryCounts(): Promise<Record<string, number>> {
+  const user = await getCurrentUser();
+  return loadGearInventoryCounts(user.diveCenterId);
 }
 
 // ── Groups — moved here from Scheduling (this page is the live app's real

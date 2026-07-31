@@ -235,7 +235,7 @@ export function GroupManagementTab({
       ) : (
         <div className="grid gap-2">
           {groups.map((g) => (
-            <div key={g.id} className="border border-gray-200 rounded-lg bg-white">
+            <div key={g.id} className="border border-teal/20 rounded-lg bg-teal-light">
               <div className="p-3 flex items-center justify-between gap-2">
                 <button className="text-left flex-1" onClick={() => openGroup(g.id)}>
                   <div className="text-sm font-semibold text-navy">{g.groupName}</div>
@@ -247,6 +247,12 @@ export function GroupManagementTab({
                   </div>
                 </button>
                 <div className="flex gap-2 items-center">
+                  <button
+                    onClick={() => (openGroupId === g.id ? setOpenGroupId(null) : openGroup(g.id))}
+                    className="px-2 py-1 text-xs font-medium text-navy border border-navy/20 rounded-md bg-white hover:bg-gray-50"
+                  >
+                    {openGroupId === g.id ? "Collapse" : "Expand"}
+                  </button>
                   <button
                     onClick={() =>
                       navigator.clipboard.writeText(`${window.location.origin}/register?dc=${diveCenterId}&group=${g.id}`)

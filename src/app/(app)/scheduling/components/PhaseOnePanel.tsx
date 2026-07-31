@@ -142,6 +142,10 @@ function CreateClipModal({
 // a secretary can see who's suited to dive together without opening
 // anything. An orange left accent flags course divers, same signal role
 // as the old app's purple border (this codebase's palette has no purple).
+// The group-name kicker line above the name mirrors scheduling.html's real
+// .group-kicker — always reserves its line height (even when blank) so a
+// secretary scanning 50+ divers can immediately tell group members from
+// individuals without cards jumping size.
 function DiverInfoCard({
   d,
 }: {
@@ -154,11 +158,15 @@ function DiverInfoCard({
     age: number | null;
     experienceType: "fun_diving" | "dive_course" | null;
     courseName?: string | null;
+    groupName?: string | null;
   };
 }) {
   const isCourse = d.experienceType === "dive_course";
   return (
     <div className={`pl-1.5 border-l-2 ${isCourse ? "border-orange" : "border-transparent"}`}>
+      <div className="text-[0.68rem] uppercase tracking-wide text-teal-mid font-extrabold leading-tight min-h-[1rem]">
+        {d.groupName || ""}
+      </div>
       <div className="font-bold text-navy text-xs leading-none">
         {d.firstName} {d.lastName}
       </div>
@@ -472,7 +480,6 @@ export function PhaseOnePanel({
                     />
                   )}
                 </div>
-                {d.groupName && <div className="text-xs text-gray-400">Group: {d.groupName}</div>}
                 {!readOnly && (
                   <button
                     onClick={(e) => {

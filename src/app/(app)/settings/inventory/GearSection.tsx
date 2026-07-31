@@ -31,7 +31,7 @@ export function GearSection({ gear }: { gear: GearItem[] }) {
 
   return (
     <SettingsSection
-      title="Rental Gear"
+      title="Gear Inventory"
       subtitle="Track counts for each gear item — alerts fire when count drops to or below threshold"
     >
       {error && <div className="mb-3 text-sm text-red">{error}</div>}

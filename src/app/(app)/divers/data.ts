@@ -340,6 +340,7 @@ export type EquipmentPrepDiver = {
   firstName: string;
   lastName: string;
   groupName: string | null;
+  needsEquipment: boolean;
   equipmentRequested: string | null;
   equipmentNotes: string | null;
 };
@@ -358,7 +359,7 @@ export async function loadEquipmentPrepDivers(diveCenterId: string, date: string
 
   const { data: divers } = await supabase
     .from("divers")
-    .select("id, first_name, last_name, group_id, equipment_requested, equipment_notes")
+    .select("id, first_name, last_name, group_id, needs_equipment, equipment_requested, equipment_notes")
     .in("id", diverIds);
 
   const groupIds = [...new Set((divers ?? []).map((d) => d.group_id).filter(Boolean))] as string[];
@@ -372,7 +373,18 @@ export async function loadEquipmentPrepDivers(diveCenterId: string, date: string
     firstName: d.first_name,
     lastName: d.last_name,
     groupName: d.group_id ? (groupNameById.get(d.group_id) ?? null) : null,
+    needsEquipment: !!d.needs_equipment,
     equipmentRequested: d.equipment_requested,
     equipmentNotes: d.equipment_notes,
   }));
+}
+
+export async function loadGearInventoryCounts(diveCenterId: string): Promise<Record<string, number>> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("equipment")
+    .select("name, total_count")
+    .eq("dive_center_id", diveCenterId)
+    .eq("is_active", true);
+  return Object.fromEntries((data ?? []).map((r) => [r.name, r.total_count as number]));
 }

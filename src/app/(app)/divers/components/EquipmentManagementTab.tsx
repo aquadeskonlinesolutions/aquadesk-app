@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { EquipmentPrepDiver } from "../data";
-import { getEquipmentPrepDivers, saveEquipmentNotes } from "../actions";
+import { getEquipmentPrepDivers, getGearInventoryCounts, saveEquipmentNotes } from "../actions";
+import { GEAR_ITEMS } from "@/app/(app)/settings/inventory/constants";
 
 const EQUIPMENT_COLUMNS = ["BCD", "Wetsuit", "Fins", "Mask", "Boots", "Regulator", "Weights", "Snorkel"];
 
@@ -23,24 +24,47 @@ function parseEquipment(raw: string | null): { items: { name: string; size: stri
   }
 }
 
-function cellValue(items: { name: string; size: string | null; kg?: number | null }[], column: string): string {
+// No live-app precedent for per-item ownership — needs_equipment is an
+// all-or-nothing per-diver flag (matching diver-form.html's real "None —
+// diver has own gear" semantics), so a diver with their own gear shows
+// "Own" across every column rather than a per-item toggle. Checkmarks are
+// dropped entirely per the user's explicit ask — a requested item just
+// shows its size/kg value, or "Requested" when it has neither.
+function cellValue(
+  needsEquipment: boolean,
+  items: { name: string; size: string | null; kg?: number | null }[],
+  column: string,
+): string {
+  if (!needsEquipment) return "Own";
   const match = items.find((i) => i.name.toLowerCase().includes(column.toLowerCase()));
   if (!match) return "";
   if (match.name.toLowerCase().includes("weight") && match.kg != null) return `${match.kg}kg`;
-  return match.size ? `✓ ${match.size}` : "✓";
+  return match.size ?? "Requested";
+}
+
+function findRequestedItem(
+  items: { name: string; size: string | null; kg?: number | null }[],
+  column: string,
+) {
+  return items.find((i) => i.name.toLowerCase().includes(column.toLowerCase()));
 }
 
 export function EquipmentManagementTab({ initialDate }: { initialDate: string | null }) {
   const [date, setDate] = useState(initialDate || tomorrowManila());
   const [divers, setDivers] = useState<EquipmentPrepDiver[]>([]);
+  const [gearCounts, setGearCounts] = useState<Record<string, number>>({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
   const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   function load(d: string) {
     startTransition(async () => {
-      const rows = await getEquipmentPrepDivers(d);
+      // Fetched together (not sequential awaits) since both feed the same
+      // render — this codebase's standing rule for anything that derives
+      // UI from more than one source (retrospective #20).
+      const [rows, counts] = await Promise.all([getEquipmentPrepDivers(d), getGearInventoryCounts()]);
       setDivers(rows);
+      setGearCounts(counts);
       setRemarks(Object.fromEntries(rows.map((r) => [r.id, r.equipmentNotes ?? ""])));
     });
   }
@@ -66,6 +90,21 @@ export function EquipmentManagementTab({ initialDate }: { initialDate: string | 
     grouped.set(key, list);
   });
 
+  // Dive-center-wide tally (not scoped per group section, since inventory is
+  // shared) — only the 6 gear items Settings > Inventory actually tracks
+  // (Weights/Snorkel have no matching stock item, so nothing to cross-check).
+  const shortages = EQUIPMENT_COLUMNS.filter((c) => GEAR_ITEMS.some((g) => g.toLowerCase() === c.toLowerCase()))
+    .map((c) => {
+      const requested = divers.reduce((sum, d) => {
+        if (!d.needsEquipment) return sum;
+        const { items } = parseEquipment(d.equipmentRequested);
+        return findRequestedItem(items, c) ? sum + 1 : sum;
+      }, 0);
+      const available = gearCounts[c] ?? 0;
+      return { column: c, requested, available };
+    })
+    .filter((s) => s.requested > s.available);
+
   return (
     <div className="grid gap-4">
       <div className="flex items-center gap-3 print:hidden">
@@ -87,6 +126,13 @@ export function EquipmentManagementTab({ initialDate }: { initialDate: string | 
         </button>
       </div>
 
+      {shortages.length > 0 && (
+        <div className="print:hidden rounded-md border border-orange/30 bg-orange-light px-3 py-2 text-sm text-orange-dark">
+          <span className="font-semibold">Gear shortage for {date}:</span>{" "}
+          {shortages.map((s) => `${s.column} (${s.requested} requested, ${s.available} in stock)`).join(" · ")}
+        </div>
+      )}
+
       {pending && divers.length === 0 && <div className="text-sm text-gray-400 text-center py-8">Loading…</div>}
 
       {!pending && divers.length === 0 && (
@@ -107,7 +153,7 @@ export function EquipmentManagementTab({ initialDate }: { initialDate: string | 
                     </th>
                   ))}
                   <th className="px-2 py-2 text-center">Computer</th>
-                  <th className="px-3 py-2 text-left print:hidden">Remarks</th>
+                  <th className="px-3 py-2 text-left">Remarks</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,17 +166,20 @@ export function EquipmentManagementTab({ initialDate }: { initialDate: string | 
                       </td>
                       {EQUIPMENT_COLUMNS.map((c) => (
                         <td key={c} className="px-2 py-2 text-center text-gray-600">
-                          {cellValue(items, c)}
+                          {cellValue(d.needsEquipment, items, c)}
                         </td>
                       ))}
-                      <td className="px-2 py-2 text-center text-gray-600">{computer ? "✓" : ""}</td>
-                      <td className="px-3 py-2 print:hidden">
+                      <td className="px-2 py-2 text-center text-gray-600">
+                        {!d.needsEquipment ? "Own" : computer ? "Yes" : ""}
+                      </td>
+                      <td className="px-3 py-2">
                         <input
                           value={remarks[d.id] ?? ""}
                           onChange={(e) => onRemarkChange(d.id, e.target.value)}
                           placeholder="Notes…"
-                          className="w-full border border-gray-200 rounded px-2 py-1 text-xs"
+                          className="print:hidden w-full border border-gray-200 rounded px-2 py-1 text-xs"
                         />
+                        <span className="hidden print:inline">{remarks[d.id] ?? ""}</span>
                       </td>
                     </tr>
                   );
