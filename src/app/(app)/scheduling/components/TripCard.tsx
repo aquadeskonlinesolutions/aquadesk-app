@@ -793,68 +793,70 @@ export function TripCard({
           )}
         </SectionBox>
 
-        {/* No live-app precedent — a rebuild-only addition: backup tanks
-            the boat carries in case one needs swapping mid-trip (a
-            malfunction, a diver switching air source, etc). Each row is
-            a tank type with how many of that type to bring; folded
-            straight into the shared tank tally below. */}
-        <SectionBox title="Spare Tanks">
-          <div className="text-xs text-gray-400 mb-2">
-            Backup tanks to bring in case one needs swapping mid-trip.
-          </div>
-          {form.spareTanks.length === 0 ? (
-            <div className="text-xs text-gray-400">No spare tanks added.</div>
-          ) : (
-            <div className="grid gap-2">
-              {form.spareTanks.map((tank, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <select
-                    disabled={locked}
-                    value={tank.tankType}
-                    onChange={(e) => setSpareTankType(i, e.target.value as "air_12l" | "air_15l" | "nitrox")}
-                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                  >
-                    <option value="air_12l">Air 12L</option>
-                    <option value="air_15l">Air 15L</option>
-                    <option value="nitrox">Nitrox</option>
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    disabled={locked}
-                    value={tank.quantity}
-                    onChange={(e) => setSpareTankQuantity(i, parseInt(e.target.value, 10) || 1)}
-                    className="w-16 shrink-0 border border-gray-300 rounded-md px-2 py-1.5 text-sm disabled:bg-gray-50"
-                  />
-                  {!locked && (
-                    <button
-                      type="button"
-                      onClick={() => removeSpareTank(i)}
-                      className="shrink-0 text-red text-xs hover:underline"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-              ))}
+        <div className="grid grid-cols-2 gap-4">
+          {/* No live-app precedent — a rebuild-only addition: backup tanks
+              the boat carries in case one needs swapping mid-trip (a
+              malfunction, a diver switching air source, etc). Each row is
+              a tank type with how many of that type to bring; folded
+              straight into the shared tank tally below. */}
+          <SectionBox title="Spare Tanks">
+            <div className="text-xs text-gray-400 mb-2">
+              Backup tanks to bring in case one needs swapping mid-trip.
             </div>
-          )}
-          {!locked && (
-            <Button type="button" variant="ghost" size="sm" onClick={addSpareTank} className="mt-2">
-              + Add Spare Tank
-            </Button>
-          )}
-        </SectionBox>
+            {form.spareTanks.length === 0 ? (
+              <div className="text-xs text-gray-400">No spare tanks added.</div>
+            ) : (
+              <div className="grid gap-2">
+                {form.spareTanks.map((tank, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <select
+                      disabled={locked}
+                      value={tank.tankType}
+                      onChange={(e) => setSpareTankType(i, e.target.value as "air_12l" | "air_15l" | "nitrox")}
+                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                    >
+                      <option value="air_12l">Air 12L</option>
+                      <option value="air_15l">Air 15L</option>
+                      <option value="nitrox">Nitrox</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      disabled={locked}
+                      value={tank.quantity}
+                      onChange={(e) => setSpareTankQuantity(i, parseInt(e.target.value, 10) || 1)}
+                      className="w-16 shrink-0 border border-gray-300 rounded-md px-2 py-1.5 text-sm disabled:bg-gray-50"
+                    />
+                    {!locked && (
+                      <button
+                        type="button"
+                        onClick={() => removeSpareTank(i)}
+                        className="shrink-0 text-red text-xs hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!locked && (
+              <Button type="button" variant="ghost" size="sm" onClick={addSpareTank} className="mt-2">
+                + Add Spare Tank
+              </Button>
+            )}
+          </SectionBox>
 
-        <SectionBox title="Notes">
-          <textarea
-            disabled={locked}
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            rows={2}
-            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-          />
-        </SectionBox>
+          <SectionBox title="Notes">
+            <textarea
+              disabled={locked}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              rows={2}
+              className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+            />
+          </SectionBox>
+        </div>
 
         <SectionBox
           title="Team Assignment"

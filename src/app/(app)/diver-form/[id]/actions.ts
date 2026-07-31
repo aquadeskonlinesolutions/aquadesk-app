@@ -3,7 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
-import { autoPriceCourseMode, autoPricePackageMode, autoPriceTierMode, getChargeCadence } from "./pricing";
+import {
+  autoPriceCourseMode,
+  autoPricePackageMode,
+  autoPriceTierMode,
+  getChargeCadence,
+  resolveSite,
+  otherChargesForSite,
+  normalizeSiteKey,
+  findPackagesBySiteKey,
+} from "./pricing";
 import { computePaymentBreakdown, type PaymentInput } from "./billing";
 import { loadPaymentConfig, loadInvoiceForVisit } from "./data";
 import { buildInvoiceEmailHtml } from "./invoiceEmailHtml";
@@ -300,6 +309,82 @@ function tankFlagsFromRow(flags: unknown): { wantsNitrox: boolean; wants15L: boo
   return { wantsNitrox: f.nitrox_requested === true, wants15L: f.tank_15l_requested === true };
 }
 
+// A site-combination that matches 0 or 2+ active packages needs a human
+// pick — surfaced to the client instead of guessed at, matching
+// diver-form.html's real resolvePackageGroupRates/openRateSelectModal
+// (see pricing.ts's own comment: this was the one deliberately-deferred
+// piece of that mechanism until now).
+export type AmbiguousPackageGroup = {
+  siteKey: string;
+  sites: string;
+  dates: string[];
+  matches: { id: string; packageName: string; price: number }[];
+};
+
+// Package mode only: resolve a dive rate per site-key group before
+// touching any row — a saved visit_rate_selections choice wins silently,
+// then a single matching package wins silently, anything else (0 or 2+
+// matches) is returned as ambiguous instead of being guessed at.
+async function resolvePackageRatesByKey(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  diveCenterId: string,
+  visitId: string,
+  rows: { date: string; dive_site: string | null }[],
+): Promise<{ rateByKey: Map<string, number>; ambiguousGroups: AmbiguousPackageGroup[] }> {
+  const { data: selectionsRaw } = await supabase
+    .from("visit_rate_selections")
+    .select("site_key, package_id, custom_price")
+    .eq("visit_id", visitId);
+  const selections = selectionsRaw ?? [];
+
+  const groups = new Map<string, { date: string; dive_site: string | null }[]>();
+  for (const row of rows) {
+    const key = normalizeSiteKey(row.dive_site ?? "");
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+
+  const rateByKey = new Map<string, number>();
+  const ambiguousGroups: AmbiguousPackageGroup[] = [];
+
+  for (const [key, groupRows] of groups) {
+    const existing = selections.find((s) => s.site_key === key);
+    if (existing) {
+      if (existing.package_id) {
+        const { data: pkg } = await supabase
+          .from("packages")
+          .select("price")
+          .eq("id", existing.package_id)
+          .eq("dive_center_id", diveCenterId)
+          .maybeSingle();
+        if (pkg) {
+          rateByKey.set(key, Number(pkg.price) || 0);
+          continue;
+        }
+        // saved selection points at a package that no longer exists — re-ask below.
+      } else if (existing.custom_price !== null) {
+        rateByKey.set(key, Number(existing.custom_price));
+        continue;
+      }
+    }
+
+    const matches = await findPackagesBySiteKey(diveCenterId, key);
+    if (matches.length === 1) {
+      rateByKey.set(key, matches[0].price);
+      continue;
+    }
+    ambiguousGroups.push({
+      siteKey: key,
+      sites: groupRows[0].dive_site ?? "",
+      dates: [...new Set(groupRows.map((r) => r.date))],
+      matches,
+    });
+  }
+
+  return { rateByKey, ambiguousGroups };
+}
+
 // The visit-level "Apply Charges" action — modeled directly on
 // diver-form.html's real recalculateAllRows(), the *only* pricing-recompute
 // mechanism in the live app (there is no per-row auto-price there at all,
@@ -307,11 +392,18 @@ function tankFlagsFromRow(flags: unknown): { wantsNitrox: boolean; wants15L: boo
 // since removed). Walks every non-cancelled activity in date order,
 // recomputing a retroactive tier dive rate from a real running cumulative
 // dive count and applying per-day charge-cadence dedup across the whole
-// visit in one pass.
+// visit in one pass. Package mode resolves rates per site-key first — if
+// any combination is ambiguous, returns it instead of writing anything for
+// those rows (unambiguous rows in the same visit still get updated).
 export async function applyChargesToVisit(
   diverId: string,
   visitId: string,
-): Promise<{ error?: string; updatedCount?: number; missingRateCount?: number }> {
+): Promise<{
+  error?: string;
+  updatedCount?: number;
+  missingRateCount?: number;
+  ambiguousGroups?: AmbiguousPackageGroup[];
+}> {
   const user = await getCurrentUser();
   const supabase = await createClient();
 
@@ -338,12 +430,22 @@ export async function applyChargesToVisit(
   if (rows.length === 0) return { updatedCount: 0 };
 
   const isCourse = visit.experience_type === "dive_course";
+  const isPackage = !isCourse && dc?.pricing_mode === "package";
   const cadence = isCourse ? null : await getChargeCadence(user.diveCenterId);
   const seenPerDayCharge = {
     marineTax: new Set<string>(),
     sharkFee: new Set<string>(),
     fuel: new Set<string>(),
   };
+
+  let packageRateByKey: Map<string, number> | null = null;
+  if (isPackage) {
+    const resolved = await resolvePackageRatesByKey(supabase, user.diveCenterId, visitId, rows);
+    if (resolved.ambiguousGroups.length > 0) {
+      return { ambiguousGroups: resolved.ambiguousGroups };
+    }
+    packageRateByKey = resolved.rateByKey;
+  }
 
   let updatedCount = 0;
   let missingRateCount = 0;
@@ -357,8 +459,20 @@ export async function applyChargesToVisit(
     let result;
     if (isCourse) {
       result = await autoPriceCourseMode(user.diveCenterId, visit.course_rate_id);
-    } else if (dc?.pricing_mode === "package") {
-      result = await autoPricePackageMode(user.diveCenterId, diveSiteText);
+    } else if (isPackage) {
+      const key = normalizeSiteKey(diveSiteText);
+      const rate = packageRateByKey?.get(key);
+      const site = await resolveSite(user.diveCenterId, diveSiteText);
+      const { fuel, marine, shark } = await otherChargesForSite(user.diveCenterId, site);
+      result = {
+        diveRate: rate ?? 0,
+        fuelSurcharge: fuel,
+        marineTax: marine,
+        sharkFee: shark,
+        nitroxFee: 0,
+        fifteenLFee: 0,
+        note: rate === undefined ? "No dive site set on this row — enter the dive rate manually." : null,
+      };
     } else if (dc?.pricing_mode === "tier") {
       result = await autoPriceTierMode(user.diveCenterId, diveSiteText, cumulativeDiveCount, wantsNitrox, wants15L);
     } else {
@@ -400,6 +514,125 @@ export async function applyChargesToVisit(
 
   revalidatePath(`/diver-form/${diverId}`);
   return { updatedCount, missingRateCount };
+}
+
+// Persists the secretary's picks for each ambiguous site-combo (a package,
+// or a custom price) to visit_rate_selections, then re-runs Apply Charges —
+// which will now resolve those same combos silently, matching
+// diver-form.html's real resolvePackageGroupRates/saveRateSelection.
+export async function saveRateSelectionsAndApply(
+  diverId: string,
+  visitId: string,
+  selections: { siteKey: string; packageId: string | null; customPrice: number | null }[],
+): Promise<{
+  error?: string;
+  updatedCount?: number;
+  missingRateCount?: number;
+  ambiguousGroups?: AmbiguousPackageGroup[];
+}> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  for (const sel of selections) {
+    const { error } = await supabase.from("visit_rate_selections").upsert(
+      {
+        dive_center_id: user.diveCenterId,
+        visit_id: visitId,
+        site_key: sel.siteKey,
+        package_id: sel.packageId,
+        custom_price: sel.customPrice,
+      },
+      { onConflict: "visit_id,site_key" },
+    );
+    if (error) return { error: error.message };
+  }
+
+  return applyChargesToVisit(diverId, visitId);
+}
+
+// Fires when a row's Activity dropdown selection changes — matches
+// diver-form.html's real onDiveSiteSelected/onCourseSelected: auto-fill
+// whatever's resolvable immediately and save, same as the bulk Apply
+// Charges pass but for one row picked by hand. Tier-mode site selection
+// only fills fuel/shark (matching the live app's real autoFillFromDiveSite
+// exactly — dive_rate there only ever comes from the bulk pass, which
+// alone knows the row's true cumulative dive count).
+export type ActivitySelectionPatch = {
+  diveSite: string;
+  diveRate?: number;
+  fuelSurcharge?: number;
+  marineTax?: number;
+  sharkFee?: number;
+  nitroxFee?: number;
+  fifteenLFee?: number;
+};
+
+export async function autoFillFromActivitySelection(
+  diverId: string,
+  activityId: string,
+  selection:
+    | { kind: "course"; courseRateId: string; courseName: string }
+    | { kind: "site"; siteName: string }
+    | { kind: "package"; packageId: string; diveSiteCombo: string },
+): Promise<{ error?: string; patch?: ActivitySelectionPatch }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  let update: {
+    dive_site: string;
+    dive_rate?: number;
+    fuel_surcharge?: number;
+    shark_fee?: number;
+    marine_tax?: number;
+    nitrox_fee?: number;
+    fifteen_l_fee?: number;
+  };
+
+  if (selection.kind === "course") {
+    const result = await autoPriceCourseMode(user.diveCenterId, selection.courseRateId);
+    update = {
+      dive_site: selection.courseName,
+      dive_rate: result.diveRate,
+      fuel_surcharge: 0,
+      marine_tax: 0,
+      shark_fee: 0,
+      nitrox_fee: 0,
+      fifteen_l_fee: 0,
+    };
+  } else if (selection.kind === "package") {
+    const result = await autoPricePackageMode(user.diveCenterId, selection.diveSiteCombo);
+    update = {
+      dive_site: selection.diveSiteCombo,
+      dive_rate: result.diveRate,
+      fuel_surcharge: result.fuelSurcharge,
+      marine_tax: result.marineTax,
+      shark_fee: result.sharkFee,
+    };
+  } else {
+    const site = await resolveSite(user.diveCenterId, selection.siteName);
+    const { fuel, shark } = await otherChargesForSite(user.diveCenterId, site);
+    update = { dive_site: selection.siteName, fuel_surcharge: fuel, shark_fee: shark };
+  }
+
+  const { error } = await supabase
+    .from("activities")
+    .update(update)
+    .eq("id", activityId)
+    .eq("dive_center_id", user.diveCenterId);
+  if (error) return { error: error.message };
+
+  revalidatePath(`/diver-form/${diverId}`);
+  return {
+    patch: {
+      diveSite: update.dive_site,
+      diveRate: update.dive_rate,
+      fuelSurcharge: update.fuel_surcharge,
+      marineTax: update.marine_tax,
+      sharkFee: update.shark_fee,
+      nitroxFee: update.nitrox_fee,
+      fifteenLFee: update.fifteen_l_fee,
+    },
+  };
 }
 
 // Hard-delete, only when the visit has zero activities and zero payments —

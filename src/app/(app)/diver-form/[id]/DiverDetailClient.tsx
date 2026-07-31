@@ -27,6 +27,9 @@ import type {
   PaymentConfig,
   VisitInvoice,
   RegistrationRecord,
+  DiveSiteOption,
+  PackageOption,
+  RateSelection,
 } from "./data";
 
 export function DiverDetailClient({
@@ -43,6 +46,10 @@ export function DiverDetailClient({
   initialInvoice,
   diveCenterName,
   registrations,
+  pricingMode,
+  diveSites,
+  packages,
+  initialRateSelections,
 }: {
   initialDiver: DiverDetail;
   initialNotes: DiverNote[];
@@ -57,6 +64,10 @@ export function DiverDetailClient({
   initialInvoice: VisitInvoice | null;
   diveCenterName: string;
   registrations: RegistrationRecord[];
+  pricingMode: "tier" | "package";
+  diveSites: DiveSiteOption[];
+  packages: PackageOption[];
+  initialRateSelections: RateSelection[];
 }) {
   const [diver, setDiver] = useState(initialDiver);
   const [editOpen, setEditOpen] = useState(false);
@@ -99,6 +110,10 @@ export function DiverDetailClient({
         activities={activities}
         setActivities={setActivities}
         courseRates={courseRates}
+        pricingMode={pricingMode}
+        diveSites={diveSites}
+        packages={packages}
+        rateSelections={initialRateSelections}
       />
 
       {visit && visit.isActive && visit.visitStatus === "open" && (

@@ -468,3 +468,57 @@ export async function loadActivities(visitId: string): Promise<Activity[]> {
     notes: a.notes,
   }));
 }
+
+// Feeds the Activity column's dropdown (tier mode: real dive sites,
+// matching diver-form.html's real buildActivityCell fun-diving branch).
+export type DiveSiteOption = { id: string; siteName: string };
+export async function loadDiveSites(diveCenterId: string): Promise<DiveSiteOption[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("dive_sites")
+    .select("id, site_name")
+    .eq("dive_center_id", diveCenterId)
+    .eq("is_active", true)
+    .order("site_name");
+  return (data ?? []).map((s) => ({ id: s.id, siteName: s.site_name }));
+}
+
+// Feeds the Activity column's dropdown in package mode — a rebuild-only
+// choice (the live app never lets you pick a package directly on a row,
+// only a raw site) per the user's explicit ask: package mode's Activity
+// cell shows the package name, not the site.
+export type PackageOption = { id: string; packageName: string; diveSite: string; price: number };
+export async function loadActivePackages(diveCenterId: string): Promise<PackageOption[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("packages")
+    .select("id, package_name, dive_site, price")
+    .eq("dive_center_id", diveCenterId)
+    .eq("is_active", true)
+    .order("package_name");
+  return (data ?? []).map((p) => ({
+    id: p.id,
+    packageName: p.package_name,
+    diveSite: p.dive_site ?? "",
+    price: Number(p.price) || 0,
+  }));
+}
+
+// visit_rate_selections — already in the base schema (001), unused until
+// now. Remembers which package (or custom price) was picked for a given
+// site-key combination on this visit, so Apply Charges only asks once
+// per ambiguous combo and stays silent on every re-run afterward.
+export type RateSelection = { id: string; siteKey: string; packageId: string | null; customPrice: number | null };
+export async function loadRateSelections(visitId: string): Promise<RateSelection[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("visit_rate_selections")
+    .select("id, site_key, package_id, custom_price")
+    .eq("visit_id", visitId);
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    siteKey: r.site_key,
+    packageId: r.package_id,
+    customPrice: r.custom_price !== null ? Number(r.custom_price) : null,
+  }));
+}

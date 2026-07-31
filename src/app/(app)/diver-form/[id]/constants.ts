@@ -13,3 +13,17 @@ export const CERT_LEVEL_LABELS: Record<string, string> = {
 export const CERT_LEVEL_OPTIONS = Object.entries(CERT_LEVEL_LABELS);
 
 export const RELATIONSHIP_OPTIONS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Other"];
+
+// Duplicated from pricing.ts's own copy (that file is server-only, so a
+// client component can't import it directly) — pure string logic, no
+// server dependency, matching this codebase's established small-helper
+// duplication precedent. Order-independent so "Kimud, Monad, Kimud" and
+// "Kimud, Kimud, Monad" resolve to the same package.
+export function normalizeSiteKey(text: string): string {
+  return text
+    .split(/[,|+•;\n]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}

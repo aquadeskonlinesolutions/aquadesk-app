@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
+import { DEFAULT_CURRENCIES } from "./constants";
 
 function ok() {
   revalidatePath("/settings/exchange-rates");
@@ -76,6 +77,29 @@ export async function saveExchangeRates(rows: ExchangeRateInput[]) {
     if (error) return fail(error.message);
   }
   return ok();
+}
+
+// Settings > Exchange Rates always *displays* DEFAULT_CURRENCIES as if
+// already active (ExchangeRatesSection.tsx's buildRows falls back to
+// each default's own suggested rate/active state) even when nothing's
+// actually been saved yet — a real dive center that's never opened this
+// tab has zero real rows, so any other page reading exchange_rates
+// directly (Diver Form's currency dropdown) sees nothing. Seeded once,
+// for real, the first time this page loads with zero rows — same shape
+// as this codebase's existing DEFAULT_COURSES auto-seed-on-first-use
+// precedent (courses/constants.ts, seeded via confirmPricingMode).
+export async function seedDefaultCurrencies() {
+  const user = await requireOwner();
+  const supabase = await createClient();
+  const { error } = await supabase.from("exchange_rates").insert(
+    DEFAULT_CURRENCIES.map((c) => ({
+      dive_center_id: user.diveCenterId,
+      currency_code: c.code,
+      rate_to_php: c.rate,
+      is_active: true,
+    })),
+  );
+  if (error) console.error("Could not seed default currencies:", error.message);
 }
 
 export async function addCustomCurrency(currencyCode: string, rateToPhp: number) {

@@ -8,10 +8,14 @@ import {
   deleteActivityRow,
   voidVisit,
   applyChargesToVisit,
+  autoFillFromActivitySelection,
   type ActivityFields,
+  type AmbiguousPackageGroup,
 } from "../actions";
-import type { Activity, Visit, CourseRateOption } from "../data";
+import type { Activity, Visit, CourseRateOption, DiveSiteOption, PackageOption, RateSelection } from "../data";
+import { normalizeSiteKey } from "../constants";
 import { useToast } from "@/components/ui/Toast";
+import { RateSelectModal } from "./RateSelectModal";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -59,11 +63,21 @@ function ActivityRow({
   activity,
   onChanged,
   onDeleted,
+  visitExperienceType,
+  pricingMode,
+  diveSites,
+  packages,
+  courseRates,
 }: {
   diverId: string;
   activity: Activity;
   onChanged: (a: Activity) => void;
   onDeleted: (id: string) => void;
+  visitExperienceType: "fun_diving" | "dive_course";
+  pricingMode: "tier" | "package";
+  diveSites: DiveSiteOption[];
+  packages: PackageOption[];
+  courseRates: CourseRateOption[];
 }) {
   const [fields, setFields] = useState<ActivityFields>(toFields(activity));
   const fieldsRef = useRef(fields);
@@ -123,6 +137,47 @@ function ActivityRow({
     commit(next);
   }
 
+  // Fires on the Activity dropdown's onChange — matches diver-form.html's
+  // real onDiveSiteSelected/onCourseSelected: auto-fill and save
+  // immediately, rather than waiting for a blur. The server action already
+  // wrote the row, so this only needs to merge its returned patch locally
+  // (not call saveActivityRow again).
+  function selectActivity(
+    selection:
+      | { kind: "course"; courseRateId: string; courseName: string }
+      | { kind: "site"; siteName: string }
+      | { kind: "package"; packageId: string; diveSiteCombo: string },
+  ) {
+    startTransition(async () => {
+      const res = await autoFillFromActivitySelection(diverId, activity.id, selection);
+      if (res.error || !res.patch) return;
+      const patch = res.patch;
+      const next: ActivityFields = {
+        ...fieldsRef.current,
+        diveSite: patch.diveSite,
+        ...(patch.diveRate !== undefined ? { diveRate: patch.diveRate } : {}),
+        ...(patch.fuelSurcharge !== undefined ? { fuelSurcharge: patch.fuelSurcharge } : {}),
+        ...(patch.marineTax !== undefined ? { marineTax: patch.marineTax } : {}),
+        ...(patch.sharkFee !== undefined ? { sharkFee: patch.sharkFee } : {}),
+        ...(patch.nitroxFee !== undefined ? { nitroxFee: patch.nitroxFee } : {}),
+        ...(patch.fifteenLFee !== undefined ? { fifteenLFee: patch.fifteenLFee } : {}),
+      };
+      fieldsRef.current = next;
+      setFields(next);
+      const computedTotal =
+        next.diveRate +
+        next.fuelSurcharge +
+        next.marineTax +
+        next.sharkFee +
+        next.nitroxFee +
+        next.fifteenLFee +
+        next.equipmentRental +
+        next.addons -
+        next.discount;
+      onChanged({ ...activity, ...next, diveSite: next.diveSite || null, staffName: next.staffName || null, total: computedTotal });
+    });
+  }
+
   function remove() {
     startTransition(async () => {
       await deleteActivityRow(diverId, activity.id);
@@ -143,6 +198,92 @@ function ActivityRow({
 
   const locked = !!activity.scheduleId;
 
+  // Matches diver-form.html's real buildActivityCell(): a course dropdown
+  // for course visits, a dive-site dropdown for tier-mode fun diving. Package
+  // mode is a deliberate rebuild-specific choice (no live-app precedent) —
+  // it lists packages by name instead of raw sites, so a package-priced row
+  // reads as "which package," not "which site." A stored value that doesn't
+  // match any current option (a site/package renamed or deactivated since,
+  // or a package-mode row whose site combo hasn't been resolved by Apply
+  // Charges yet) is always preserved as its own option rather than silently
+  // dropped, matching the live app's own legacy-value safety net.
+  let activityCell: React.ReactNode;
+  if (visitExperienceType === "dive_course") {
+    const matches = courseRates.some((c) => c.courseName === fields.diveSite);
+    activityCell = (
+      <select
+        disabled={locked}
+        value={matches ? fields.diveSite : ""}
+        onChange={(e) => {
+          const course = courseRates.find((c) => c.courseName === e.target.value);
+          if (course) selectActivity({ kind: "course", courseRateId: course.id, courseName: course.courseName });
+        }}
+        className="w-32 border border-gray-300 rounded-md px-1.5 py-1 text-xs disabled:bg-gray-50"
+      >
+        <option value="">— Select course —</option>
+        {!matches && fields.diveSite && <option value={fields.diveSite}>{fields.diveSite}</option>}
+        {courseRates.map((c) => (
+          <option key={c.id} value={c.courseName}>
+            {c.courseName} ({peso(c.rate)})
+          </option>
+        ))}
+      </select>
+    );
+  } else if (pricingMode === "package") {
+    // Only pre-select when exactly one package matches — a site combo that
+    // matches 2+ packages is exactly the ambiguous case Apply Charges'
+    // RateSelectModal exists to resolve, so it must fall through to the
+    // "needs Apply Charges" legacy display too, not silently pick whichever
+    // package happens to come first.
+    const siteKey = normalizeSiteKey(fields.diveSite || "");
+    const packageMatches = packages.filter((p) => normalizeSiteKey(p.diveSite) === siteKey);
+    const resolved = packageMatches.length === 1 ? packageMatches[0] : null;
+    const hasUnresolvedValue = !resolved && !!fields.diveSite;
+    activityCell = (
+      <select
+        disabled={locked}
+        value={resolved ? resolved.id : hasUnresolvedValue ? "__unresolved__" : ""}
+        onChange={(e) => {
+          const pkg = packages.find((p) => p.id === e.target.value);
+          if (pkg) selectActivity({ kind: "package", packageId: pkg.id, diveSiteCombo: pkg.diveSite });
+        }}
+        className="w-32 border border-gray-300 rounded-md px-1.5 py-1 text-xs disabled:bg-gray-50"
+      >
+        <option value="">— Select package —</option>
+        {hasUnresolvedValue && (
+          <option value="__unresolved__" disabled>
+            {fields.diveSite} (needs Apply Charges)
+          </option>
+        )}
+        {packages.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.packageName} ({peso(p.price)})
+          </option>
+        ))}
+      </select>
+    );
+  } else {
+    const matchesSite = diveSites.some((s) => s.siteName === fields.diveSite);
+    activityCell = (
+      <select
+        disabled={locked}
+        value={matchesSite ? fields.diveSite : ""}
+        onChange={(e) => {
+          if (e.target.value) selectActivity({ kind: "site", siteName: e.target.value });
+        }}
+        className="w-32 border border-gray-300 rounded-md px-1.5 py-1 text-xs disabled:bg-gray-50"
+      >
+        <option value="">— Select site —</option>
+        {!matchesSite && fields.diveSite && <option value={fields.diveSite}>{fields.diveSite}</option>}
+        {diveSites.map((s) => (
+          <option key={s.id} value={s.siteName}>
+            {s.siteName}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
   return (
     <tr className="border-b border-gray-100 last:border-0">
       <td className="px-2 py-2">
@@ -154,15 +295,7 @@ function ActivityRow({
           className="w-32 border border-gray-300 rounded-md px-1.5 py-1 text-xs"
         />
       </td>
-      <td className="px-2 py-2">
-        <input
-          value={fields.diveSite}
-          onChange={(e) => updateLocal({ diveSite: e.target.value })}
-          onBlur={commitOnBlur}
-          placeholder="Dive site"
-          className="w-28 border border-gray-300 rounded-md px-1.5 py-1 text-xs"
-        />
-      </td>
+      <td className="px-2 py-2">{activityCell}</td>
       <td className="px-2 py-2">
         <input
           value={fields.staffName}
@@ -223,6 +356,10 @@ export function VisitPanel({
   activities,
   setActivities,
   courseRates,
+  pricingMode,
+  diveSites,
+  packages,
+  rateSelections,
 }: {
   diverId: string;
   visit: Visit | null;
@@ -230,11 +367,17 @@ export function VisitPanel({
   activities: Activity[];
   setActivities: (updater: Activity[] | ((prev: Activity[]) => Activity[])) => void;
   courseRates: CourseRateOption[];
+  pricingMode: "tier" | "package";
+  diveSites: DiveSiteOption[];
+  packages: PackageOption[];
+  rateSelections: RateSelection[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [choosingCourse, setChoosingCourse] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState(courseRates[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
+  const [ambiguousGroups, setAmbiguousGroups] = useState<AmbiguousPackageGroup[] | null>(null);
+  const [changeGroup, setChangeGroup] = useState<{ group: AmbiguousPackageGroup; initial: RateSelection } | null>(null);
   const showToast = useToast();
 
   function startNewVisit(experienceType: "fun_diving" | "dive_course", courseRateId: string | null) {
@@ -296,7 +439,11 @@ export function VisitPanel({
   // non-cancelled row's dive rate/fees at once (retroactive tier count,
   // per-day cadence dedup, nitrox/15L from each row's own stored flags).
   // Reloads afterward, same as Add Activity/bill-unlock — this affects
-  // every row at once, not one piece of local state to hand-patch.
+  // every row at once, not one piece of local state to hand-patch. In
+  // package mode, a site combination that matches 0 or 2+ active packages
+  // comes back as ambiguousGroups instead of being written — opens
+  // RateSelectModal for the secretary to pick, matching diver-form.html's
+  // real resolvePackageGroupRates/openRateSelectModal.
   function applyCharges() {
     if (!visit) return;
     setError(null);
@@ -306,18 +453,45 @@ export function VisitPanel({
         setError(res.error);
         return;
       }
-      if (res.missingRateCount) {
-        showToast(
-          `Charges applied. ${res.missingRateCount} row(s) have no configured dive rate — enter those manually.`,
-          "error",
-        );
-        // Give the toast a moment on screen before the reload wipes it —
-        // unlike the window.alert() it replaces, a toast doesn't block.
-        setTimeout(() => window.location.reload(), 1800);
-      } else {
-        window.location.reload();
+      if (res.ambiguousGroups && res.ambiguousGroups.length > 0) {
+        setAmbiguousGroups(res.ambiguousGroups);
+        return;
       }
+      finishApplyCharges(res.missingRateCount);
     });
+  }
+
+  function finishApplyCharges(missingRateCount?: number) {
+    if (missingRateCount) {
+      showToast(
+        `Charges applied. ${missingRateCount} row(s) have no configured dive rate — enter those manually.`,
+        "error",
+      );
+      // Give the toast a moment on screen before the reload wipes it —
+      // unlike the window.alert() it replaces, a toast doesn't block.
+      setTimeout(() => window.location.reload(), 1800);
+    } else {
+      window.location.reload();
+    }
+  }
+
+  // Re-opens the picker for one already-resolved site combination (the
+  // "Rates chosen" chip strip's tap-to-change), matching the live app's
+  // real changeRateSelection — a single-step version of the same modal,
+  // pre-filled with the current choice.
+  function openChangeRate(sel: RateSelection) {
+    if (!visit) return;
+    const matchingActivity = activities.find((a) => normalizeSiteKey(a.diveSite ?? "") === sel.siteKey);
+    const matches = packages
+      .filter((p) => normalizeSiteKey(p.diveSite) === sel.siteKey)
+      .map((p) => ({ id: p.id, packageName: p.packageName, price: p.price }));
+    const group: AmbiguousPackageGroup = {
+      siteKey: sel.siteKey,
+      sites: matchingActivity?.diveSite ?? sel.siteKey.split("|").join(", "),
+      dates: [...new Set(activities.filter((a) => normalizeSiteKey(a.diveSite ?? "") === sel.siteKey).map((a) => a.date))],
+      matches,
+    };
+    setChangeGroup({ group, initial: sel });
   }
 
   const grandTotal = activities
@@ -424,12 +598,48 @@ export function VisitPanel({
 
       {error && <div className="px-5 py-3 text-sm text-red">{error}</div>}
 
+      {/* "Rates chosen" chip strip — matches diver-form.html's real
+          renderRateSelections(): only in package mode, only for site
+          combos actually in use by a current row, tap to change. */}
+      {pricingMode === "package" &&
+        visit.experienceType !== "dive_course" &&
+        (() => {
+          const activeSiteKeys = new Set(
+            activities.filter((a) => a.status !== "cancelled").map((a) => normalizeSiteKey(a.diveSite ?? "")).filter(Boolean),
+          );
+          const chips = rateSelections.filter((s) => activeSiteKeys.has(s.siteKey));
+          if (chips.length === 0) return null;
+          return (
+            <div className="px-5 pt-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-400">Rates chosen:</span>
+              {chips.map((sel) => {
+                const pkg = sel.packageId ? packages.find((p) => p.id === sel.packageId) : null;
+                const label = pkg ? pkg.packageName : "Custom price";
+                const price = pkg ? pkg.price : sel.customPrice;
+                const matchingActivity = activities.find((a) => normalizeSiteKey(a.diveSite ?? "") === sel.siteKey);
+                return (
+                  <button
+                    key={sel.id}
+                    onClick={() => openChangeRate(sel)}
+                    disabled={!isEditable}
+                    title="Tap to change"
+                    className="text-xs bg-teal-light text-teal-mid border border-teal/20 rounded-full px-3 py-1 hover:opacity-80 disabled:opacity-60"
+                  >
+                    {matchingActivity?.diveSite ?? sel.siteKey.split("|").join(", ")} → {label}
+                    {price !== null ? ` (${peso(price)})` : ""}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[1100px]">
           <thead>
             <tr className="bg-gray-100 text-left">
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Date</th>
-              <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Site</th>
+              <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Activity</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Staff</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Dive</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Fuel</th>
@@ -461,6 +671,11 @@ export function VisitPanel({
                       setActivities((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
                     }
                     onDeleted={(id) => setActivities((prev) => prev.filter((x) => x.id !== id))}
+                    visitExperienceType={visit.experienceType}
+                    pricingMode={pricingMode}
+                    diveSites={diveSites}
+                    packages={packages}
+                    courseRates={courseRates}
                   />
                 ) : (
                   <tr key={a.id} className="border-b border-gray-100 last:border-0 text-xs">
@@ -494,6 +709,33 @@ export function VisitPanel({
           )}
         </table>
       </div>
+
+      {ambiguousGroups && visit && (
+        <RateSelectModal
+          diverId={diverId}
+          visitId={visit.id}
+          groups={ambiguousGroups}
+          onClose={() => setAmbiguousGroups(null)}
+          onApplied={() => window.location.reload()}
+        />
+      )}
+
+      {changeGroup && visit && (
+        <RateSelectModal
+          diverId={diverId}
+          visitId={visit.id}
+          groups={[changeGroup.group]}
+          initialAnswers={{
+            [changeGroup.initial.siteKey]: {
+              siteKey: changeGroup.initial.siteKey,
+              packageId: changeGroup.initial.packageId,
+              customPrice: changeGroup.initial.customPrice,
+            },
+          }}
+          onClose={() => setChangeGroup(null)}
+          onApplied={() => window.location.reload()}
+        />
+      )}
     </div>
   );
 }

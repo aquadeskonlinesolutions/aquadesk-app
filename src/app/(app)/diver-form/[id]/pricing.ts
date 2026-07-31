@@ -73,9 +73,9 @@ async function lookupOtherCharge(
   return Number(data?.amount) || 0;
 }
 
-type SiteMeta = { fuelEstimate: "Low" | "Medium" | "High"; sharkFee: boolean };
+export type SiteMeta = { fuelEstimate: "Low" | "Medium" | "High"; sharkFee: boolean };
 
-async function resolveSite(diveCenterId: string, diveSiteText: string): Promise<SiteMeta | null> {
+export async function resolveSite(diveCenterId: string, diveSiteText: string): Promise<SiteMeta | null> {
   const firstSiteName = diveSiteText
     .split(",")
     .map((s) => s.trim())
@@ -100,7 +100,7 @@ async function resolveSite(diveCenterId: string, diveSiteText: string): Promise<
 // Matches diver-form.html's normalizePackageSites(): split on common
 // separators, trim, lowercase, sort, join — order-independent so
 // "Kimud, Monad, Kimud" and "Kimud, Kimud, Monad" match the same package.
-function normalizeSiteKey(text: string): string {
+export function normalizeSiteKey(text: string): string {
   return text
     .split(/[,|+•;\n]+/)
     .map((s) => s.trim().toLowerCase())
@@ -127,7 +127,28 @@ async function resolvePackageBySiteCombo(
   return match ? { price: Number(match.price) || 0 } : null;
 }
 
-async function otherChargesForSite(diveCenterId: string, site: SiteMeta | null): Promise<{ fuel: number; marine: number; shark: number }> {
+// Every active package whose own site-combination normalizes to the same
+// key — used by Apply Charges' ambiguity check (0 or 2+ matches need a
+// human pick, exactly 1 resolves silently, same as resolvePackageBySiteCombo
+// above but returning every candidate instead of the first).
+export async function findPackagesBySiteKey(
+  diveCenterId: string,
+  siteKey: string,
+): Promise<{ id: string; packageName: string; price: number }[]> {
+  if (!siteKey) return [];
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("packages")
+    .select("id, package_name, dive_site, price")
+    .eq("dive_center_id", diveCenterId)
+    .eq("is_active", true);
+
+  return (data ?? [])
+    .filter((p) => normalizeSiteKey(p.dive_site ?? "") === siteKey)
+    .map((p) => ({ id: p.id, packageName: p.package_name, price: Number(p.price) || 0 }));
+}
+
+export async function otherChargesForSite(diveCenterId: string, site: SiteMeta | null): Promise<{ fuel: number; marine: number; shark: number }> {
   const marine = await lookupOtherCharge(diveCenterId, "Marine Tax", null);
   if (!site) return { fuel: 0, marine, shark: 0 };
 
