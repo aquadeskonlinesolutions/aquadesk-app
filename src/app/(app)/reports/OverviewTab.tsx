@@ -192,9 +192,9 @@ export function OverviewTab({
               Collected, open, and pending money movement.
             </div>
           </div>
-          <div className="p-5 flex flex-wrap items-center justify-center gap-4 h-full min-w-0 overflow-hidden">
+          <div className="p-5 flex flex-col items-center justify-center gap-4 h-full min-w-0 overflow-hidden">
             <div
-              className="w-full max-w-[150px] aspect-square rounded-full grid place-items-center shrink-0"
+              className="w-full max-w-[150px] aspect-square rounded-full grid place-items-center shrink-0 mx-auto"
               style={{
                 background: `conic-gradient(var(--teal) 0deg, var(--teal) ${collectedDeg}deg, var(--orange) ${collectedDeg}deg, var(--orange) ${openDeg}deg, var(--gray-200) ${openDeg}deg)`,
               }}
@@ -211,7 +211,7 @@ export function OverviewTab({
                 </span>
               </div>
             </div>
-            <div className="grid gap-2 text-sm text-gray-600">
+            <div className="grid gap-2 text-sm text-gray-600 justify-center">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-teal shrink-0" />
                 Collected from divers

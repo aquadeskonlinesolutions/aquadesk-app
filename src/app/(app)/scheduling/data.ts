@@ -165,7 +165,7 @@ export type TripDetail = {
   guestDiversCount: number | null;
   guestDiveCenterName: string | null;
   guestNotes: string | null;
-  spareTanks: { id: string; tankType: "air_12l" | "air_15l" | "nitrox" }[];
+  spareTanks: { id: string; tankType: "air_12l" | "air_15l" | "nitrox"; quantity: number }[];
 };
 
 export type DiverPickResult = {
@@ -551,7 +551,7 @@ async function fetchClipsRaw(
   // A clip member's experience type isn't stored on the clip itself — it
   // comes from the diver's current open visit (the same value push-to-
   // schedule tagged) so it can be carried onto schedule_divers when the
-  // clip is assigned to a trip. /crew's get_crew_schedule RPC reads
+  // clip is assigned to a trip. /staff's get_crew_schedule RPC reads
   // schedule_divers.experience_type directly, so this has to be threaded
   // through all the way to the save, not just displayed here.
   const { data: openVisits } = diverIds.length
@@ -737,7 +737,7 @@ export async function loadTripDetail(
   const [{ data: siteRows }, { data: crewRows }, { data: spareTankRows }] = await Promise.all([
     supabase.from("schedule_sites").select("dive_site_id").eq("schedule_id", scheduleId).order("sort_order"),
     supabase.from("schedule_crew").select("crew_name").eq("schedule_id", scheduleId).order("sort_order"),
-    supabase.from("schedule_spare_tanks").select("id, tank_type").eq("schedule_id", scheduleId).order("sort_order"),
+    supabase.from("schedule_spare_tanks").select("id, tank_type, quantity").eq("schedule_id", scheduleId).order("sort_order"),
   ]);
 
   return {
@@ -757,6 +757,6 @@ export async function loadTripDetail(
     guestDiversCount: schedule.guest_divers_count,
     guestDiveCenterName: schedule.guest_dive_center_name,
     guestNotes: schedule.guest_notes,
-    spareTanks: (spareTankRows ?? []).map((r) => ({ id: r.id, tankType: r.tank_type })),
+    spareTanks: (spareTankRows ?? []).map((r) => ({ id: r.id, tankType: r.tank_type, quantity: r.quantity })),
   };
 }

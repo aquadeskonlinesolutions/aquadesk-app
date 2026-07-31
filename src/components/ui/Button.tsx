@@ -27,7 +27,7 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
   return (
     <button
-      className={`${SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]} font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${className}`}
+      className={`${SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]} font-extrabold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${className}`}
       {...props}
     />
   );

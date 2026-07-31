@@ -126,7 +126,7 @@ function tripPreviewText(
     siteCount,
     diverTanks: divers.map((d) => d.tanks),
     staffNitroxSiteIndexesByTeam: staffNitroxByTeam,
-    spareTankTypes: detail.spareTanks.map((t) => t.tankType),
+    spareTanks: detail.spareTanks.map((t) => ({ type: t.tankType, quantity: t.quantity })),
   });
   lines.push(`Tank Tally: ${formatTankLine(tally)}`);
 
@@ -207,7 +207,7 @@ function TripSummaryCard({
     siteCount,
     diverTanks: divers.map((d) => d.tanks),
     staffNitroxSiteIndexesByTeam: staffNitroxByTeam,
-    spareTankTypes: detail.spareTanks.map((t) => t.tankType),
+    spareTanks: detail.spareTanks.map((t) => ({ type: t.tankType, quantity: t.quantity })),
   });
 
   function returnBoat(options: { excludeDiverIds?: string[]; forceProceed?: boolean } = {}) {
@@ -266,6 +266,9 @@ function TripSummaryCard({
           <span>Departure: {detail.departureTime || "No time"}</span>
           {!detail.isJoiner && <span>Captain: {detail.captain || "-"}</span>}
           {!detail.isJoiner && <span>Crew: {detail.crew.length ? detail.crew.join(", ") : "-"}</span>}
+          {!detail.isJoiner && detail.fuelConsumedLiters != null && (
+            <span>Fuel: {detail.fuelConsumedLiters} L</span>
+          )}
           <span>
             {divers.length} diver{divers.length === 1 ? "" : "s"}
           </span>
@@ -343,11 +346,6 @@ function TripSummaryCard({
 
         {!detail.closed && !detail.cancelled && !duplicates && (
           <div className="border-t border-gray-200 pt-3 flex items-end gap-3 flex-wrap">
-            {!detail.isJoiner && detail.fuelConsumedLiters != null && (
-              <div className="text-xs text-gray-500">
-                Fuel Consumed: <span className="font-medium text-navy">{detail.fuelConsumedLiters} L</span>
-              </div>
-            )}
             {canReturn ? (
               <Button
                 variant="secondary"

@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_ROUTES = ["/login", "/register", "/account/password", "/crew", "/reset-password"];
+const PUBLIC_ROUTES = ["/login", "/register", "/account/password", "/staff", "/reset-password"];
 
 // Optimistic auth check only (cookie-based, no DB round trip) — the real
 // authorization boundary is Postgres RLS, this just redirects logged-out

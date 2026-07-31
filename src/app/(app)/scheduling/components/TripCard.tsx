@@ -130,7 +130,7 @@ function fromDetail(detail: TripDetail): TripFormInput {
     guestDiversCount: detail.guestDiversCount,
     guestDiveCenterName: detail.guestDiveCenterName ?? "",
     guestNotes: detail.guestNotes ?? "",
-    spareTanks: detail.spareTanks.map((t) => t.tankType),
+    spareTanks: detail.spareTanks.map((t) => ({ tankType: t.tankType, quantity: t.quantity })),
   };
 }
 
@@ -327,16 +327,24 @@ export function TripCard({
     setForm((f) => ({ ...f, crew: [...f.crew, ""] }));
   }
 
-  function setSpareTankSlot(index: number, tankType: "air_12l" | "air_15l" | "nitrox") {
+  function setSpareTankType(index: number, tankType: "air_12l" | "air_15l" | "nitrox") {
     setForm((f) => {
       const spareTanks = [...f.spareTanks];
-      spareTanks[index] = tankType;
+      spareTanks[index] = { ...spareTanks[index], tankType };
+      return { ...f, spareTanks };
+    });
+  }
+
+  function setSpareTankQuantity(index: number, quantity: number) {
+    setForm((f) => {
+      const spareTanks = [...f.spareTanks];
+      spareTanks[index] = { ...spareTanks[index], quantity: Math.max(1, quantity) };
       return { ...f, spareTanks };
     });
   }
 
   function addSpareTank() {
-    setForm((f) => ({ ...f, spareTanks: [...f.spareTanks, "air_12l"] }));
+    setForm((f) => ({ ...f, spareTanks: [...f.spareTanks, { tankType: "air_12l", quantity: 1 }] }));
   }
 
   function removeSpareTank(index: number) {
@@ -532,7 +540,7 @@ export function TripCard({
     siteCount: realSiteIds.length,
     diverTanks: teams.flatMap((t) => t.divers.map((d) => d.tanks)),
     staffNitroxSiteIndexesByTeam: teams.map((t) => t.staffNitroxSiteIndexes),
-    spareTankTypes: form.spareTanks,
+    spareTanks: form.spareTanks.map((t) => ({ type: t.tankType, quantity: t.quantity })),
   });
 
   const warningAssignments = teams.flatMap((t) =>
@@ -785,27 +793,39 @@ export function TripCard({
           )}
         </SectionBox>
 
-        {/* No live-app precedent — a rebuild-only addition. Each spare
-            tank is independently typed (12L/15L/Nitrox), so carrying
-            "both" or "all three" is just adding more rows of different
-            types; folded straight into the shared tank tally below. */}
+        {/* No live-app precedent — a rebuild-only addition: backup tanks
+            the boat carries in case one needs swapping mid-trip (a
+            malfunction, a diver switching air source, etc). Each row is
+            a tank type with how many of that type to bring; folded
+            straight into the shared tank tally below. */}
         <SectionBox title="Spare Tanks">
+          <div className="text-xs text-gray-400 mb-2">
+            Backup tanks to bring in case one needs swapping mid-trip.
+          </div>
           {form.spareTanks.length === 0 ? (
             <div className="text-xs text-gray-400">No spare tanks added.</div>
           ) : (
             <div className="grid gap-2">
-              {form.spareTanks.map((tankType, i) => (
+              {form.spareTanks.map((tank, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <select
                     disabled={locked}
-                    value={tankType}
-                    onChange={(e) => setSpareTankSlot(i, e.target.value as "air_12l" | "air_15l" | "nitrox")}
+                    value={tank.tankType}
+                    onChange={(e) => setSpareTankType(i, e.target.value as "air_12l" | "air_15l" | "nitrox")}
                     className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
                   >
                     <option value="air_12l">Air 12L</option>
                     <option value="air_15l">Air 15L</option>
                     <option value="nitrox">Nitrox</option>
                   </select>
+                  <input
+                    type="number"
+                    min={1}
+                    disabled={locked}
+                    value={tank.quantity}
+                    onChange={(e) => setSpareTankQuantity(i, parseInt(e.target.value, 10) || 1)}
+                    className="w-16 shrink-0 border border-gray-300 rounded-md px-2 py-1.5 text-sm disabled:bg-gray-50"
+                  />
                   {!locked && (
                     <button
                       type="button"

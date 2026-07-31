@@ -67,7 +67,7 @@ export type TripFormInput = {
   guestDiversCount: number | null;
   guestDiveCenterName: string;
   guestNotes: string;
-  spareTanks: ("air_12l" | "air_15l" | "nitrox")[];
+  spareTanks: { tankType: "air_12l" | "air_15l" | "nitrox"; quantity: number }[];
 };
 
 async function replaceScheduleSites(
@@ -116,15 +116,16 @@ async function replaceScheduleSpareTanks(
   supabase: Awaited<ReturnType<typeof createClient>>,
   diveCenterId: string,
   scheduleId: string,
-  spareTanks: string[],
+  spareTanks: { tankType: string; quantity: number }[],
 ) {
   await supabase.from("schedule_spare_tanks").delete().eq("schedule_id", scheduleId);
   if (spareTanks.length === 0) return;
   await supabase.from("schedule_spare_tanks").insert(
-    spareTanks.map((tankType, index) => ({
+    spareTanks.map((t, index) => ({
       dive_center_id: diveCenterId,
       schedule_id: scheduleId,
-      tank_type: tankType,
+      tank_type: t.tankType,
+      quantity: t.quantity,
       sort_order: index,
     })),
   );
@@ -286,7 +287,7 @@ export async function cancelTrip(scheduleId: string): Promise<{ error?: string }
 // Per-dive tank choice: a diver/staff member can be nitrox on one dive and
 // plain air on another within the same multi-site trip — schedule_divers'
 // own is_15l/nitrox_requested stay single booleans (derived "at least one
-// dive uses this tank," read by /crew and other existing consumers
+// dive uses this tank," read by /staff and other existing consumers
 // unchanged); the real per-dive detail lives in the two additive tables
 // this writes below, keyed by site index (matching schedule_sites'
 // sort_order for the same trip — both derived from the same filtered,
