@@ -30,23 +30,23 @@ function parseEquipment(raw: string | null): { items: { name: string; size: stri
 // "Own" across every column rather than a per-item toggle. Checkmarks are
 // dropped entirely per the user's explicit ask — a requested item just
 // shows its size/kg value, or "Requested" when it has neither.
+function findRequestedItem(
+  items: { name: string; size: string | null; kg?: number | null }[],
+  column: string,
+) {
+  return items.find((i) => i.name.toLowerCase().includes(column.toLowerCase()));
+}
+
 function cellValue(
   needsEquipment: boolean,
   items: { name: string; size: string | null; kg?: number | null }[],
   column: string,
 ): string {
   if (!needsEquipment) return "Own";
-  const match = items.find((i) => i.name.toLowerCase().includes(column.toLowerCase()));
+  const match = findRequestedItem(items, column);
   if (!match) return "";
   if (match.name.toLowerCase().includes("weight") && match.kg != null) return `${match.kg}kg`;
   return match.size ?? "Requested";
-}
-
-function findRequestedItem(
-  items: { name: string; size: string | null; kg?: number | null }[],
-  column: string,
-) {
-  return items.find((i) => i.name.toLowerCase().includes(column.toLowerCase()));
 }
 
 export function EquipmentManagementTab({ initialDate }: { initialDate: string | null }) {
