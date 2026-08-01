@@ -109,8 +109,9 @@ function fmtTime(t: string | null): string {
   return `${hour12}:${m} ${ampm}`;
 }
 
-function fmtHeaderDate(): string {
-  return new Date().toLocaleDateString("en-US", {
+function fmtHeaderDate(dateStr: string | null): string {
+  if (!dateStr) return "";
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -171,6 +172,7 @@ function diverExpLine(d: CrewDiver): string | null {
 export function StaffScheduleClient() {
   const [tokenInput, setTokenInput] = useState("");
   const [dcName, setDcName] = useState<string | null>(null);
+  const [scheduleDate, setScheduleDate] = useState<string | null>(null);
   const [trips, setTrips] = useState<CrewTrip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -196,6 +198,7 @@ export function StaffScheduleClient() {
       return;
     }
     setDcName(data?.dive_center_name ?? null);
+    setScheduleDate(data?.schedule_date ?? null);
     setTrips((data?.trips as CrewTrip[]) ?? []);
   }
 
@@ -240,7 +243,7 @@ export function StaffScheduleClient() {
           <span className="text-white font-bold text-sm">AquaDesk</span>
         </div>
         {dcName && <div className="text-teal font-semibold text-sm mb-0.5">{dcName}</div>}
-        <div className="text-white/75 text-xs">📅 {fmtHeaderDate()}</div>
+        <div className="text-white/75 text-xs">📅 {fmtHeaderDate(scheduleDate)}</div>
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4 pb-12 grid gap-4">
