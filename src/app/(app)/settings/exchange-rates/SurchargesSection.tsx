@@ -32,6 +32,7 @@ export function SurchargesSection({ surcharges }: { surcharges: Surcharges }) {
           </label>
           <input
             type="number"
+            onFocus={(e) => e.currentTarget.select()}
             step="0.1"
             value={card}
             onChange={(e) => setCard(e.target.value)}
@@ -44,6 +45,7 @@ export function SurchargesSection({ surcharges }: { surcharges: Surcharges }) {
           </label>
           <input
             type="number"
+            onFocus={(e) => e.currentTarget.select()}
             step="0.1"
             value={online}
             onChange={(e) => setOnline(e.target.value)}

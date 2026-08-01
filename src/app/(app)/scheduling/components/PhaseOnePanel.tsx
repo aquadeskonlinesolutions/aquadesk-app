@@ -376,7 +376,22 @@ function ClipCard({
   // Excluded members stay listed (grayed, "Not diving this trip") rather
   // than disappearing — see includeDiverInClip/excludeDiverFromClip.
   const members = clip.members;
-  const activeCount = members.filter((m) => !m.excluded).length;
+  const activeMembers = members.filter((m) => !m.excluded);
+  const activeCount = activeMembers.length;
+  // Same mixed-cert-level check Phase 2's WarningsBanner does per team —
+  // applies here regardless of whether the clip is led by named staff or a
+  // freelancer, matching that same fix. Nitrox tank choice is a per-dive
+  // decision made later in Phase 2, so there's no "mixed air" yet at this
+  // stage — the closest available signal here is nitrox *certification*
+  // mismatch within the group (worth flagging early, since it affects who
+  // can even be offered nitrox once the trip is built).
+  const clipWarnings: string[] = [];
+  if (activeCount > 0) {
+    const certs = new Set(activeMembers.map((m) => m.certificationLevel));
+    const nitroxCertMix = new Set(activeMembers.map((m) => m.nitroxCertified));
+    if (certs.size > 1) clipWarnings.push("Mixed certification levels in this team.");
+    if (nitroxCertMix.size > 1) clipWarnings.push("Mixed Nitrox certification in this team.");
+  }
 
   function saveStaff(v: { staffId: string | null; staffName: string; isFreelancer: boolean }) {
     startTransition(async () => {
@@ -450,6 +465,14 @@ function ClipCard({
         ))}
         {members.length === 0 && <div className="text-xs text-gray-400 py-1">No divers.</div>}
       </div>
+      {clipWarnings.map((w, i) => (
+        <div
+          key={i}
+          className="text-xs text-orange bg-orange-light border border-orange/20 rounded-md px-2 py-1 mt-2"
+        >
+          ⚠️ {w}
+        </div>
+      ))}
     </div>
   );
 }

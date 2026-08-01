@@ -79,6 +79,7 @@ export function BillSummary({
   const num = (value: number, onChange: (v: number) => void, width = "w-24") => (
     <input
       type="number"
+      onFocus={(e) => e.currentTarget.select()}
       step="0.01"
       min={0}
       value={value}

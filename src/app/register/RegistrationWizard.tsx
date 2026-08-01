@@ -968,6 +968,7 @@ export function RegistrationWizard({
                 <label className={labelClass}>Logged Dives{requiredMark}</label>
                 <input
                   type="number"
+                  onFocus={(e) => e.currentTarget.select()}
                   min={0}
                   className={inputClass}
                   value={form.loggedDives}
@@ -1116,6 +1117,7 @@ export function RegistrationWizard({
                             {checked && isWeightsItem(key) && (
                               <input
                                 type="number"
+                                onFocus={(e) => e.currentTarget.select()}
                                 min={0}
                                 max={20}
                                 placeholder="kg"

@@ -188,6 +188,7 @@ function ActivityRow({
   const numInput = (value: number, onChange: (v: number) => void) => (
     <input
       type="number"
+      onFocus={(e) => e.currentTarget.select()}
       step="0.01"
       value={value}
       onChange={(e) => onChange(parseFloat(e.target.value) || 0)}

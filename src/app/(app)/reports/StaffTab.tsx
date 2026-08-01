@@ -206,6 +206,7 @@ function LeaderTable({
                       ) : (
                         <input
                           type="number"
+                          onFocus={(e) => e.currentTarget.select()}
                           min={0}
                           value={r.rate}
                           onChange={(e) => setRate(r.key, parseFloat(e.target.value) || 0)}
@@ -224,6 +225,7 @@ function LeaderTable({
                           ) : (
                             <input
                               type="number"
+                              onFocus={(e) => e.currentTarget.select()}
                               min={0}
                               value={r.bonusAmount}
                               onChange={(e) => setBonus(r.key, parseFloat(e.target.value) || 0)}
@@ -364,6 +366,7 @@ function EducatorTable({
                     ) : (
                       <input
                         type="number"
+                        onFocus={(e) => e.currentTarget.select()}
                         min={0}
                         value={r.amount}
                         onChange={(e) => setAmount(r.key, parseFloat(e.target.value) || 0)}

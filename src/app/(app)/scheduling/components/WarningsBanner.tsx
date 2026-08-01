@@ -7,6 +7,7 @@ import { computeTripWindow, windowsOverlap, type TripTypeDurations } from "../tr
 type Assignment = {
   diverId: string;
   staffId: string | null;
+  staffName: string;
   certificationLevel: string;
   nitroxRequested: boolean;
 };
@@ -76,19 +77,23 @@ export function WarningsBanner({
     warnings.push(`This boat is also assigned to another trip ${overlapSuffix}.`);
   }
 
-  // Ratio + mixed cert/nitrox per staff group within this trip.
+  // Ratio + mixed cert/nitrox per staff group within this trip — grouped by
+  // staffId when there is one, or by the freelancer's own name otherwise
+  // (a freelancer has no staff_id, but still leads a real team that should
+  // get the exact same ratio badge and mixed-cert/mixed-air checks as a
+  // named staff member's group; this used to skip freelancer groups
+  // entirely).
   const byStaff = new Map<string, Assignment[]>();
   for (const a of assignments) {
-    const key = a.staffId ?? "__unassigned__";
+    const key = a.staffId ?? a.staffName;
     if (!byStaff.has(key)) byStaff.set(key, []);
     byStaff.get(key)!.push(a);
   }
 
   const staffBadges: { label: string; count: number }[] = [];
   const mixedWarnings: string[] = [];
-  for (const [staffId, group] of byStaff) {
-    if (staffId === "__unassigned__") continue;
-    const label = staffNameById.get(staffId) ?? "Staff";
+  for (const [key, group] of byStaff) {
+    const label = staffNameById.get(key) ?? group[0]?.staffName ?? "Staff";
     staffBadges.push({ label, count: group.length });
     const certs = new Set(group.map((g) => g.certificationLevel));
     const nitroxMix = new Set(group.map((g) => g.nitroxRequested));

@@ -275,6 +275,7 @@ export type ScheduleDiverRow = {
   certificationLevel: string;
   nitroxCertified: boolean;
   staffId: string | null;
+  staffName: string | null;
   sourceClipId: string | null;
   experienceType: "fun_diving" | "dive_course" | null;
   courseName: string | null;
@@ -290,7 +291,7 @@ export async function loadScheduleDivers(
   const supabase = await createClient();
   const { data: rows } = await supabase
     .from("schedule_divers")
-    .select("id, diver_id, staff_id, source_clip_id, experience_type, is_15l, nitrox_requested")
+    .select("id, diver_id, staff_id, staff_name, source_clip_id, experience_type, is_15l, nitrox_requested")
     .eq("dive_center_id", diveCenterId)
     .eq("schedule_id", scheduleId);
 
@@ -346,6 +347,7 @@ export async function loadScheduleDivers(
         certificationLevel: d.certification_level,
         nitroxCertified: d.nitrox_certified,
         staffId: r.staff_id,
+        staffName: r.staff_name,
         sourceClipId: r.source_clip_id,
         experienceType: r.experience_type,
         courseName: courseRateId ? (courseNameById.get(courseRateId) ?? null) : null,

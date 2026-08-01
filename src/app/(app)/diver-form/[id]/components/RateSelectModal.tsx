@@ -128,6 +128,7 @@ export function RateSelectModal({
             <label className="block text-xs font-medium text-gray-600 mb-1">Custom price</label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               min={0}
               step="0.01"
               value={customInput}

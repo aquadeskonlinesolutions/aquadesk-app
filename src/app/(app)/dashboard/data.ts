@@ -255,6 +255,7 @@ async function loadAlerts(
   tomorrowStr: string,
 ) {
   const alerts: Alert[] = [];
+  const now = new Date();
 
   const { data: dc } = await supabase
     .from("dive_centers")
@@ -341,92 +342,167 @@ async function loadAlerts(
     }
   }
 
-  const { data: completedToday } = await supabase
+  // Government fees / Join Ride "not logged" alerts look back over the
+  // last 3 days (today included), not just today — a miss from
+  // yesterday used to silently vanish the moment today started, since
+  // these only ever checked `eq("date", todayStr)`. Matches the
+  // overdue-bills alert's own 3-day window above.
+  const last3DayStrs = [addDays(now, -2), addDays(now, -1), now].map(manilaDateStr);
+  const shortDate = (dateStr: string) =>
+    new Date(`${dateStr}T00:00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+  const diverWord = (n: number) => `${n} diver${n === 1 ? "" : "s"}`;
+
+  const { data: recentCompleted } = await supabase
     .from("activities")
-    .select("id")
+    .select("date, diver_id")
     .eq("dive_center_id", diveCenterId)
     .eq("status", "completed")
-    .eq("date", todayStr)
-    .limit(1);
+    .in("date", last3DayStrs);
 
-  if ((completedToday ?? []).length > 0) {
-    const { data: govtFeesToday } = await supabase
-      .from("govt_fees")
-      .select("id")
-      .eq("dive_center_id", diveCenterId)
-      .eq("date", todayStr)
-      .limit(1);
+  const { data: recentGovtFees } = await supabase
+    .from("govt_fees")
+    .select("date")
+    .eq("dive_center_id", diveCenterId)
+    .in("date", last3DayStrs);
 
-    if (!govtFeesToday || govtFeesToday.length === 0) {
-      alerts.push({
-        type: "info",
-        icon: "🤿",
-        title: "Great dives today!",
-        desc: "Just a heads up — government fees for today aren't logged yet.",
-        link: "/reports?tab=govtfees",
-        linkText: "Log them here →",
-      });
-    }
+  const govtFeesLoggedDates = new Set((recentGovtFees ?? []).map((r) => r.date));
+  const diversByDate = new Map<string, Set<string>>();
+  (recentCompleted ?? []).forEach((a) => {
+    const set = diversByDate.get(a.date) ?? new Set<string>();
+    set.add(a.diver_id);
+    diversByDate.set(a.date, set);
+  });
+
+  const missingGovtFeesDays = last3DayStrs
+    .filter((d) => (diversByDate.get(d)?.size ?? 0) > 0 && !govtFeesLoggedDates.has(d))
+    .map((d) => ({ date: d, count: diversByDate.get(d)!.size }));
+
+  if (missingGovtFeesDays.length === 1 && missingGovtFeesDays[0].date === todayStr) {
+    alerts.push({
+      type: "info",
+      icon: "🤿",
+      title: "Great dives today!",
+      desc: `Just a heads up — government fees for today (${diverWord(missingGovtFeesDays[0].count)}) aren't logged yet.`,
+      link: "/reports?tab=govtfees",
+      linkText: "Log them here →",
+    });
+  } else if (missingGovtFeesDays.length > 0) {
+    alerts.push({
+      type: "info",
+      icon: "🤿",
+      title: `Government fees not logged (${missingGovtFeesDays.length} day${missingGovtFeesDays.length > 1 ? "s" : ""})`,
+      desc: missingGovtFeesDays.map((d) => `${shortDate(d.date)} (${diverWord(d.count)})`).join(", "),
+      link: "/reports?tab=govtfees",
+      linkText: "Log them here →",
+    });
   }
 
-  const { data: joinedBoatSchedules } = await supabase
+  const { data: recentJoinerSchedules } = await supabase
     .from("schedules")
-    .select("id")
+    .select("id, schedule_date")
     .eq("dive_center_id", diveCenterId)
-    .eq("schedule_date", todayStr)
+    .in("schedule_date", last3DayStrs)
     .eq("is_joiner", true)
-    .eq("cancelled", false)
-    .limit(1);
+    .eq("cancelled", false);
 
-  if ((joinedBoatSchedules ?? []).length > 0) {
-    const { data: logged } = await supabase
-      .from("join_ride_records")
-      .select("id")
-      .eq("dive_center_id", diveCenterId)
-      .eq("date", todayStr)
-      .eq("direction", "we_joined_another_boat")
-      .limit(1);
+  const { data: recentJoinLogged } = await supabase
+    .from("join_ride_records")
+    .select("date")
+    .eq("dive_center_id", diveCenterId)
+    .in("date", last3DayStrs)
+    .eq("direction", "we_joined_another_boat");
 
-    if (!logged || logged.length === 0) {
-      alerts.push({
-        type: "info",
-        icon: "🚤",
-        title: "Looks like your crew hitched a ride today!",
-        desc: "Pop it into Reports when you get a chance.",
-        link: "/reports?tab=join",
-        linkText: "Go to Join Ride →",
-      });
-    }
+  const joinLoggedDates = new Set((recentJoinLogged ?? []).map((r) => r.date));
+  const joinerSchedules = recentJoinerSchedules ?? [];
+  const joinerScheduleIds = joinerSchedules.map((s) => s.id);
+  const dateByScheduleId = new Map(joinerSchedules.map((s) => [s.id, s.schedule_date]));
+
+  const { data: joinerDiverRows } = joinerScheduleIds.length
+    ? await supabase
+        .from("schedule_divers")
+        .select("schedule_id, diver_id")
+        .in("schedule_id", joinerScheduleIds)
+    : { data: [] };
+
+  const joinerDiversByDate = new Map<string, Set<string>>();
+  (joinerDiverRows ?? []).forEach((r) => {
+    const date = dateByScheduleId.get(r.schedule_id);
+    if (!date) return;
+    const set = joinerDiversByDate.get(date) ?? new Set<string>();
+    set.add(r.diver_id);
+    joinerDiversByDate.set(date, set);
+  });
+
+  const missingJoinerDays = last3DayStrs
+    .filter((d) => joinerSchedules.some((s) => s.schedule_date === d) && !joinLoggedDates.has(d))
+    .map((d) => ({ date: d, count: joinerDiversByDate.get(d)?.size ?? 0 }));
+
+  if (missingJoinerDays.length === 1 && missingJoinerDays[0].date === todayStr) {
+    alerts.push({
+      type: "info",
+      icon: "🚤",
+      title: "Looks like your crew hitched a ride today!",
+      desc: `Pop it into Reports when you get a chance (${diverWord(missingJoinerDays[0].count)}).`,
+      link: "/reports?tab=join",
+      linkText: "Go to Join Ride →",
+    });
+  } else if (missingJoinerDays.length > 0) {
+    alerts.push({
+      type: "info",
+      icon: "🚤",
+      title: `Crew hitched a ride, not logged (${missingJoinerDays.length} day${missingJoinerDays.length > 1 ? "s" : ""})`,
+      desc: missingJoinerDays.map((d) => `${shortDate(d.date)} (${diverWord(d.count)})`).join(", "),
+      link: "/reports?tab=join",
+      linkText: "Go to Join Ride →",
+    });
   }
 
-  const { data: guestDiverSchedules } = await supabase
+  const { data: recentGuestSchedules } = await supabase
     .from("schedules")
-    .select("id")
+    .select("id, schedule_date, guest_divers_count")
     .eq("dive_center_id", diveCenterId)
-    .eq("schedule_date", todayStr)
+    .in("schedule_date", last3DayStrs)
     .eq("cancelled", false)
-    .or("guest_divers_count.gt.0,guest_dive_center_name.not.is.null")
-    .limit(1);
+    .or("guest_divers_count.gt.0,guest_dive_center_name.not.is.null");
 
-  if ((guestDiverSchedules ?? []).length > 0) {
-    const { data: guestLogged } = await supabase
-      .from("join_ride_records")
-      .select("id")
-      .eq("dive_center_id", diveCenterId)
-      .eq("date", todayStr)
-      .eq("direction", "joined_our_boat")
-      .limit(1);
+  const { data: recentGuestLogged } = await supabase
+    .from("join_ride_records")
+    .select("date")
+    .eq("dive_center_id", diveCenterId)
+    .in("date", last3DayStrs)
+    .eq("direction", "joined_our_boat");
 
-    if (!guestLogged || guestLogged.length === 0) {
-      alerts.push({
-        type: "info",
-        icon: "🚢",
-        title: "Someone joined your boat today!",
-        desc: "Don't forget to record it in Reports.",
-        link: "/reports?tab=join",
-        linkText: "Go to Join Ride →",
-      });
-    }
+  const guestLoggedDates = new Set((recentGuestLogged ?? []).map((r) => r.date));
+  const guestCountByDate = new Map<string, number>();
+  (recentGuestSchedules ?? []).forEach((s) => {
+    guestCountByDate.set(
+      s.schedule_date,
+      (guestCountByDate.get(s.schedule_date) ?? 0) + (s.guest_divers_count ?? 0),
+    );
+  });
+
+  const missingGuestDays = last3DayStrs
+    .filter((d) => guestCountByDate.has(d) && !guestLoggedDates.has(d))
+    .map((d) => ({ date: d, count: guestCountByDate.get(d) ?? 0 }));
+
+  if (missingGuestDays.length === 1 && missingGuestDays[0].date === todayStr) {
+    alerts.push({
+      type: "info",
+      icon: "🚢",
+      title: "Someone joined your boat today!",
+      desc: `Don't forget to record it in Reports (${diverWord(missingGuestDays[0].count)}).`,
+      link: "/reports?tab=join",
+      linkText: "Go to Join Ride →",
+    });
+  } else if (missingGuestDays.length > 0) {
+    alerts.push({
+      type: "info",
+      icon: "🚢",
+      title: `Boat joiners not logged (${missingGuestDays.length} day${missingGuestDays.length > 1 ? "s" : ""})`,
+      desc: missingGuestDays.map((d) => `${shortDate(d.date)} (${diverWord(d.count)})`).join(", "),
+      link: "/reports?tab=join",
+      linkText: "Go to Join Ride →",
+    });
   }
 
   const { data: arriving } = await supabase

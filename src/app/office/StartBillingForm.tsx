@@ -40,6 +40,7 @@ export function StartBillingForm({
             <input
               name="amount"
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               min="1"
               step="1"
               defaultValue={4000}

@@ -128,6 +128,7 @@ export function SchedulingClient({
 
           {phase === "phase3" && (
             <PhaseThreePanel
+              scheduleDate={date}
               trips={trips}
               boats={boats}
               diveSites={diveSites}

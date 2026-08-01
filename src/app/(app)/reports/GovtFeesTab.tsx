@@ -213,6 +213,7 @@ export function GovtFeesTab({
                       <td className="px-4 py-2">
                         <input
                           type="number"
+                          onFocus={(e) => e.currentTarget.select()}
                           min={0}
                           step="0.01"
                           value={r.rate}
@@ -223,6 +224,7 @@ export function GovtFeesTab({
                       <td className="px-4 py-2">
                         <input
                           type="number"
+                          onFocus={(e) => e.currentTarget.select()}
                           min={0}
                           step="1"
                           value={r.divers}

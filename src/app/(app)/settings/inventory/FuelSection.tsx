@@ -71,6 +71,7 @@ export function FuelSection({ fuel }: { fuel: FuelSettings }) {
             <td className="py-2 pr-2">
               <input
                 type="number"
+                onFocus={(e) => e.currentTarget.select()}
                 min={0}
                 value={gasolineLevel}
                 onChange={(e) => setGasolineLevel(e.target.value)}
@@ -81,6 +82,7 @@ export function FuelSection({ fuel }: { fuel: FuelSettings }) {
             <td className="py-2 pr-2">
               <input
                 type="number"
+                onFocus={(e) => e.currentTarget.select()}
                 min={0}
                 value={gasolineThreshold}
                 onChange={(e) => setGasolineThreshold(e.target.value)}
@@ -111,6 +113,7 @@ export function FuelSection({ fuel }: { fuel: FuelSettings }) {
             <td className="py-2 pr-2">
               <input
                 type="number"
+                onFocus={(e) => e.currentTarget.select()}
                 min={0}
                 value={dieselLevel}
                 onChange={(e) => setDieselLevel(e.target.value)}
@@ -121,6 +124,7 @@ export function FuelSection({ fuel }: { fuel: FuelSettings }) {
             <td className="py-2 pr-2">
               <input
                 type="number"
+                onFocus={(e) => e.currentTarget.select()}
                 min={0}
                 value={dieselThreshold}
                 onChange={(e) => setDieselThreshold(e.target.value)}

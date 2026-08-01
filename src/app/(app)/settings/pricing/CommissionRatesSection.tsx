@@ -39,6 +39,7 @@ export function CommissionRatesSection({ rates }: { rates: CommissionRates }) {
         </label>
         <input
           type="number"
+          onFocus={(e) => e.currentTarget.select()}
           min={0}
           value={divemasterRate}
           onChange={(e) => setDivemasterRate(e.target.value)}
@@ -83,6 +84,7 @@ export function CommissionRatesSection({ rates }: { rates: CommissionRates }) {
             </label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               min={0}
               value={ratioBonusExtraRate}
               onChange={(e) => setRatioBonusExtraRate(e.target.value)}
@@ -102,6 +104,7 @@ export function CommissionRatesSection({ rates }: { rates: CommissionRates }) {
         </label>
         <input
           type="number"
+          onFocus={(e) => e.currentTarget.select()}
           min={0}
           value={joinRideRate}
           onChange={(e) => setJoinRideRate(e.target.value)}

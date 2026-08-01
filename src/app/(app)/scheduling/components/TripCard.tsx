@@ -165,9 +165,15 @@ function AddTeamModal({
   scheduleDate: string;
   placedDiverIds: Set<string>;
   onClose: () => void;
-  onAdd: (team: Team) => void;
+  onAdd: (teams: Team[]) => void;
 }) {
   const [clips, setClips] = useState<Clip[] | null>(null);
+  // Checkbox multi-select, matching scheduling.html's real
+  // openAssignTeamModal/confirmAssignTeamsToTrip — every available clip
+  // gets a checkbox and one "Assign on this Trip" confirms all checked
+  // ones in one go, instead of the rebuild's old one-click-per-clip flow
+  // that needed reopening this modal for every additional team.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getClipsForDate(scheduleDate).then(setClips);
@@ -177,11 +183,30 @@ function AddTeamModal({
     .map((c) => ({ ...c, members: c.members.filter((m) => !m.excluded && !placedDiverIds.has(m.diverId)) }))
     .filter((c) => c.members.length > 0);
 
+  function toggle(clipId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(clipId)) next.delete(clipId);
+      else next.add(clipId);
+      return next;
+    });
+  }
+
+  function confirm() {
+    const teams = available.filter((c) => selectedIds.has(c.id)).map(clipToTeam);
+    if (teams.length === 0) return;
+    onAdd(teams);
+    onClose();
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-lg max-w-lg w-full max-h-[85vh] overflow-y-auto">
         <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div className="font-display text-lg text-navy">Add Team</div>
+          <div>
+            <div className="font-display text-lg text-navy">Add Team</div>
+            <div className="text-xs text-gray-500">Select staff clips for this trip.</div>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">
             ×
           </button>
@@ -195,25 +220,43 @@ function AddTeamModal({
             </div>
           ) : (
             available.map((c) => (
-              <button
+              <label
                 key={c.id}
-                onClick={() => {
-                  onAdd(clipToTeam(c));
-                  onClose();
-                }}
-                className="text-left border border-gray-200 rounded-lg p-3 hover:border-navy hover:bg-off-white transition-colors"
+                className="flex items-start gap-2.5 text-left border border-gray-200 rounded-lg p-3 hover:border-navy hover:bg-off-white transition-colors cursor-pointer"
               >
-                <div className="text-sm font-semibold text-navy">
-                  {c.staffName}
-                  {c.isFreelancer && <span className="ml-2 text-xs text-gray-400">(Freelancer)</span>}
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(c.id)}
+                  onChange={() => toggle(c.id)}
+                  className="mt-1"
+                />
+                <div>
+                  <div className="text-sm font-semibold text-navy">
+                    {c.staffName}
+                    {c.isFreelancer && <span className="ml-2 text-xs text-gray-400">(Freelancer)</span>}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {c.members.map((m) => `${m.firstName} ${m.lastName}`).join(", ")}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {c.members.map((m) => `${m.firstName} ${m.lastName}`).join(", ")}
-                </div>
-              </button>
+              </label>
             ))
           )}
         </div>
+        {available.length > 0 && (
+          <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+            <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600">
+              Cancel
+            </button>
+            <button
+              onClick={confirm}
+              disabled={selectedIds.size === 0}
+              className="px-3 py-1.5 text-sm font-medium bg-navy text-white rounded-md hover:bg-navy-dark disabled:opacity-60"
+            >
+              Assign on this Trip
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -275,7 +318,11 @@ export function TripCard({
         const key = `${r.staffId ?? "none"}::${r.sourceClipId ?? "none"}`;
         const team = byKey.get(key) ?? {
           staffId: r.staffId,
-          staffName: "",
+          // schedule_divers.staff_name (migration 026) is the real source of
+          // truth now — it's what saveTripTeams wrote for this team,
+          // freelancer or not. Falls back to a staffOptions lookup only for
+          // rows saved before that column existed.
+          staffName: r.staffName ?? staffOptions.find((s) => s.id === r.staffId)?.fullName ?? "Unassigned",
           sourceClipId: r.sourceClipId,
           staffNitroxSiteIndexes: [],
           divers: [],
@@ -291,13 +338,12 @@ export function TripCard({
         });
         byKey.set(key, team);
       });
-      // Resolve staff names from staffOptions since schedule_divers doesn't store the name,
-      // then match each team's per-site nitrox selection by that resolved name (how it was saved).
+      // Match each team's per-site staff-nitrox selection by its resolved name (how it was saved).
       const staffTanksByName = new Map(staffTanks.map((s) => [s.staffName, s.siteIndexes]));
-      const resolved = [...byKey.values()].map((t) => {
-        const staffName = staffOptions.find((s) => s.id === t.staffId)?.fullName ?? "Unassigned";
-        return { ...t, staffName, staffNitroxSiteIndexes: staffTanksByName.get(staffName) ?? [] };
-      });
+      const resolved = [...byKey.values()].map((t) => ({
+        ...t,
+        staffNitroxSiteIndexes: staffTanksByName.get(t.staffName) ?? [],
+      }));
       setTeams(resolved);
       setLoading(false);
     });
@@ -531,6 +577,18 @@ export function TripCard({
     });
   }
 
+  // A brand-new trip card (no scheduleId yet, nothing saved) previously had
+  // no way to close itself at all — the header's Delete button and the
+  // footer's Cancel Trip button are both gated on a real scheduleId, so
+  // clicking "+ New Trip" and changing your mind before saving left the
+  // only escape hatch as a full page refresh. This just removes the local
+  // placeholder — there's nothing on the server to cancel or delete yet.
+  async function discardNew() {
+    if (await confirm("Discard this new trip? Nothing has been saved yet.")) {
+      onDeletedOrCancelled();
+    }
+  }
+
   if (loading) {
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 text-center text-gray-400 text-sm">
@@ -551,6 +609,7 @@ export function TripCard({
     t.divers.map((d) => ({
       diverId: d.diverId,
       staffId: t.staffId,
+      staffName: t.staffName,
       certificationLevel: d.certificationLevel,
       nitroxRequested: d.tanks.some((tk) => tk.tankType === "nitrox"),
     })),
@@ -703,39 +762,24 @@ export function TripCard({
             </div>
 
             {form.boatMode === "own_boat" ? (
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Which Boat</label>
-                <select
-                  disabled={locked}
-                  value={form.boatId ?? ""}
-                  onChange={(e) => setForm({ ...form, boatId: e.target.value || null })}
-                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                >
-                  <option value="">Select a boat…</option>
-                  {boats.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                      {b.capacity ? ` (capacity ${b.capacity})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  {form.boatMode === "rental" ? "Rental Boat Name" : "Their Boat Name"}
-                </label>
-                <input
-                  disabled={locked}
-                  value={form.joinerBoatName}
-                  onChange={(e) => setForm({ ...form, joinerBoatName: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
-                />
-              </div>
-            )}
-
-            {form.boatMode === "own_boat" && (
-              <>
+              <div className="col-span-2 grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Which Boat</label>
+                  <select
+                    disabled={locked}
+                    value={form.boatId ?? ""}
+                    onChange={(e) => setForm({ ...form, boatId: e.target.value || null })}
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                  >
+                    <option value="">Select a boat…</option>
+                    {boats.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                        {b.capacity ? ` (capacity ${b.capacity})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Boat Captain</label>
                   <input
@@ -749,6 +793,7 @@ export function TripCard({
                   <label className="block text-xs font-medium text-gray-600 mb-1">Fuel Consumption (L)</label>
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     min={0}
                     disabled={locked}
                     value={form.fuelConsumedLiters ?? ""}
@@ -761,7 +806,19 @@ export function TripCard({
                     className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
                   />
                 </div>
-              </>
+              </div>
+            ) : (
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  {form.boatMode === "rental" ? "Rental Boat Name" : "Their Boat Name"}
+                </label>
+                <input
+                  disabled={locked}
+                  value={form.joinerBoatName}
+                  onChange={(e) => setForm({ ...form, joinerBoatName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                />
+              </div>
             )}
           </div>
         </SectionBox>
@@ -842,6 +899,7 @@ export function TripCard({
                     </select>
                     <input
                       type="number"
+                      onFocus={(e) => e.currentTarget.select()}
                       min={1}
                       disabled={locked}
                       value={tank.quantity}
@@ -1043,6 +1101,7 @@ export function TripCard({
                 <label className="block text-xs font-medium text-gray-600 mb-1">Divers Joining</label>
                 <input
                   type="number"
+                  onFocus={(e) => e.currentTarget.select()}
                   min={0}
                   disabled={locked}
                   value={form.guestDiversCount ?? ""}
@@ -1079,6 +1138,11 @@ export function TripCard({
 
       {!readOnly && expanded && (
         <div className="px-4 py-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
+          {!scheduleId && !locked && (
+            <Button variant="ghost" size="md" onClick={discardNew} disabled={pending}>
+              Discard
+            </Button>
+          )}
           {scheduleId && !locked && !detail?.cancelled && (
             <Button variant="ghost" size="md" onClick={cancel} disabled={pending}>
               Cancel Trip
@@ -1097,7 +1161,7 @@ export function TripCard({
           scheduleDate={scheduleDate}
           placedDiverIds={placedDiverIds}
           onClose={() => setShowAddTeam(false)}
-          onAdd={(team) => setTeams((prev) => [...prev, team])}
+          onAdd={(newTeams) => setTeams((prev) => [...prev, ...newTeams])}
         />
       )}
     </div>

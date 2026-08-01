@@ -338,6 +338,7 @@ export async function saveTripTeams(
       schedule_id: scheduleId,
       diver_id: d.diverId,
       staff_id: t.staffId,
+      staff_name: t.staffName.trim() || null,
       source_clip_id: t.sourceClipId,
       is_15l: d.tanks.some((tk) => tk.tankType === "air_15l"),
       nitrox_requested: d.tanks.some((tk) => tk.tankType === "nitrox"),
@@ -682,6 +683,20 @@ function nowManilaMinute(): string {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
+// Duplicated from diver-form/[id]/pricing.ts's own normalizeSiteKey (not
+// cross-imported, matching this codebase's established per-page small-
+// helper duplication precedent) — split on common separators, trim,
+// lowercase, sort, join, so a package's site combo matches regardless of
+// entry order.
+function normalizeSiteKey(text: string): string {
+  return text
+    .split(/[,|+•;\n]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
 // Only writes bare, zero-priced activities rows — no pricing logic here at
 // all. Real pricing happens later via Diver Detail's existing Auto-Price/
 // manual-edit flow, per the explicit user decision behind this build.
@@ -730,7 +745,7 @@ export async function markBoatReturned(
   const [{ data: diverRows }, { data: siteRows }] = await Promise.all([
     supabase
       .from("schedule_divers")
-      .select("id, diver_id, staff_id")
+      .select("id, diver_id, staff_id, staff_name")
       .eq("dive_center_id", user.diveCenterId)
       .eq("schedule_id", scheduleId),
     supabase
@@ -771,6 +786,27 @@ export async function markBoatReturned(
     ? await supabase.from("staff").select("id, first_name, last_name").in("id", staffIds)
     : { data: [] };
   const staffNameById = new Map((staffRows ?? []).map((s) => [s.id, `${s.first_name} ${s.last_name}`]));
+
+  // Package-mode activities log just the matched package's own name (e.g.
+  // "Shark Diving"), not the raw joined site list — same site-combination
+  // matching pricing.ts's autoPricePackageMode already uses for Apply
+  // Charges, so Apply Charges and Boat Return agree on what a trip's
+  // package actually is. Falls back to the joined site names only if no
+  // package configured for this site combination matches (still better
+  // than leaving the activity's dive_site blank).
+  let packageActivityName: string | null = null;
+  if (isPackageMode && siteNames.length > 0) {
+    const siteKey = normalizeSiteKey(siteNames.join(","));
+    if (siteKey) {
+      const { data: packageRows } = await supabase
+        .from("packages")
+        .select("package_name, dive_site")
+        .eq("dive_center_id", user.diveCenterId)
+        .eq("is_active", true);
+      const match = (packageRows ?? []).find((p) => normalizeSiteKey(p.dive_site ?? "") === siteKey);
+      packageActivityName = match?.package_name ?? null;
+    }
+  }
 
   // Duplicate-activity guard, matching the live app's "Activities already
   // added" check — a diver can already have an activities row for this
@@ -828,7 +864,11 @@ export async function markBoatReturned(
       continue;
     }
 
-    const staffName = row.staff_id ? staffNameById.get(row.staff_id) ?? null : null;
+    // A freelancer has no staff_id to look up — schedule_divers.staff_name
+    // (migration 026) is the only place their typed name is recorded, so
+    // it's the fallback here, not a blank. Previously this was always null
+    // for a freelancer even though the name was right there on the trip.
+    const staffName = row.staff_id ? (staffNameById.get(row.staff_id) ?? null) : (row.staff_name ?? null);
     const diverTanks = tanksByScheduleDiver.get(row.id);
 
     if (isPackageMode) {
@@ -845,7 +885,7 @@ export async function markBoatReturned(
         visit_id: visit.id,
         schedule_id: scheduleId,
         date: schedule.schedule_date,
-        dive_site: siteNames.length > 0 ? siteNames.join(", ") : null,
+        dive_site: packageActivityName ?? (siteNames.length > 0 ? siteNames.join(", ") : null),
         staff_name: staffName,
         status: "completed",
         flags: anyNitrox ? { nitrox_requested: true } : any15l ? { tank_15l_requested: true } : null,
@@ -932,16 +972,14 @@ export async function markBoatReturned(
 // Staff's own action used, per this codebase's no-cross-page-action-
 // imports convention.
 
-function todayManila(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
-export async function getCrewTokenToday(): Promise<string | null> {
+// Scoped to whichever schedule date Phase 3 is actually viewing, not real
+// calendar "today" — matches the live app's real generateToken()/
+// refreshStaffToken(), which keys the token off `selectedDate`. A dive
+// center closing up for the day builds tomorrow's schedule and needs to
+// hand out *tomorrow's* token immediately, not wait for tomorrow to
+// arrive; the old "today-only" version made that schedule unreachable by
+// any token until the calendar day actually rolled over.
+export async function getCrewTokenForDate(scheduleDate: string): Promise<string | null> {
   const user = await getCurrentUser();
   const supabase = await createClient();
   const { data: dc } = await supabase
@@ -949,14 +987,15 @@ export async function getCrewTokenToday(): Promise<string | null> {
     .select("staff_token, staff_token_date")
     .eq("id", user.diveCenterId)
     .single();
-  return dc?.staff_token && dc.staff_token_date === todayManila() ? dc.staff_token : null;
+  return dc?.staff_token && dc.staff_token_date === scheduleDate ? dc.staff_token : null;
 }
 
-export async function generateCrewToken(): Promise<{ error?: string; token?: string }> {
+export async function generateCrewToken(scheduleDate: string): Promise<{ error?: string; token?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("generate_daily_staff_token", {
     p_dive_center_id: user.diveCenterId,
+    p_schedule_date: scheduleDate,
   });
   if (error) return { error: error.message };
   return { token: data as string };

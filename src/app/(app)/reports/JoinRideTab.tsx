@@ -351,6 +351,7 @@ export function JoinRideTab({
                   <label className="block text-xs font-medium text-gray-600 mb-1">Number of Divers</label>
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     min={0}
                     value={form.numberOfDivers}
                     onChange={(e) => setForm({ ...form, numberOfDivers: e.target.value })}
@@ -361,6 +362,7 @@ export function JoinRideTab({
                   <label className="block text-xs font-medium text-gray-600 mb-1">Number of Dives</label>
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     min={0}
                     value={form.numberOfDives}
                     onChange={(e) => setForm({ ...form, numberOfDives: e.target.value })}

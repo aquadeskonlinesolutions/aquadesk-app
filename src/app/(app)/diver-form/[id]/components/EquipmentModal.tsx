@@ -156,6 +156,7 @@ export function EquipmentModal({
                     {checked && isWeightsItem(key) && (
                       <input
                         type="number"
+                        onFocus={(e) => e.currentTarget.select()}
                         min={0}
                         max={20}
                         placeholder="kg"

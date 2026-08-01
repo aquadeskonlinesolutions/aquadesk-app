@@ -3,6 +3,25 @@ import { createClient } from "@/lib/supabase/server";
 import { safeNum, getPaidAmount } from "@/lib/payments";
 import { EXPENSE_CATEGORY_LABELS } from "./constants";
 
+// Same helper as dashboard/data.ts's own manilaDayBoundsUtcIso (duplicated
+// per this codebase's established per-page small-helper precedent) — the
+// UTC instant range that covers one Manila calendar date. Every date-range
+// filter in this file against a plain `date` column (activities.date,
+// expenses.date, govt_fees.date, staff_commission_records.activity_date)
+// is already timezone-safe since there's no time component to misalign —
+// but `payments.paid_at` is a real timestamptz, and comparing it against
+// literal UTC-midnight strings for a Manila-run business silently drops
+// early-morning Manila payments into "yesterday" and leaks the next day's
+// early-morning payments into "today." Found and fixed here; see
+// loadOverviewData's and loadSettlementData's use of this helper below.
+function manilaDayBoundsUtcIso(dateStr: string) {
+  const startMs = Date.parse(`${dateStr}T00:00:00.000Z`) - 8 * 60 * 60 * 1000;
+  return {
+    startIso: new Date(startMs).toISOString(),
+    endIso: new Date(startMs + 86_400_000 - 1).toISOString(),
+  };
+}
+
 function splitDiveSites(site: string | null): string[] {
   const parts = String(site ?? "")
     .split(",")
@@ -82,8 +101,8 @@ export async function loadOverviewData(
         "cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount",
       )
       .eq("dive_center_id", diveCenterId)
-      .gte("paid_at", `${dateFrom}T00:00:00.000Z`)
-      .lte("paid_at", `${dateTo}T23:59:59.999Z`),
+      .gte("paid_at", manilaDayBoundsUtcIso(dateFrom).startIso)
+      .lte("paid_at", manilaDayBoundsUtcIso(dateTo).endIso),
     supabase
       .from("visits")
       .select("id")
@@ -639,8 +658,7 @@ export type SettlementData = {
 
 export async function loadSettlementData(diveCenterId: string, date: string): Promise<SettlementData> {
   const supabase = await createClient();
-  const dayStart = `${date}T00:00:00`;
-  const dayEnd = `${date}T23:59:59`;
+  const { startIso: dayStart, endIso: dayEnd } = manilaDayBoundsUtcIso(date);
 
   const [{ data: dc }, { data: paymentsRaw }, { data: depositsRaw }] = await Promise.all([
     supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
@@ -709,7 +727,13 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
         ? `${safeNum(p.cash_amount_foreign).toLocaleString()} ${p.cash_currency_code} × ₱${safeNum(p.cash_exchange_rate).toLocaleString()}`
         : "";
     return {
-      date: String(p.paid_at ?? p.created_at ?? "").slice(0, 10),
+      // Every row here is already guaranteed to fall within the selected
+      // Manila calendar day (the query above filters on that basis) — use
+      // that literal date directly rather than slicing paid_at's raw UTC
+      // ISO string, which could show the previous/next calendar day for
+      // an early-morning Manila payment and make the printed
+      // reconciliation sheet look like it's missing/misdating a row.
+      date,
       diverName: diverMap.get(p.diver_id) ?? "—",
       closedBy: closedByMap.get(p.visit_id) ?? "—",
       cashPHP: safeNum(p.cash_amount),

@@ -266,6 +266,7 @@ export function ExpensesTab({
                 <label className="block text-xs font-medium text-gray-600 mb-1">Amount</label>
                 <input
                   type="number"
+                  onFocus={(e) => e.currentTarget.select()}
                   min={0}
                   step="0.01"
                   value={form.amount}

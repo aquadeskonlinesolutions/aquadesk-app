@@ -7,7 +7,7 @@ import {
   getScheduleDivers,
   getStaffDiveTanks,
   markBoatReturned,
-  getCrewTokenToday,
+  getCrewTokenForDate,
   generateCrewToken,
 } from "../actions";
 import { computeTankTally, formatTankLine } from "../tanks";
@@ -64,18 +64,34 @@ function diverLine(d: ScheduleDiverRow, siteCount: number): string {
   return `  - ${name}${tankLabel ? ` - ${tankLabel}` : ""}`;
 }
 
+// Grouped by staffId when there is one, or by the freelancer's own stored
+// name (schedule_divers.staff_name, migration 026) otherwise — previously
+// every freelancer-led team collapsed into one shared "__unassigned__"
+// bucket regardless of which freelancer it actually was, which is both a
+// display bug (showed "Unassigned" instead of the real name) and merged
+// unrelated freelancers' divers together.
 function groupByStaff(divers: ScheduleDiverRow[]): Map<string, ScheduleDiverRow[]> {
   const byStaff = new Map<string, ScheduleDiverRow[]>();
   divers.forEach((d) => {
-    const key = d.staffId ?? "__unassigned__";
+    const key = d.staffId ?? d.staffName ?? "__unassigned__";
     if (!byStaff.has(key)) byStaff.set(key, []);
     byStaff.get(key)!.push(d);
   });
   return byStaff;
 }
 
-function resolveStaffName(staffId: string, staffNameById: Map<string, string>): string {
-  return staffId === "__unassigned__" ? "Unassigned" : (staffNameById.get(staffId) ?? "Staff");
+function resolveStaffName(key: string, staffNameById: Map<string, string>): string {
+  if (staffNameById.has(key)) return staffNameById.get(key)!;
+  return key === "__unassigned__" ? "Unassigned" : key;
+}
+
+function mixedGroupWarnings(group: ScheduleDiverRow[], label: string): string[] {
+  const warnings: string[] = [];
+  const certs = new Set(group.map((g) => g.certificationLevel));
+  const nitroxMix = new Set(group.map((g) => g.nitroxRequested));
+  if (certs.size > 1) warnings.push(`${label}'s group has mixed certification levels.`);
+  if (nitroxMix.size > 1) warnings.push(`${label}'s group has a mix of Nitrox and Air.`);
+  return warnings;
 }
 
 // Matches scheduling.html's real buildPreview()/tripImageRows() section
@@ -324,17 +340,26 @@ function TripSummaryCard({
           <div className="text-sm text-gray-400">No divers assigned.</div>
         ) : (
           <div className="grid gap-2">
-            {[...byStaff.entries()].map(([staffId, group]) => (
-              <div key={staffId} className="border border-gray-100 rounded-lg p-2">
-                <div className="text-xs font-semibold text-navy mb-1">{resolveStaffName(staffId, staffNameById)}</div>
-                <div className="text-xs text-gray-600">{group.map((d) => `${d.firstName} ${d.lastName}`).join(", ")}</div>
-                {group.length > 4 && (
-                  <div className="text-xs text-orange bg-orange-light border border-orange/20 rounded-md px-2 py-1 mt-1">
-                    This team is over the 1:4 ratio. Please check the plan.
-                  </div>
-                )}
-              </div>
-            ))}
+            {[...byStaff.entries()].map(([staffId, group]) => {
+              const label = resolveStaffName(staffId, staffNameById);
+              const groupWarnings = mixedGroupWarnings(group, label);
+              return (
+                <div key={staffId} className="border border-gray-100 rounded-lg p-2">
+                  <div className="text-xs font-semibold text-navy mb-1">{label}</div>
+                  <div className="text-xs text-gray-600">{group.map((d) => `${d.firstName} ${d.lastName}`).join(", ")}</div>
+                  {group.length > 4 && (
+                    <div className="text-xs text-orange bg-orange-light border border-orange/20 rounded-md px-2 py-1 mt-1">
+                      This team is over the 1:4 ratio. Please check the plan.
+                    </div>
+                  )}
+                  {groupWarnings.map((w, i) => (
+                    <div key={i} className="text-xs text-orange bg-orange-light border border-orange/20 rounded-md px-2 py-1 mt-1">
+                      {w}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -379,12 +404,14 @@ function TripSummaryCard({
 }
 
 export function PhaseThreePanel({
+  scheduleDate,
   trips,
   boats,
   diveSites,
   staffOptions,
   onChanged,
 }: {
+  scheduleDate: string;
   trips: TripSummary[];
   boats: BoatOption[];
   diveSites: DiveSiteOption[];
@@ -397,13 +424,17 @@ export function PhaseThreePanel({
 
   // Matches scheduling.html's real behavior: the token is (re)computed
   // silently every time Phase 3 is viewed, whenever none exists yet for
-  // today — there's no manual "Generate" click anywhere in the old app.
+  // *this specific schedule date* — there's no manual "Generate" click
+  // anywhere in the old app. Keyed on scheduleDate (not "today"), so
+  // building tomorrow's schedule and viewing Phase 3 for it gets
+  // tomorrow's own token, distinct from today's — matching the live
+  // app's real per-date token design (see migration 028).
   useEffect(() => {
-    getCrewTokenToday().then((existing) => {
+    getCrewTokenForDate(scheduleDate).then((existing) => {
       if (existing) setCrewToken(existing);
-      else generateCrewToken().then((res) => setCrewToken(res.token ?? null));
+      else generateCrewToken(scheduleDate).then((res) => setCrewToken(res.token ?? null));
     });
-  }, []);
+  }, [scheduleDate]);
 
   async function copyAllPreview() {
     const texts = await Promise.all(

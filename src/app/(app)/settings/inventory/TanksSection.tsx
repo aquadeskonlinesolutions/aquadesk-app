@@ -57,6 +57,7 @@ export function TanksSection({ tanks }: { tanks: Tank[] }) {
                 <td className="py-2 pr-2">
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     min={0}
                     value={row.totalCount}
                     onChange={(e) => update(t.value, "totalCount", parseInt(e.target.value) || 0)}
@@ -66,6 +67,7 @@ export function TanksSection({ tanks }: { tanks: Tank[] }) {
                 <td className="py-2 pr-2">
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     min={0}
                     value={row.availableCount}
                     onChange={(e) =>
@@ -77,6 +79,7 @@ export function TanksSection({ tanks }: { tanks: Tank[] }) {
                 <td className="py-2 pr-2">
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     min={0}
                     value={row.inUseCount}
                     onChange={(e) => update(t.value, "inUseCount", parseInt(e.target.value) || 0)}
@@ -86,6 +89,7 @@ export function TanksSection({ tanks }: { tanks: Tank[] }) {
                 <td className="py-2">
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     min={0}
                     value={row.lowAlertThreshold}
                     onChange={(e) =>

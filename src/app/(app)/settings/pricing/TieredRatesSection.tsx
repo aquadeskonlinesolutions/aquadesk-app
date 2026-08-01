@@ -111,6 +111,7 @@ function TierTable({
                 <td className="py-2 pr-2">
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     value={row.tierFrom}
                     onChange={(e) => updateRow(row.key, "tierFrom", parseInt(e.target.value) || 0)}
                     className="w-20 border border-gray-300 rounded-md px-2 py-1"
@@ -119,6 +120,7 @@ function TierTable({
                 <td className="py-2 pr-2">
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     value={row.tierTo ?? ""}
                     placeholder="Above"
                     onChange={(e) =>
@@ -130,6 +132,7 @@ function TierTable({
                 <td className="py-2 pr-2">
                   <input
                     type="number"
+                    onFocus={(e) => e.currentTarget.select()}
                     value={row.baseRate}
                     onChange={(e) => updateRow(row.key, "baseRate", parseFloat(e.target.value) || 0)}
                     className="w-28 border border-gray-300 rounded-md px-2 py-1"

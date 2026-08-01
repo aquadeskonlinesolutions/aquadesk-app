@@ -111,6 +111,7 @@ export function EquipmentRentalSection({ rates }: { rates: EquipmentRentalRate[]
             <span className="w-32 text-sm text-gray-700 shrink-0">{row.name}</span>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               value={row.rate}
               onChange={(e) => updateDefault(i, { rate: e.target.value })}
               className="w-28 border border-gray-300 rounded-md px-2 py-1.5 text-sm"
@@ -127,6 +128,7 @@ export function EquipmentRentalSection({ rates }: { rates: EquipmentRentalRate[]
             <span className="w-32 text-sm text-gray-700 shrink-0">{r.item_name}</span>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               defaultValue={r.rate}
               onBlur={(e) => updateCustom(r.id, e.target.value)}
               className="w-28 border border-gray-300 rounded-md px-2 py-1.5 text-sm"
@@ -155,6 +157,7 @@ export function EquipmentRentalSection({ rates }: { rates: EquipmentRentalRate[]
             <label className="block text-xs font-medium text-gray-600 mb-1">Rate</label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               value={customRate}
               onChange={(e) => setCustomRate(e.target.value)}
               className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm w-28"

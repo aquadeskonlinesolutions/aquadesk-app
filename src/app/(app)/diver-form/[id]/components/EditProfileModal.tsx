@@ -130,6 +130,7 @@ export function EditProfileModal({
               <label className="block text-xs font-medium text-gray-600 mb-1">Logged Dives</label>
               <input
                 type="number"
+                onFocus={(e) => e.currentTarget.select()}
                 min={0}
                 value={form.loggedDives}
                 onChange={(e) => setForm({ ...form, loggedDives: parseInt(e.target.value, 10) || 0 })}

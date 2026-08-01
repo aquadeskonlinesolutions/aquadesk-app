@@ -191,6 +191,7 @@ export function StaffFormModal({
               <label className="block text-xs font-medium text-gray-600 mb-1">Daily Rate</label>
               <input
                 type="number"
+                onFocus={(e) => e.currentTarget.select()}
                 min={0}
                 value={form.dailyRate}
                 onChange={(e) => setForm({ ...form, dailyRate: e.target.value })}

@@ -89,6 +89,7 @@ export function TripTypesSection({ tripTypes }: { tripTypes: TripType[] }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">Travel Out (min)</label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               min={0}
               value={travelOut}
               onChange={(e) => setTravelOut(parseInt(e.target.value) || 0)}
@@ -99,6 +100,7 @@ export function TripTypesSection({ tripTypes }: { tripTypes: TripType[] }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">Travel Back (min)</label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               min={0}
               value={travelBack}
               onChange={(e) => setTravelBack(parseInt(e.target.value) || 0)}
@@ -109,6 +111,7 @@ export function TripTypesSection({ tripTypes }: { tripTypes: TripType[] }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">Per Dive (min)</label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               min={0}
               value={diveMinutes}
               onChange={(e) => setDiveMinutes(parseInt(e.target.value) || 0)}
@@ -119,6 +122,7 @@ export function TripTypesSection({ tripTypes }: { tripTypes: TripType[] }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">Surface Interval (min)</label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               min={0}
               value={surfaceInterval}
               onChange={(e) => setSurfaceInterval(parseInt(e.target.value) || 0)}

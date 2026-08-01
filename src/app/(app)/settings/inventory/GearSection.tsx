@@ -50,6 +50,7 @@ export function GearSection({ gear }: { gear: GearItem[] }) {
               <td className="py-2 pr-2">
                 <input
                   type="number"
+                  onFocus={(e) => e.currentTarget.select()}
                   min={0}
                   value={row.totalCount}
                   onChange={(e) => update(row.name, "totalCount", parseInt(e.target.value) || 0)}
@@ -59,6 +60,7 @@ export function GearSection({ gear }: { gear: GearItem[] }) {
               <td className="py-2">
                 <input
                   type="number"
+                  onFocus={(e) => e.currentTarget.select()}
                   min={0}
                   value={row.lowAlertThreshold}
                   onChange={(e) =>

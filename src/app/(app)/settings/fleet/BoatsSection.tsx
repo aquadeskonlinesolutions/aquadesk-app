@@ -140,6 +140,7 @@ export function BoatsSection({ boats }: { boats: Boat[] }) {
             </label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               value={capacity}
               onChange={(e) => setCapacity(e.target.value)}
               className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm w-24"

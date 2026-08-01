@@ -233,6 +233,7 @@ export function RentalGearsTab({
                 <label className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
                 <input
                   type="number"
+                  onFocus={(e) => e.currentTarget.select()}
                   min={0}
                   value={form.quantity}
                   onChange={(e) => setForm({ ...form, quantity: e.target.value })}
@@ -243,6 +244,7 @@ export function RentalGearsTab({
                 <label className="block text-xs font-medium text-gray-600 mb-1">Rate</label>
                 <input
                   type="number"
+                  onFocus={(e) => e.currentTarget.select()}
                   min={0}
                   value={form.rate}
                   onChange={(e) => setForm({ ...form, rate: e.target.value })}

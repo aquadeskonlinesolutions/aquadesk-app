@@ -125,6 +125,7 @@ export function ExchangeRatesSection({ rates }: { rates: ExchangeRate[] }) {
             </label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               step="0.001"
               value={newRate}
               onChange={(e) => setNewRate(e.target.value)}
@@ -162,6 +163,7 @@ export function ExchangeRatesSection({ rates }: { rates: ExchangeRate[] }) {
               <td className="py-2 pr-2">
                 <input
                   type="number"
+                  onFocus={(e) => e.currentTarget.select()}
                   step="0.001"
                   value={r.rate}
                   onChange={(e) => updateRow(r.code, { rate: e.target.value })}

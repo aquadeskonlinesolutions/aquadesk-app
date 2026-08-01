@@ -87,6 +87,7 @@ export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {
             </label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm w-32"

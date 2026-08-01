@@ -116,6 +116,7 @@ export function OtherChargesSection({ charges }: { charges: OtherCharge[] }) {
             <span className="w-44 text-sm text-gray-700 shrink-0">{row.name}</span>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               value={row.amount}
               onChange={(e) => updateDefault(i, { amount: e.target.value })}
               className="w-28 border border-gray-300 rounded-md px-2 py-1.5 text-sm"
@@ -132,6 +133,7 @@ export function OtherChargesSection({ charges }: { charges: OtherCharge[] }) {
             <span className="w-44 text-sm text-gray-700 shrink-0">{c.charge_name}</span>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               defaultValue={c.amount}
               onBlur={(e) => updateCustom(c.id, e.target.value)}
               className="w-28 border border-gray-300 rounded-md px-2 py-1.5 text-sm"
@@ -160,6 +162,7 @@ export function OtherChargesSection({ charges }: { charges: OtherCharge[] }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">Amount</label>
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               value={customAmount}
               onChange={(e) => setCustomAmount(e.target.value)}
               className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm w-28"

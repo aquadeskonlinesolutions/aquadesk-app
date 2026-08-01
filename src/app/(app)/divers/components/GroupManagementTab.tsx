@@ -205,6 +205,7 @@ export function GroupManagementTab({
             />
             <input
               type="number"
+              onFocus={(e) => e.currentTarget.select()}
               placeholder="Expected count"
               value={linkForm.expectedCount}
               onChange={(e) => setLinkForm({ ...linkForm, expectedCount: e.target.value })}
