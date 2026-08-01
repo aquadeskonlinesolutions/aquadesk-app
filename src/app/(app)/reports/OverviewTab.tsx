@@ -93,7 +93,11 @@ export function OverviewTab({
   dateToLabel: string;
 }) {
   const { summary } = data;
-  const total = Math.max(1, summary.collectedFromDivers + summary.openDiverBills + summary.notYetSettled);
+  // notYetSettled already includes openDiverBills as one of its addends
+  // (see reports/data.ts) — don't add it again here, or the donut's total
+  // (and the "Open" arc's proportion within it) silently inflates by one
+  // extra copy of openDiverBills every time.
+  const total = Math.max(1, summary.collectedFromDivers + summary.notYetSettled);
   const collectedDeg = (summary.collectedFromDivers / total) * 360;
   const openDeg = ((summary.collectedFromDivers + summary.openDiverBills) / total) * 360;
 
@@ -202,12 +206,12 @@ export function OverviewTab({
               <div className="w-[92px] h-[92px] bg-white rounded-full grid place-items-center text-center font-display text-navy overflow-hidden px-1">
                 <span
                   className={
-                    peso(summary.collectedFromDivers + summary.openDiverBills + summary.notYetSettled).length > 9
+                    peso(summary.collectedFromDivers + summary.notYetSettled).length > 9
                       ? "text-xs leading-tight"
                       : "text-xl leading-tight"
                   }
                 >
-                  {peso(summary.collectedFromDivers + summary.openDiverBills + summary.notYetSettled)}
+                  {peso(summary.collectedFromDivers + summary.notYetSettled)}
                 </span>
               </div>
             </div>
