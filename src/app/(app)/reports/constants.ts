@@ -34,3 +34,12 @@ export const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
   other: "Other",
   uncategorized: "Uncategorized",
 };
+
+// Matches the public.payment_method Postgres enum exactly (already used by
+// deposits.method) — reused here for expenses.payment_method rather than a
+// dedicated enum, per the user's own choice.
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cash: "Cash",
+  card: "Card",
+  online: "Online",
+};

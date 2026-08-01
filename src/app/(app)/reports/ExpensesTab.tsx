@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { getExpensesData, saveExpenseRecord, deleteExpenseRecord } from "./actions";
-import { EXPENSE_CATEGORY_LABELS } from "./constants";
+import { EXPENSE_CATEGORY_LABELS, PAYMENT_METHOD_LABELS } from "./constants";
 import type { ExpenseRecord, ExpensesData } from "./data";
 
 function peso(n: number): string {
@@ -74,7 +74,7 @@ type FormState = {
   category: string;
   customCategory: string;
   amount: string;
-  paidBy: string;
+  paymentMethod: string;
   notes: string;
 };
 
@@ -85,7 +85,7 @@ function emptyForm(): FormState {
     category: "fuel",
     customCategory: "",
     amount: "0",
-    paidBy: "",
+    paymentMethod: "cash",
     notes: "",
   };
 }
@@ -128,7 +128,7 @@ export function ExpensesTab({
       category: r.category,
       customCategory: r.customCategory ?? "",
       amount: String(r.amount),
-      paidBy: r.paidBy ?? "",
+      paymentMethod: r.paymentMethod ?? "cash",
       notes: r.notes ?? "",
     });
     setFormError(null);
@@ -143,7 +143,7 @@ export function ExpensesTab({
         form.category,
         form.customCategory,
         parseFloat(form.amount) || 0,
-        form.paidBy,
+        form.paymentMethod,
         form.notes,
       );
       if (res.error) {
@@ -275,13 +275,18 @@ export function ExpensesTab({
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Paid By</label>
-                <input
-                  value={form.paidBy}
-                  onChange={(e) => setForm({ ...form, paidBy: e.target.value })}
-                  placeholder="e.g. Owner, Petty Cash"
+                <label className="block text-xs font-medium text-gray-600 mb-1">Payment Method</label>
+                <select
+                  value={form.paymentMethod}
+                  onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
                   className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
-                />
+                >
+                  {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="mb-4">
@@ -320,7 +325,12 @@ export function ExpensesTab({
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400 text-right">
                   Amount
                 </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Paid By</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Payment Method
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Recorded By
+                </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Notes</th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Action</th>
               </tr>
@@ -328,7 +338,7 @@ export function ExpensesTab({
             <tbody>
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-400 text-sm">
+                  <td colSpan={7} className="text-center py-8 text-gray-400 text-sm">
                     No expenses recorded for the selected date range.
                   </td>
                 </tr>
@@ -340,7 +350,10 @@ export function ExpensesTab({
                       {categoryLabel(r.category, r.customCategory)}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-navy">{peso(r.amount)}</td>
-                    <td className="px-4 py-3">{r.paidBy || "—"}</td>
+                    <td className="px-4 py-3">
+                      {r.paymentMethod ? PAYMENT_METHOD_LABELS[r.paymentMethod] ?? r.paymentMethod : "—"}
+                    </td>
+                    <td className="px-4 py-3">{r.recordedBy}</td>
                     <td className="px-4 py-3 text-gray-500">{r.notes || ""}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">

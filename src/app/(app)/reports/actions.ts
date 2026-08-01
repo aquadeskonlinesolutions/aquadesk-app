@@ -393,7 +393,7 @@ export async function saveExpenseRecord(
   category: string,
   customCategory: string,
   amount: number,
-  paidBy: string,
+  paymentMethod: string,
   notes: string,
 ): Promise<{ error?: string }> {
   if (!date) return { error: "Date is required." };
@@ -408,14 +408,16 @@ export async function saveExpenseRecord(
     category,
     custom_category: category === "other" ? customCategory.trim() || null : null,
     amount,
-    paid_by: paidBy.trim() || null,
+    payment_method: paymentMethod || null,
     notes: notes.trim() || null,
-    created_by: user.id,
   };
 
+  // created_by ("Recorded By") is set only on insert — who first logged the
+  // expense, not whoever most recently edited it, matching the same
+  // immutable-audit-trail semantic diver notes already use.
   const { error } = id
     ? await supabase.from("expenses").update(payload).eq("id", id).eq("dive_center_id", user.diveCenterId)
-    : await supabase.from("expenses").insert(payload);
+    : await supabase.from("expenses").insert({ ...payload, created_by: user.id });
 
   if (error) return { error: error.message };
   revalidatePath("/reports");

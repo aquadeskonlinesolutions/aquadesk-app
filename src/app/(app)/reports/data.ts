@@ -616,7 +616,8 @@ export type ExpenseRecord = {
   category: string;
   customCategory: string | null;
   amount: number;
-  paidBy: string | null;
+  paymentMethod: string | null;
+  recordedBy: string;
   notes: string | null;
 };
 
@@ -781,11 +782,20 @@ export async function loadExpensesData(
 
   const { data: rows } = await supabase
     .from("expenses")
-    .select("id, date, category, custom_category, amount, paid_by, notes")
+    .select("id, date, category, custom_category, amount, payment_method, notes, created_by")
     .eq("dive_center_id", diveCenterId)
     .gte("date", dateFrom)
     .lte("date", dateTo)
     .order("date", { ascending: false });
+
+  // "Recorded By" — same batch-join-to-a-Map pattern as diver notes /
+  // Settlement's "Closed By", not a Supabase embedded-relationship select
+  // (see the ambiguous-FK PGRST201 lesson elsewhere in this codebase).
+  const recorderIds = [...new Set((rows ?? []).map((r) => r.created_by).filter((id): id is string => !!id))];
+  const { data: usersData } = recorderIds.length
+    ? await supabase.from("users").select("id, full_name").in("id", recorderIds)
+    : { data: [] as { id: string; full_name: string }[] };
+  const userMap = new Map((usersData ?? []).map((u) => [u.id, u.full_name]));
 
   const records: ExpenseRecord[] = (rows ?? []).map((r) => ({
     id: r.id,
@@ -793,7 +803,8 @@ export async function loadExpensesData(
     category: r.category,
     customCategory: r.custom_category,
     amount: safeNum(r.amount),
-    paidBy: r.paid_by,
+    paymentMethod: r.payment_method,
+    recordedBy: (r.created_by && userMap.get(r.created_by)) || "—",
     notes: r.notes,
   }));
 
