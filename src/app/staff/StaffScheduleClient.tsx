@@ -92,6 +92,9 @@ type CrewTrip = {
   notes: string | null;
   is_joiner: boolean;
   joiner_boat_name: string | null;
+  guest_divers_count: number | null;
+  guest_dive_center_name: string | null;
+  guest_notes: string | null;
   boat: { name: string | null; captain: string | null } | null;
   crew: string[];
   dive_sites: string[];
@@ -379,6 +382,30 @@ export function StaffScheduleClient() {
                   </div>
                   <div className="text-xs text-gray-400 mt-0.5">{formatTankLine(tally)}</div>
                 </div>
+
+                {(trip.guest_divers_count ?? 0) > 0 || trip.guest_dive_center_name ? (
+                  <div className="px-5 py-3.5 border-b border-gray-200">
+                    <div className="text-[0.7rem] font-extrabold text-gray-400 uppercase tracking-wide mb-1.5">
+                      Join Rides
+                    </div>
+                    <div className="text-sm font-semibold text-navy">
+                      🔗{" "}
+                      {[
+                        trip.guest_divers_count
+                          ? `+${trip.guest_divers_count} diver${trip.guest_divers_count !== 1 ? "s" : ""}`
+                          : null,
+                        trip.guest_dive_center_name
+                          ? `${trip.guest_divers_count ? "from" : "From"} ${trip.guest_dive_center_name}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    </div>
+                    {trip.guest_notes && (
+                      <div className="text-xs text-gray-600 mt-1">📝 {trip.guest_notes}</div>
+                    )}
+                  </div>
+                ) : null}
 
                 {trip.notes && (
                   <div className="px-5 py-3.5">
