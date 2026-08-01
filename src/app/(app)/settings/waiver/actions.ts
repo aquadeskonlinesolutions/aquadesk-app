@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
-import { sanitizeWaiverHtml } from "@/lib/sanitizeWaiverHtml";
+import { sanitizeWaiverHtmlServer } from "@/lib/sanitizeWaiverHtmlServer";
 
 function ok() {
   revalidatePath("/settings/waiver");
@@ -17,7 +17,7 @@ export async function saveWaiverContent(rawHtml: string) {
   const user = await requireOwner();
   const supabase = await createClient();
 
-  const clean = sanitizeWaiverHtml(rawHtml);
+  const clean = sanitizeWaiverHtmlServer(rawHtml);
 
   const { error } = await supabase
     .from("dive_centers")
