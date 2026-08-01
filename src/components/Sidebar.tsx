@@ -52,9 +52,9 @@ export function Sidebar({ user }: { user: CurrentUser }) {
           <button
             onClick={() => setPinnedOpen((v) => !v)}
             aria-label="Toggle menu"
-            className="w-9 h-9 shrink-0 rounded-[9px] bg-teal flex items-center justify-center font-display text-lg"
+            className="w-9 h-9 shrink-0 rounded-[9px] overflow-hidden"
           >
-            A
+            <img src="/logo.png" alt="AquaDesk" className="w-full h-full object-contain" />
           </button>
           <span
             className={`font-display text-xl tracking-tight whitespace-nowrap transition-opacity duration-150 ${

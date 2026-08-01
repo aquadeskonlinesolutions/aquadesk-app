@@ -10,8 +10,8 @@ export default async function LoginPage({
     <div className="min-h-screen flex items-center justify-center bg-off-white px-4">
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-9 h-9 rounded-[9px] bg-navy flex items-center justify-center font-display text-lg text-white">
-            A
+          <div className="w-9 h-9 rounded-[9px] overflow-hidden">
+            <img src="/logo.png" alt="AquaDesk" className="w-full h-full object-contain" />
           </div>
           <span className="font-display text-2xl text-navy">
             Aqua<span className="text-teal">Desk</span>

@@ -18,6 +18,9 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: "AquaDesk",
   description: "Dive center operations software",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

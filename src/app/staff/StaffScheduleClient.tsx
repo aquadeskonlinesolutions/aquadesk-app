@@ -206,6 +206,7 @@ export function StaffScheduleClient() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-off-white px-4">
         <div className="max-w-sm w-full bg-white rounded-2xl shadow-md p-6 text-center">
+          <img src="/logo.png" alt="AquaDesk" className="w-14 h-14 mx-auto mb-3 rounded-[9px] object-contain" />
           <div className="font-display text-2xl text-navy mb-1">Today&apos;s Schedule</div>
           <p className="text-gray-400 text-sm mb-5">Enter today&apos;s token to view the schedule</p>
           {error && (
@@ -240,6 +241,7 @@ export function StaffScheduleClient() {
     <div className="min-h-screen bg-off-white">
       <div className="sticky top-0 z-50 bg-navy px-5 py-3.5">
         <div className="flex items-center gap-2 mb-0.5">
+          <img src="/logo.png" alt="AquaDesk" className="w-5 h-5 rounded-[5px] object-contain" />
           <span className="text-white font-bold text-sm">AquaDesk</span>
         </div>
         {dcName && <div className="text-teal font-semibold text-sm mb-0.5">{dcName}</div>}
