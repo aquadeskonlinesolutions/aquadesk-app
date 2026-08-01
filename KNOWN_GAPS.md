@@ -11,6 +11,29 @@ would require. Remove the entry once it's resolved.
 
 ## Open
 
+### Cloudflare Workers deploy: proxy.ts must be manually excluded each time
+
+`@opennextjs/cloudflare` (installed 2026-08-01, deploying to the
+pre-prod Worker) doesn't support Next.js 16's `proxy.ts` yet — the
+build fails outright with "Node.js middleware is not currently
+supported." A real fix (`opennextjs/opennextjs-cloudflare#1309`) exists
+as an open PR, not yet merged/released as of this writing.
+
+Workaround, confirmed safe: rename `src/proxy.ts` out of the way,
+`npm run cf:build`, rename it back immediately. Verified this doesn't
+create a security gap — every protected route already does its own
+independent auth check regardless of `proxy.ts`
+(`(app)/layout.tsx`'s `getCurrentUser()`, `/office`'s
+`getCurrentPlatformAdmin()`, `/account/password`'s `setPassword`
+action) — `proxy.ts` is genuinely just an optimistic UX redirect on
+top of those, per its own existing code comment. Confirmed live: a
+logged-out visit to a protected route on the deployed Worker still
+correctly redirects to `/login`.
+
+To fix for real: watch `opennextjs/opennextjs-cloudflare#1309` for a
+release, then remove the rename-dance from the deploy process (see
+`CLAUDE.md`'s 2026-08-01 session write-up for the exact steps used).
+
 ### Divers > Group Management: no "Review & Apply Charges" bulk billing
 
 The live app's `divers.html` has a bulk group-billing flow (`openBulkReview`,
