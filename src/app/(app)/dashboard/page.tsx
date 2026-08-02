@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/dal";
 import { loadDashboardData } from "./data";
 import { DiversTable } from "./DiversTable";
 import type { Alert, BoatStatus } from "./data";
-import { EXCESS_LABEL, EXCESS_HINT } from "@/lib/payments";
+import { EXCESS_HINT } from "@/lib/payments";
 
 function peso(amount: number): string {
   return `₱${Math.round(amount).toLocaleString()}`;
@@ -153,9 +153,6 @@ function PaymentChannelsCard({
     { label: "Card", value: channels.card, sub: "Includes card surcharge" },
     { label: "Online", value: channels.online, sub: "Includes online surcharge" },
     { label: "Total Today", value: channels.total, sub: "All methods combined" },
-    ...(channels.excess > 0
-      ? [{ label: EXCESS_LABEL, value: channels.excess, sub: EXCESS_HINT }]
-      : []),
   ];
 
   return (
@@ -183,6 +180,11 @@ function PaymentChannelsCard({
             <div className="text-xs text-gray-400 mt-1 leading-tight">
               {item.sub}
             </div>
+            {item.label === "Total Today" && channels.excess > 0 && (
+              <div className="text-xs text-gray-400 italic mt-1 leading-tight" title={EXCESS_HINT}>
+                {peso(channels.excess)} excess or change (not counted as revenue)
+              </div>
+            )}
           </div>
         ))}
       </div>
