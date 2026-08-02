@@ -683,20 +683,6 @@ function nowManilaMinute(): string {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
-// Duplicated from diver-form/[id]/pricing.ts's own normalizeSiteKey (not
-// cross-imported, matching this codebase's established per-page small-
-// helper duplication precedent) — split on common separators, trim,
-// lowercase, sort, join, so a package's site combo matches regardless of
-// entry order.
-function normalizeSiteKey(text: string): string {
-  return text
-    .split(/[,|+•;\n]+/)
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
-    .sort()
-    .join("|");
-}
-
 // Only writes bare, zero-priced activities rows — no pricing logic here at
 // all. Real pricing happens later via Diver Detail's existing Auto-Price/
 // manual-edit flow, per the explicit user decision behind this build.
@@ -787,26 +773,21 @@ export async function markBoatReturned(
     : { data: [] };
   const staffNameById = new Map((staffRows ?? []).map((s) => [s.id, `${s.first_name} ${s.last_name}`]));
 
-  // Package-mode activities log just the matched package's own name (e.g.
-  // "Shark Diving"), not the raw joined site list — same site-combination
-  // matching pricing.ts's autoPricePackageMode already uses for Apply
-  // Charges, so Apply Charges and Boat Return agree on what a trip's
-  // package actually is. Falls back to the joined site names only if no
-  // package configured for this site combination matches (still better
-  // than leaving the activity's dive_site blank).
-  let packageActivityName: string | null = null;
-  if (isPackageMode && siteNames.length > 0) {
-    const siteKey = normalizeSiteKey(siteNames.join(","));
-    if (siteKey) {
-      const { data: packageRows } = await supabase
-        .from("packages")
-        .select("package_name, dive_site")
-        .eq("dive_center_id", user.diveCenterId)
-        .eq("is_active", true);
-      const match = (packageRows ?? []).find((p) => normalizeSiteKey(p.dive_site ?? "") === siteKey);
-      packageActivityName = match?.package_name ?? null;
-    }
-  }
+  // dive_site always holds the raw joined site combination (e.g. "Kimud,
+  // Kimud, Monad"), matching tier mode's identical shape — every downstream
+  // consumer that re-derives package pricing (pricing.ts's
+  // resolvePackageBySiteCombo/resolveSite, this file's own
+  // resolvePackageRatesByKey/findPackagesBySiteKey, VisitPanel.tsx's package
+  // dropdown) matches on this raw combo via normalizeSiteKey, not on a
+  // package's display name. An earlier version of this code wrote the
+  // matched package's own name here instead (e.g. "Shark") — that silently
+  // broke every one of those re-matches for any package-mode trip closed
+  // through Boat Return, since a package's name essentially never equals
+  // its own site-combo string, surfacing as "No packages configured for
+  // this exact site combination" the moment Apply Charges was clicked.
+  // The friendly package name never needed to live here anyway —
+  // VisitPanel.tsx already re-derives and displays it by matching this
+  // same raw combo against packages.
 
   // Duplicate-activity guard, matching the live app's "Activities already
   // added" check — a diver can already have an activities row for this
@@ -885,7 +866,7 @@ export async function markBoatReturned(
         visit_id: visit.id,
         schedule_id: scheduleId,
         date: schedule.schedule_date,
-        dive_site: packageActivityName ?? (siteNames.length > 0 ? siteNames.join(", ") : null),
+        dive_site: siteNames.length > 0 ? siteNames.join(", ") : null,
         staff_name: staffName,
         status: "completed",
         flags: anyNitrox ? { nitrox_requested: true } : any15l ? { tank_15l_requested: true } : null,

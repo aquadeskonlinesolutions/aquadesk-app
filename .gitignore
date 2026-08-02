@@ -37,6 +37,7 @@ yarn-error.log*
 
 # cloudflare (opennextjs-cloudflare build output)
 /.open-next/
+/.wrangler/
 
 # vercel
 .vercel
