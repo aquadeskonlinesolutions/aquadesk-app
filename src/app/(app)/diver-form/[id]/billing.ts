@@ -23,6 +23,7 @@ export type PaymentBreakdown = PaymentInput & {
   onlineSurchargeAmount: number;
   totalSurcharge: number;
   totalCollected: number;
+  excessAmount: number;
 };
 
 export function computePaymentBreakdown(
@@ -45,7 +46,13 @@ export function computePaymentBreakdown(
   const totalSurcharge = cardSurchargeAmount + onlineSurchargeAmount;
   const totalTendered =
     input.cashAmount + cashForeignPHP + input.cardAmount + cardSurchargeAmount + input.onlineAmount + onlineSurchargeAmount;
-  const totalCollected = Math.min(totalTendered, Math.max(0, amountOwed));
+  const cappedOwed = Math.max(0, amountOwed);
+  const totalCollected = Math.min(totalTendered, cappedOwed);
+  // What was physically handed over beyond what's billed — real money, but
+  // deliberately never counted as revenue (see the comment on `amountOwed`
+  // above). Tracked as its own figure rather than silently dropped, so it
+  // can be shown consistently instead of vanishing from every reconciliation.
+  const excessAmount = Math.max(0, totalTendered - cappedOwed);
 
   return {
     ...input,
@@ -56,5 +63,6 @@ export function computePaymentBreakdown(
     onlineSurchargeAmount,
     totalSurcharge,
     totalCollected,
+    excessAmount,
   };
 }

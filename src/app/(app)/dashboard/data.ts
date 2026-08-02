@@ -596,6 +596,7 @@ export type PaymentChannels = {
   card: number;
   online: number;
   total: number;
+  excess: number;
 };
 
 async function loadPaymentChannels(
@@ -609,7 +610,7 @@ async function loadPaymentChannels(
     supabase
       .from("payments")
       .select(
-        "total_collected, total_paid, cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount",
+        "total_collected, total_paid, cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount, excess_amount",
       )
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", startIso)
@@ -646,12 +647,18 @@ async function loadPaymentChannels(
   const totalCash = cash + depSum("cash");
   const totalCard = card + depSum("card");
   const totalOnline = online + depSum("online");
+  // Foreign cash/change handed over above what was billed — real money, but
+  // deliberately excluded from cash/card/online/total above (those must
+  // stay reconciled to actual revenue). Tracked as its own figure instead
+  // of silently dropped; see payments.excess_amount.
+  const excess = rows.reduce((s, p) => s + safeNum(p.excess_amount), 0);
 
   return {
     cash: totalCash,
     card: totalCard,
     online: totalOnline,
     total: totalCash + totalCard + totalOnline,
+    excess,
   };
 }
 

@@ -1,4 +1,5 @@
 import type { OverviewData } from "./data";
+import { EXCESS_LABEL, EXCESS_HINT } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -139,6 +140,12 @@ export function OverviewTab({
             <SummaryRow label="Collected from Divers" value={peso(summary.collectedFromDivers)} />
             <SummaryRow label="Gear Rental Income (Collected)" value={peso(summary.rentalIncome)} />
             <SummaryRow label="Join Ride Income (Collected)" value={peso(summary.joinIncome)} />
+            {summary.excessCollected > 0 && (
+              <div className="flex justify-between py-2 pl-4 text-xs text-gray-400 italic" title={EXCESS_HINT}>
+                <span>{EXCESS_LABEL} — not counted above</span>
+                <span>{peso(summary.excessCollected)}</span>
+              </div>
+            )}
           </div>
           <div className="mb-4">
             <SummaryRow label="Money Out" value={peso(summary.moneyOut)} bold />

@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/dal";
 import { loadDashboardData } from "./data";
 import { DiversTable } from "./DiversTable";
 import type { Alert, BoatStatus } from "./data";
+import { EXCESS_LABEL, EXCESS_HINT } from "@/lib/payments";
 
 function peso(amount: number): string {
   return `₱${Math.round(amount).toLocaleString()}`;
@@ -145,13 +146,16 @@ function AlertsCard({ alerts }: { alerts: Alert[] }) {
 function PaymentChannelsCard({
   channels,
 }: {
-  channels: { cash: number; card: number; online: number; total: number };
+  channels: { cash: number; card: number; online: number; total: number; excess: number };
 }) {
   const items = [
     { label: "Cash", value: channels.cash, sub: "PHP equivalent" },
     { label: "Card", value: channels.card, sub: "Includes card surcharge" },
     { label: "Online", value: channels.online, sub: "Includes online surcharge" },
     { label: "Total Today", value: channels.total, sub: "All methods combined" },
+    ...(channels.excess > 0
+      ? [{ label: EXCESS_LABEL, value: channels.excess, sub: EXCESS_HINT }]
+      : []),
   ];
 
   return (

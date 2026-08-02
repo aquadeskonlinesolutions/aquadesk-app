@@ -43,6 +43,7 @@ export type SiteActivity = { name: string; count: number };
 export type BusinessSummary = {
   moneyIn: number;
   collectedFromDivers: number;
+  excessCollected: number;
   rentalIncome: number;
   joinIncome: number;
   moneyOut: number;
@@ -104,7 +105,7 @@ export async function loadOverviewData(
     supabase
       .from("payments")
       .select(
-        "total_collected, total_paid, cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount",
+        "total_collected, total_paid, cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount, excess_amount",
       )
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", manilaDayBoundsUtcIso(dateFrom).startIso)
@@ -167,6 +168,11 @@ export async function loadOverviewData(
   // billed, not what was physically handed over" decision. Recomputing here
   // would silently re-inflate past that cap.
   const collectedFromDivers = (paymentsInRange ?? []).reduce((sum, p) => sum + getPaidAmount(p), 0);
+
+  // Tendered above what was billed (foreign cash overshoot, etc.) — real
+  // money handled, but deliberately excluded from collectedFromDivers/
+  // moneyIn/netProfit above. Informational only; see payments.excess_amount.
+  const excessCollected = (paymentsInRange ?? []).reduce((sum, p) => sum + safeNum(p.excess_amount), 0);
 
   // ── Open diver bills (current outstanding balance, not date-bound) ────
   const openVisitIds = (openVisits ?? []).map((v) => v.id);
@@ -269,6 +275,7 @@ export async function loadOverviewData(
     summary: {
       moneyIn,
       collectedFromDivers,
+      excessCollected,
       rentalIncome,
       joinIncome,
       moneyOut,
@@ -653,6 +660,7 @@ export type SettlementRow = {
   online: number;
   onlineSurcharge: number;
   totalCollected: number;
+  excessAmount: number;
   isDeposit: boolean;
 };
 
@@ -671,7 +679,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
     supabase
       .from("payments")
       .select(
-        "paid_at, created_at, diver_id, visit_id, cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount, total_collected",
+        "paid_at, created_at, diver_id, visit_id, cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount, total_collected, excess_amount",
       )
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", dayStart)
@@ -750,6 +758,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
       online: safeNum(p.online_amount),
       onlineSurcharge: safeNum(p.online_surcharge_amount),
       totalCollected: safeNum(p.total_collected),
+      excessAmount: safeNum(p.excess_amount),
       isDeposit: false,
     };
   });
@@ -766,6 +775,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
     online: d.method === "online" ? safeNum(d.amount) : 0,
     onlineSurcharge: 0,
     totalCollected: 0,
+    excessAmount: 0,
     isDeposit: true,
   }));
 

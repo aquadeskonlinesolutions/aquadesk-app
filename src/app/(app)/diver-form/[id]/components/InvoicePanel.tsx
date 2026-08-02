@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { sendInvoice } from "../actions";
 import type { VisitInvoice } from "../data";
+import { EXCESS_LABEL } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -184,6 +185,12 @@ export function InvoicePanel({
                     Online{num(payment.online_surcharge_amount) > 0 ? ` (incl. surcharge ${peso(num(payment.online_surcharge_amount))})` : ""}
                   </td>
                   <td className="px-3 py-2 text-right">{peso(num(payment.online_amount))}</td>
+                </tr>
+              )}
+              {num(payment.excess_amount) > 0 && (
+                <tr className="border-b border-gray-100">
+                  <td className="px-3 py-2 text-orange">{EXCESS_LABEL}</td>
+                  <td className="px-3 py-2 text-right text-orange">{peso(num(payment.excess_amount))}</td>
                 </tr>
               )}
               <tr className="bg-navy text-white font-bold">

@@ -5,6 +5,7 @@ import { savePaymentOnly, checkoutVisit } from "../actions";
 import { computePaymentBreakdown, type PaymentInput } from "../billing";
 import type { Activity, Deposit, ExistingPayment, PaymentConfig, Visit } from "../data";
 import { useToast } from "@/components/ui/Toast";
+import { EXCESS_LABEL, EXCESS_HINT } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -132,6 +133,14 @@ export function BillSummary({
             <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400">Balance</div>
             <div className={`text-lg font-bold ${balance > 0 ? "text-red" : "text-green"}`}>{peso(balance)}</div>
           </div>
+          {breakdown.excessAmount > 0 && (
+            <div>
+              <div className="text-xs font-extrabold uppercase tracking-wide text-gray-400" title={EXCESS_HINT}>
+                {EXCESS_LABEL}
+              </div>
+              <div className="text-lg font-bold text-orange">{peso(breakdown.excessAmount)}</div>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 border-t border-gray-200 pt-4">

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { getSettlementData } from "./actions";
 import type { SettlementRow, SettlementData } from "./data";
+import { EXCESS_LABEL } from "@/lib/payments";
 
 function todayManila(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -32,6 +33,7 @@ function totals(rows: SettlementRow[]) {
     online: rows.reduce((s, r) => s + r.online, 0),
     onlineSurcharge: rows.reduce((s, r) => s + r.onlineSurcharge, 0),
     totalCollected: rows.reduce((s, r) => s + r.totalCollected, 0),
+    excessAmount: rows.reduce((s, r) => s + r.excessAmount, 0),
   };
 }
 
@@ -47,6 +49,7 @@ function downloadCsv(data: SettlementData) {
     "Online",
     "Online Surcharge",
     "Total Collected",
+    EXCESS_LABEL,
   ];
   const csvRows = data.rows.map((r) =>
     [
@@ -60,6 +63,7 @@ function downloadCsv(data: SettlementData) {
       r.online,
       r.isDeposit ? "" : r.onlineSurcharge,
       r.isDeposit ? "" : r.totalCollected,
+      r.isDeposit ? "" : r.excessAmount,
     ]
       .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
       .join(","),
@@ -77,6 +81,7 @@ function downloadCsv(data: SettlementData) {
       tot.online,
       tot.onlineSurcharge,
       tot.totalCollected,
+      tot.excessAmount,
     ].join(","),
   );
   const csv = [headers.join(","), ...csvRows].join("\r\n");
@@ -178,12 +183,15 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                 <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400 text-right">
                   Total Collected
                 </th>
+                <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400 text-right">
+                  {EXCESS_LABEL}
+                </th>
               </tr>
             </thead>
             <tbody>
               {!hasRows ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-8 text-gray-400 text-sm">
+                  <td colSpan={11} className="text-center py-8 text-gray-400 text-sm">
                     No payments recorded for this date.
                   </td>
                 </tr>
@@ -205,6 +213,9 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                     <td className="px-3 py-3 text-right font-semibold text-navy">
                       {r.isDeposit ? "—" : fmtPHP(r.totalCollected)}
                     </td>
+                    <td className="px-3 py-3 text-right text-orange">
+                      {r.isDeposit ? "—" : fmtPHP(r.excessAmount)}
+                    </td>
                   </tr>
                 ))
               )}
@@ -224,6 +235,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.online)}</td>
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.onlineSurcharge)}</td>
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.totalCollected)}</td>
+                  <td className="px-3 py-3 text-right">{fmtPHP(tot.excessAmount)}</td>
                 </tr>
               </tfoot>
             )}
@@ -250,6 +262,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                 <th className="px-2 py-1.5 border-b border-gray-300 text-right">Online</th>
                 <th className="px-2 py-1.5 border-b border-gray-300 text-right">Online Surch.</th>
                 <th className="px-2 py-1.5 border-b border-gray-300 text-right">Total</th>
+                <th className="px-2 py-1.5 border-b border-gray-300 text-right">{EXCESS_LABEL}</th>
               </tr>
             </thead>
             <tbody>
@@ -271,6 +284,9 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right font-bold">
                     {r.isDeposit ? "—" : fmtPHP(r.totalCollected)}
                   </td>
+                  <td className="px-2 py-1.5 border-b border-gray-100 text-right">
+                    {r.isDeposit ? "—" : fmtPHP(r.excessAmount)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -288,6 +304,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                 <td className="px-2 py-1.5 text-right">{fmtPHP(tot.online)}</td>
                 <td className="px-2 py-1.5 text-right">{fmtPHP(tot.onlineSurcharge)}</td>
                 <td className="px-2 py-1.5 text-right">{fmtPHP(tot.totalCollected)}</td>
+                <td className="px-2 py-1.5 text-right">{fmtPHP(tot.excessAmount)}</td>
               </tr>
             </tfoot>
           </table>

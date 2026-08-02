@@ -1,6 +1,14 @@
 // Shared between Dashboard and Reports — both need "how much has actually
 // been collected against this bill so far" from a payments row.
 
+// Shared verbatim across Dashboard, Diver Form (BillSummary/InvoicePanel),
+// Settlement, and Reports Overview — one label/hint pair so the same figure
+// reads identically everywhere it's shown, instead of four independently
+// worded strings drifting apart.
+export const EXCESS_LABEL = "Excess (Change)";
+export const EXCESS_HINT =
+  "Cash or foreign-currency tender above what was billed — not counted as revenue.";
+
 export function safeNum(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
