@@ -45,8 +45,9 @@ export function BillSummary({
 
   const grandTotal = activities.filter((a) => a.status !== "cancelled").reduce((s, a) => s + a.total, 0);
   const depositsTotal = deposits.reduce((s, d) => s + d.amount, 0);
-  const breakdown = computePaymentBreakdown(input, paymentConfig.cardSurchargeRate, paymentConfig.onlineSurchargeRate);
-  const balance = Math.max(0, grandTotal - input.discount - depositsTotal - breakdown.totalCollected);
+  const amountOwed = grandTotal - input.discount - depositsTotal;
+  const breakdown = computePaymentBreakdown(input, paymentConfig.cardSurchargeRate, paymentConfig.onlineSurchargeRate, amountOwed);
+  const balance = Math.max(0, amountOwed - breakdown.totalCollected);
   const hasOpenActivities = activities.some(
     (a) => a.status === "planned" || a.status === "scheduled" || a.status === "ongoing",
   );

@@ -98,7 +98,7 @@ export async function loadOverviewData(
     supabase
       .from("payments")
       .select(
-        "cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount",
+        "total_collected, total_paid, cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount",
       )
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", manilaDayBoundsUtcIso(dateFrom).startIso)
@@ -151,17 +151,15 @@ export async function loadOverviewData(
   const divesServed = new Set(completedActivities.map((a) => a.diver_id)).size;
 
   // ── Collected from divers (money actually received in range) ──────────
-  const collectedFromDivers = (paymentsInRange ?? []).reduce(
-    (sum, p) =>
-      sum +
-      safeNum(p.cash_amount) +
-      safeNum(p.cash_amount_foreign) * safeNum(p.cash_exchange_rate) +
-      safeNum(p.card_amount) +
-      safeNum(p.card_surcharge_amount) +
-      safeNum(p.online_amount) +
-      safeNum(p.online_surcharge_amount),
-    0,
-  );
+  // Reads the stored total_collected/total_paid (getPaidAmount already
+  // prefers these) rather than recomputing from the raw per-method fields —
+  // cash_amount_foreign × cash_exchange_rate is the *tendered* foreign-cash
+  // conversion, which can legitimately exceed what's owed (e.g. a ₱11,500
+  // bill paid with $210 at ₱57 = ₱11,970); the stored total is deliberately
+  // capped to what was actually owed, per the "reconcile to what was
+  // billed, not what was physically handed over" decision. Recomputing here
+  // would silently re-inflate past that cap.
+  const collectedFromDivers = (paymentsInRange ?? []).reduce((sum, p) => sum + getPaidAmount(p), 0);
 
   // ── Open diver bills (current outstanding balance, not date-bound) ────
   const openVisitIds = (openVisits ?? []).map((v) => v.id);

@@ -701,8 +701,9 @@ export async function savePaymentOnly(
   const supabase = await createClient();
 
   const config = await loadPaymentConfig(user.diveCenterId);
-  const breakdown = computePaymentBreakdown(input, config.cardSurchargeRate, config.onlineSurchargeRate);
-  const balance = Math.max(0, grandTotalPhp - input.discount - depositsTotal - breakdown.totalCollected);
+  const amountOwed = grandTotalPhp - input.discount - depositsTotal;
+  const breakdown = computePaymentBreakdown(input, config.cardSurchargeRate, config.onlineSurchargeRate, amountOwed);
+  const balance = Math.max(0, amountOwed - breakdown.totalCollected);
 
   const { error } = await supabase.from("payments").upsert(
     {
@@ -806,8 +807,9 @@ export async function checkoutVisit(
   const depositsTotal = (depositsRaw ?? []).reduce((s, d) => s + Number(d.amount), 0);
 
   const config = await loadPaymentConfig(user.diveCenterId);
-  const breakdown = computePaymentBreakdown(input, config.cardSurchargeRate, config.onlineSurchargeRate);
-  const balance = grandTotal - input.discount - depositsTotal - breakdown.totalCollected;
+  const amountOwed = grandTotal - input.discount - depositsTotal;
+  const breakdown = computePaymentBreakdown(input, config.cardSurchargeRate, config.onlineSurchargeRate, amountOwed);
+  const balance = amountOwed - breakdown.totalCollected;
 
   if (balance > 0.01) {
     return { error: `Balance of ₱${Math.round(balance).toLocaleString()} still due — collect full payment before checkout.` };

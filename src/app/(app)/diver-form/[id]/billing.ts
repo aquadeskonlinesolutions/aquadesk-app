@@ -29,13 +29,23 @@ export function computePaymentBreakdown(
   input: PaymentInput,
   cardSurchargeRate: number,
   onlineSurchargeRate: number,
+  // What's actually still owed on this bill (grandTotal - discount -
+  // depositsTotal) — required so totalCollected can be capped to it. Foreign
+  // cash in particular is handed over in whole bills/denominations, so it
+  // routinely overshoots what's owed (e.g. a ₱11,500 bill paid with $210 at
+  // ₱57 = ₱11,970). Per the explicit decision behind this cap: the excess is
+  // real (change handed back, occasionally a tip) but deliberately never
+  // tracked — end-of-day reconciliation should match exactly what was
+  // billed, no more, no less, not what was physically tendered.
+  amountOwed: number,
 ): PaymentBreakdown {
   const cashForeignPHP = input.cashAmountForeign * input.cashExchangeRate;
   const cardSurchargeAmount = input.cardAmount * cardSurchargeRate;
   const onlineSurchargeAmount = input.onlineAmount * onlineSurchargeRate;
   const totalSurcharge = cardSurchargeAmount + onlineSurchargeAmount;
-  const totalCollected =
+  const totalTendered =
     input.cashAmount + cashForeignPHP + input.cardAmount + cardSurchargeAmount + input.onlineAmount + onlineSurchargeAmount;
+  const totalCollected = Math.min(totalTendered, Math.max(0, amountOwed));
 
   return {
     ...input,

@@ -609,7 +609,7 @@ async function loadPaymentChannels(
     supabase
       .from("payments")
       .select(
-        "cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount",
+        "total_collected, total_paid, cash_amount, cash_amount_foreign, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount",
       )
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", startIso)
@@ -622,19 +622,20 @@ async function loadPaymentChannels(
   ]);
 
   const rows = payments ?? [];
-  const cash = rows.reduce(
-    (s, p) =>
-      s + safeNum(p.cash_amount) + safeNum(p.cash_amount_foreign) * safeNum(p.cash_exchange_rate),
-    0,
-  );
-  const card = rows.reduce(
-    (s, p) => s + safeNum(p.card_amount) + safeNum(p.card_surcharge_amount),
-    0,
-  );
-  const online = rows.reduce(
-    (s, p) => s + safeNum(p.online_amount) + safeNum(p.online_surcharge_amount),
-    0,
-  );
+  // cash_amount_foreign × cash_exchange_rate is the tendered conversion,
+  // which can legitimately exceed what's owed (foreign cash is handed over
+  // in whole bills/denominations) — the stored total_collected/total_paid
+  // is deliberately capped to what was actually billed. Card/online are
+  // charged to an exact amount the secretary enters, so overage there in
+  // practice never happens; cash absorbs the cap per row so this channel
+  // split still sums to the same real total_collected, not the raw tender.
+  const card = rows.reduce((s, p) => s + safeNum(p.card_amount) + safeNum(p.card_surcharge_amount), 0);
+  const online = rows.reduce((s, p) => s + safeNum(p.online_amount) + safeNum(p.online_surcharge_amount), 0);
+  const cash = rows.reduce((s, p) => {
+    const rawCash = safeNum(p.cash_amount) + safeNum(p.cash_amount_foreign) * safeNum(p.cash_exchange_rate);
+    const nonCash = safeNum(p.card_amount) + safeNum(p.card_surcharge_amount) + safeNum(p.online_amount) + safeNum(p.online_surcharge_amount);
+    return s + Math.max(0, Math.min(rawCash, getPaidAmount(p) - nonCash));
+  }, 0);
 
   const deps = deposits ?? [];
   const depSum = (method: string) =>
