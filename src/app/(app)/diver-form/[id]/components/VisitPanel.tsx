@@ -174,7 +174,17 @@ function ActivityRow({
         next.equipmentRental +
         next.addons -
         next.discount;
-      onChanged({ ...activity, ...next, diveSite: next.diveSite || null, staffName: next.staffName || null, total: computedTotal });
+      onChanged({
+        ...activity,
+        ...next,
+        diveSite: next.diveSite || null,
+        staffName: next.staffName || null,
+        total: computedTotal,
+        // Only a "package" selection ever writes package_id server-side
+        // (autoFillFromActivitySelection) — course/site selections leave the
+        // row's existing value untouched, so mirror that here too.
+        packageId: selection.kind === "package" ? selection.packageId : activity.packageId,
+      });
     });
   }
 
@@ -231,14 +241,19 @@ function ActivityRow({
       </select>
     );
   } else if (pricingMode === "package") {
-    // Only pre-select when exactly one package matches — a site combo that
-    // matches 2+ packages is exactly the ambiguous case Apply Charges'
-    // RateSelectModal exists to resolve, so it must fall through to the
-    // "needs Apply Charges" legacy display too, not silently pick whichever
-    // package happens to come first.
+    // Prefer the row's own resolved package_id (set by Boat Return or a
+    // prior pick from this same dropdown, migration 032) — a direct, certain
+    // reference, not a re-derived guess. Only for rows with no package_id at
+    // all (legacy rows from before this migration, or a genuinely unresolved
+    // one) fall back to combo-matching, which only pre-selects when exactly
+    // one package matches — a site combo that matches 2+ packages is exactly
+    // the ambiguous case Apply Charges' RateSelectModal exists to resolve, so
+    // it must fall through to the "needs Apply Charges" display too, not
+    // silently pick whichever package happens to come first.
+    const byId = activity.packageId ? packages.find((p) => p.id === activity.packageId) : null;
     const siteKey = normalizeSiteKey(fields.diveSite || "");
-    const packageMatches = packages.filter((p) => normalizeSiteKey(p.diveSite) === siteKey);
-    const resolved = packageMatches.length === 1 ? packageMatches[0] : null;
+    const packageMatches = byId ? [] : packages.filter((p) => normalizeSiteKey(p.diveSite) === siteKey);
+    const resolved = byId ?? (packageMatches.length === 1 ? packageMatches[0] : null);
     const hasUnresolvedValue = !resolved && !!fields.diveSite;
     activityCell = (
       <select

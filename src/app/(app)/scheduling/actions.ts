@@ -683,6 +683,21 @@ function nowManilaMinute(): string {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
+// Duplicated from diver-form/[id]/pricing.ts's own normalizeSiteKey (not
+// cross-imported, matching this codebase's established per-page small-
+// helper duplication precedent) — split on common separators, trim,
+// lowercase, sort, join, so a package's site combo matches regardless of
+// entry order. Used only to resolve activities.package_id (a display tag,
+// see below) — never for pricing, which stays entirely out of scope here.
+function normalizeSiteKey(text: string): string {
+  return text
+    .split(/[,|+•;\n]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
 // Only writes bare, zero-priced activities rows — no pricing logic here at
 // all. Real pricing happens later via Diver Detail's existing Auto-Price/
 // manual-edit flow, per the explicit user decision behind this build.
@@ -776,18 +791,39 @@ export async function markBoatReturned(
   // dive_site always holds the raw joined site combination (e.g. "Kimud,
   // Kimud, Monad"), matching tier mode's identical shape — every downstream
   // consumer that re-derives package pricing (pricing.ts's
-  // resolvePackageBySiteCombo/resolveSite, this file's own
+  // resolvePackageBySiteCombo/resolveSite, diver-form's own
   // resolvePackageRatesByKey/findPackagesBySiteKey, VisitPanel.tsx's package
   // dropdown) matches on this raw combo via normalizeSiteKey, not on a
-  // package's display name. An earlier version of this code wrote the
-  // matched package's own name here instead (e.g. "Shark") — that silently
-  // broke every one of those re-matches for any package-mode trip closed
-  // through Boat Return, since a package's name essentially never equals
-  // its own site-combo string, surfacing as "No packages configured for
-  // this exact site combination" the moment Apply Charges was clicked.
-  // The friendly package name never needed to live here anyway —
-  // VisitPanel.tsx already re-derives and displays it by matching this
-  // same raw combo against packages.
+  // package's display name — and Reports Overview's dive-site activity bars
+  // (reports/data.ts's splitDiveSites) split this same column on commas to
+  // count real per-site visits, which would silently misreport if it held a
+  // package name instead. An earlier version of this code wrote the matched
+  // package's own name here instead (e.g. "Shark") — that silently broke
+  // every one of those re-matches for any package-mode trip closed through
+  // Boat Return, surfacing as "No packages configured for this exact site
+  // combination" the moment Apply Charges was clicked.
+  //
+  // package_id (migration 032) is the separate, correct home for "which
+  // package is this row" — a pure display tag, never read for pricing.
+  // Resolved here only when the trip's site combo matches *exactly one*
+  // active package; left null on 0 or 2+ matches rather than silently
+  // guessing among ambiguous packages sharing the same site combo (the
+  // same "don't guess ambiguity" rule Apply Charges' own RateSelectModal
+  // follows). Consumers that want a friendly name (the invoice snapshot,
+  // built once at checkout) resolve it from this id.
+  let packageId: string | null = null;
+  if (isPackageMode && siteNames.length > 0) {
+    const siteKey = normalizeSiteKey(siteNames.join(","));
+    if (siteKey) {
+      const { data: packageRows } = await supabase
+        .from("packages")
+        .select("id, dive_site")
+        .eq("dive_center_id", user.diveCenterId)
+        .eq("is_active", true);
+      const matches = (packageRows ?? []).filter((p) => normalizeSiteKey(p.dive_site ?? "") === siteKey);
+      packageId = matches.length === 1 ? matches[0].id : null;
+    }
+  }
 
   // Duplicate-activity guard, matching the live app's "Activities already
   // added" check — a diver can already have an activities row for this
@@ -867,6 +903,7 @@ export async function markBoatReturned(
         schedule_id: scheduleId,
         date: schedule.schedule_date,
         dive_site: siteNames.length > 0 ? siteNames.join(", ") : null,
+        package_id: packageId,
         staff_name: staffName,
         status: "completed",
         flags: anyNitrox ? { nitrox_requested: true } : any15l ? { tank_15l_requested: true } : null,

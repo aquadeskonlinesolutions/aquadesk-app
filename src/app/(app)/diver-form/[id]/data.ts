@@ -385,6 +385,11 @@ export type Activity = {
   scheduleId: string | null;
   date: string;
   diveSite: string | null;
+  // Which package this row resolved to (set by Boat Return or the manual
+  // package-select dropdown, migration 032) — a pure display/identity tag,
+  // never read for pricing; diveSite always stays the raw site combo that
+  // pricing/Reports actually match and count on.
+  packageId: string | null;
   staffName: string | null;
   diveRate: number;
   fuelSurcharge: number;
@@ -444,7 +449,7 @@ export async function loadActivities(visitId: string): Promise<Activity[]> {
   const { data } = await supabase
     .from("activities")
     .select(
-      "id, visit_id, schedule_id, date, dive_site, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, discount, total, status, notes",
+      "id, visit_id, schedule_id, date, dive_site, package_id, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, discount, total, status, notes",
     )
     .eq("visit_id", visitId)
     .order("date", { ascending: true });
@@ -455,6 +460,7 @@ export async function loadActivities(visitId: string): Promise<Activity[]> {
     scheduleId: a.schedule_id,
     date: a.date,
     diveSite: a.dive_site,
+    packageId: a.package_id,
     staffName: a.staff_name,
     diveRate: Number(a.dive_rate) || 0,
     fuelSurcharge: Number(a.fuel_surcharge) || 0,

@@ -18,16 +18,17 @@ export function DepositsPanel({
   diverId,
   visitId,
   deposits,
+  receivedByDisplay,
   onAdded,
 }: {
   diverId: string;
   visitId: string;
   deposits: Deposit[];
+  receivedByDisplay: string;
   onAdded: (d: Deposit) => void;
 }) {
   const [amount, setAmount] = useState("0");
   const [method, setMethod] = useState<"cash" | "card" | "online">("cash");
-  const [receivedBy, setReceivedBy] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -35,7 +36,7 @@ export function DepositsPanel({
     setError(null);
     startTransition(async () => {
       const amt = parseFloat(amount) || 0;
-      const res = await addDeposit(diverId, visitId, amt, method, receivedBy);
+      const res = await addDeposit(diverId, visitId, amt, method, receivedByDisplay);
       if (res.error) {
         setError(res.error);
       } else {
@@ -44,10 +45,9 @@ export function DepositsPanel({
           amount: amt,
           method,
           depositDate: new Date().toISOString().slice(0, 10),
-          receivedBy: receivedBy.trim() || null,
+          receivedBy: receivedByDisplay,
         });
         setAmount("0");
-        setReceivedBy("");
       }
     });
   }
@@ -88,9 +88,9 @@ export function DepositsPanel({
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Received By</label>
           <input
-            value={receivedBy}
-            onChange={(e) => setReceivedBy(e.target.value)}
-            className="w-40 border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+            value={receivedByDisplay}
+            readOnly
+            className="w-40 border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-gray-100 text-gray-600"
           />
         </div>
         <button

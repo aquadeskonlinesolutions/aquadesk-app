@@ -45,6 +45,7 @@ export function DiverDetailClient({
   paymentConfig,
   initialInvoice,
   diveCenterName,
+  currentUserName,
   registrations,
   pricingMode,
   diveSites,
@@ -63,6 +64,7 @@ export function DiverDetailClient({
   paymentConfig: PaymentConfig;
   initialInvoice: VisitInvoice | null;
   diveCenterName: string;
+  currentUserName: string;
   registrations: RegistrationRecord[];
   pricingMode: "tier" | "package";
   diveSites: DiveSiteOption[];
@@ -151,6 +153,7 @@ export function DiverDetailClient({
             diverId={diver.id}
             visitId={visit.id}
             deposits={deposits}
+            receivedByDisplay={isOwner ? diveCenterName : currentUserName}
             onAdded={(d) => setDeposits((prev) => [d, ...prev])}
           />
         </>

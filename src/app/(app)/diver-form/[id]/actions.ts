@@ -332,7 +332,14 @@ async function resolvePackageRatesByKey(
   diveCenterId: string,
   visitId: string,
   rows: { date: string; dive_site: string | null }[],
-): Promise<{ rateByKey: Map<string, number>; ambiguousGroups: AmbiguousPackageGroup[] }> {
+): Promise<{
+  rateByKey: Map<string, number>;
+  // Which specific package resolved each key's rate — a pure display tag
+  // (see activities.package_id, migration 032), never read for pricing.
+  // null for a key resolved via a custom (non-package) price.
+  packageIdByKey: Map<string, string | null>;
+  ambiguousGroups: AmbiguousPackageGroup[];
+}> {
   const { data: selectionsRaw } = await supabase
     .from("visit_rate_selections")
     .select("site_key, package_id, custom_price")
@@ -348,6 +355,7 @@ async function resolvePackageRatesByKey(
   }
 
   const rateByKey = new Map<string, number>();
+  const packageIdByKey = new Map<string, string | null>();
   const ambiguousGroups: AmbiguousPackageGroup[] = [];
 
   for (const [key, groupRows] of groups) {
@@ -362,11 +370,13 @@ async function resolvePackageRatesByKey(
           .maybeSingle();
         if (pkg) {
           rateByKey.set(key, Number(pkg.price) || 0);
+          packageIdByKey.set(key, existing.package_id);
           continue;
         }
         // saved selection points at a package that no longer exists — re-ask below.
       } else if (existing.custom_price !== null) {
         rateByKey.set(key, Number(existing.custom_price));
+        packageIdByKey.set(key, null);
         continue;
       }
     }
@@ -374,6 +384,7 @@ async function resolvePackageRatesByKey(
     const matches = await findPackagesBySiteKey(diveCenterId, key);
     if (matches.length === 1) {
       rateByKey.set(key, matches[0].price);
+      packageIdByKey.set(key, matches[0].id);
       continue;
     }
     ambiguousGroups.push({
@@ -384,7 +395,7 @@ async function resolvePackageRatesByKey(
     });
   }
 
-  return { rateByKey, ambiguousGroups };
+  return { rateByKey, packageIdByKey, ambiguousGroups };
 }
 
 // The visit-level "Apply Charges" action — modeled directly on
@@ -441,12 +452,14 @@ export async function applyChargesToVisit(
   };
 
   let packageRateByKey: Map<string, number> | null = null;
+  let packageIdByKey: Map<string, string | null> | null = null;
   if (isPackage) {
     const resolved = await resolvePackageRatesByKey(supabase, user.diveCenterId, visitId, rows);
     if (resolved.ambiguousGroups.length > 0) {
       return { ambiguousGroups: resolved.ambiguousGroups };
     }
     packageRateByKey = resolved.rateByKey;
+    packageIdByKey = resolved.packageIdByKey;
   }
 
   let updatedCount = 0;
@@ -458,12 +471,14 @@ export async function applyChargesToVisit(
     const { wantsNitrox, wants15L } = tankFlagsFromRow(row.flags);
     const diveSiteText = row.dive_site ?? "";
 
+    let resolvedPackageId: string | null | undefined;
     let result;
     if (isCourse) {
       result = await autoPriceCourseMode(user.diveCenterId, visit.course_rate_id);
     } else if (isPackage) {
       const key = normalizeSiteKey(diveSiteText);
       const rate = packageRateByKey?.get(key);
+      resolvedPackageId = packageIdByKey?.get(key);
       const site = await resolveSite(user.diveCenterId, diveSiteText);
       const { fuel, marine, shark } = await otherChargesForSite(user.diveCenterId, site);
       result = {
@@ -507,6 +522,10 @@ export async function applyChargesToVisit(
         shark_fee: result.sharkFee,
         nitrox_fee: result.nitroxFee,
         fifteen_l_fee: result.fifteenLFee,
+        // Display-only tag (migration 032) — set whenever this row's package
+        // resolved unambiguously, cleared (not left stale) if it resolved to
+        // a custom price instead. Never read back for pricing itself.
+        ...(isPackage ? { package_id: resolvedPackageId ?? null } : {}),
       })
       .eq("id", row.id)
       .eq("dive_center_id", user.diveCenterId);
@@ -588,6 +607,7 @@ export async function autoFillFromActivitySelection(
     marine_tax?: number;
     nitrox_fee?: number;
     fifteen_l_fee?: number;
+    package_id?: string | null;
   };
 
   if (selection.kind === "course") {
@@ -604,7 +624,12 @@ export async function autoFillFromActivitySelection(
   } else if (selection.kind === "package") {
     const result = await autoPricePackageMode(user.diveCenterId, selection.diveSiteCombo);
     update = {
+      // dive_site stays the raw site combo (matching, Reports' per-site
+      // counting) — the user picked one specific package by clicking it,
+      // so package_id is known with certainty, no ambiguity to guess at.
+      // See markBoatReturned's identical package_id/dive_site split.
       dive_site: selection.diveSiteCombo,
+      package_id: selection.packageId,
       dive_rate: result.diveRate,
       fuel_surcharge: result.fuelSurcharge,
       marine_tax: result.marineTax,
@@ -759,7 +784,7 @@ export async function checkoutVisit(
     supabase
       .from("activities")
       .select(
-        "date, dive_site, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, status",
+        "date, dive_site, package_id, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, status",
       )
       .eq("visit_id", visitId),
     supabase.from("deposits").select("amount").eq("visit_id", visitId),
@@ -828,13 +853,26 @@ export async function checkoutVisit(
   );
   if (paymentError) return { error: paymentError.message };
 
+  // Resolve any resolved package_ids to their friendly package_name for the
+  // invoice's own dive_site display — the invoice reads this as plain text
+  // (InvoicePanel.tsx), unlike Reports Overview's per-site activity bars or
+  // Apply Charges' site-combo matching, both of which need the row's real
+  // dive_site (the raw joined site combo) left untouched. Falls back to the
+  // raw combo for any row with no resolved package_id (tier mode, or a
+  // package-mode row never run through Apply Charges/Boat Return's match).
+  const packageIds = [...new Set(completed.map((a) => a.package_id).filter((id): id is string => !!id))];
+  const { data: packageRows } = packageIds.length
+    ? await supabase.from("packages").select("id, package_name").in("id", packageIds)
+    : { data: [] };
+  const packageNameById = new Map((packageRows ?? []).map((p) => [p.id, p.package_name]));
+
   const diverName = `${diver.first_name} ${diver.last_name}`;
   const snapshot = {
     diver_name: diverName,
     nationality: diver.nationality,
     activities: completed.map((a) => ({
       date: a.date,
-      dive_site: a.dive_site,
+      dive_site: (a.package_id && packageNameById.get(a.package_id)) || a.dive_site,
       staff_name: a.staff_name,
       dive_rate: Number(a.dive_rate),
       fuel_surcharge: Number(a.fuel_surcharge),

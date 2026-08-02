@@ -63,6 +63,7 @@ export default async function DiverDetailPage({ params }: { params: Promise<{ id
       paymentConfig={paymentConfig}
       initialInvoice={invoice}
       diveCenterName={dc.data?.name ?? "Dive Center"}
+      currentUserName={user.fullName}
       registrations={registrations}
       pricingMode={dc.data?.pricing_mode === "package" ? "package" : "tier"}
       diveSites={diveSites}
