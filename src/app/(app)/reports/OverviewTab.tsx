@@ -93,13 +93,14 @@ export function OverviewTab({
   dateToLabel: string;
 }) {
   const { summary } = data;
-  // notYetSettled already includes openDiverBills as one of its addends
-  // (see reports/data.ts) — don't add it again here, or the donut's total
-  // (and the "Open" arc's proportion within it) silently inflates by one
-  // extra copy of openDiverBills every time.
-  const total = Math.max(1, summary.collectedFromDivers + summary.notYetSettled);
+  // This donut is deliberately scoped to just Collected vs. Open Diver
+  // Bills — the two things its labels actually claim. The other
+  // "notYetSettled" lines (rental/join-ride/commissions) mix money owed
+  // TO you with money YOU owe, which isn't a meaningful single total —
+  // they stay correctly signed (owed-to-you vs. you-owe) in the "Not Yet
+  // Settled" bar list below instead of being folded into this chart.
+  const total = Math.max(1, summary.collectedFromDivers + summary.openDiverBills);
   const collectedDeg = (summary.collectedFromDivers / total) * 360;
-  const openDeg = ((summary.collectedFromDivers + summary.openDiverBills) / total) * 360;
 
   return (
     <div>
@@ -193,25 +194,25 @@ export function OverviewTab({
           <div className="px-5 py-4 border-b border-gray-200">
             <div className="text-sm font-extrabold text-navy">Money Snapshot</div>
             <div className="text-xs text-gray-500 mt-0.5">
-              Collected, open, and pending money movement.
+              Collected vs. still-open diver bills.
             </div>
           </div>
           <div className="p-5 flex flex-col items-center justify-center gap-4 h-full min-w-0 overflow-hidden">
             <div
               className="w-full max-w-[150px] aspect-square rounded-full grid place-items-center shrink-0 mx-auto"
               style={{
-                background: `conic-gradient(var(--teal) 0deg, var(--teal) ${collectedDeg}deg, var(--orange) ${collectedDeg}deg, var(--orange) ${openDeg}deg, var(--gray-200) ${openDeg}deg)`,
+                background: `conic-gradient(var(--teal) 0deg, var(--teal) ${collectedDeg}deg, var(--orange) ${collectedDeg}deg, var(--orange) 360deg)`,
               }}
             >
               <div className="w-[92px] h-[92px] bg-white rounded-full grid place-items-center text-center font-display text-navy overflow-hidden px-1">
                 <span
                   className={
-                    peso(summary.collectedFromDivers + summary.notYetSettled).length > 9
+                    peso(summary.collectedFromDivers + summary.openDiverBills).length > 9
                       ? "text-xs leading-tight"
                       : "text-xl leading-tight"
                   }
                 >
-                  {peso(summary.collectedFromDivers + summary.notYetSettled)}
+                  {peso(summary.collectedFromDivers + summary.openDiverBills)}
                 </span>
               </div>
             </div>
@@ -223,10 +224,6 @@ export function OverviewTab({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-orange shrink-0" />
                 Open diver bills
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-gray-300 shrink-0" />
-                Other pending money
               </div>
             </div>
           </div>
