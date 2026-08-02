@@ -64,7 +64,13 @@ export type BusinessSummary = {
 export type OverviewData = {
   diveCenterName: string;
   divesServed: number;
-  completedDives: number;
+  // Distinct calendar dates that had at least one completed dive in range —
+  // not a row count. activities is one row per diver per site per dive, so
+  // a single 6-diver, 2-site day already produces 12 rows; "12 completed
+  // dives" read as a vague, inflated figure with no clear meaning (divers ×
+  // dives? total activity rows?). Counting distinct dates instead answers
+  // the actually-useful question: over how many days did this happen.
+  daysServed: number;
   summary: BusinessSummary;
   topSites: SiteActivity[];
   expenseCategoryTotals: { name: string; amount: number }[];
@@ -91,7 +97,7 @@ export async function loadOverviewData(
     supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
     supabase
       .from("activities")
-      .select("diver_id, dive_site, status, visit_id")
+      .select("diver_id, dive_site, status, visit_id, date")
       .eq("dive_center_id", diveCenterId)
       .gte("date", dateFrom)
       .lte("date", dateTo),
@@ -149,6 +155,7 @@ export async function loadOverviewData(
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
   const divesServed = new Set(completedActivities.map((a) => a.diver_id)).size;
+  const daysServed = new Set(completedActivities.map((a) => a.date)).size;
 
   // ── Collected from divers (money actually received in range) ──────────
   // Reads the stored total_collected/total_paid (getPaidAmount already
@@ -258,7 +265,7 @@ export async function loadOverviewData(
   return {
     diveCenterName: dc?.name ?? "Dive Center",
     divesServed,
-    completedDives: completedActivities.length,
+    daysServed,
     summary: {
       moneyIn,
       collectedFromDivers,

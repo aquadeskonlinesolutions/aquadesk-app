@@ -119,8 +119,8 @@ export function OverviewTab({
         <p className="text-sm leading-relaxed text-white/80 max-w-2xl">
           You served <strong className="text-white">{data.divesServed}</strong> diver
           {data.divesServed !== 1 ? "s" : ""} across{" "}
-          <strong className="text-white">{data.completedDives}</strong> completed dive
-          {data.completedDives !== 1 ? "s" : ""}, and made{" "}
+          <strong className="text-white">{data.daysServed}</strong> day
+          {data.daysServed !== 1 ? "s" : ""}, and made{" "}
           <strong className="text-white">{peso(summary.netProfit)}</strong> net profit this period.
         </p>
       </div>
