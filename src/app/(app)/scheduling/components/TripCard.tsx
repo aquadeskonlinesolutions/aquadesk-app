@@ -290,6 +290,12 @@ export function TripCard({
   const [scheduleId, setScheduleId] = useState(initialScheduleId);
   const [form, setForm] = useState<TripFormInput>(emptyForm(scheduleDate));
   const [detail, setDetail] = useState<TripDetail | null>(null);
+  // Version token for the optimistic-concurrency check (updateTrip/
+  // saveTripTeams) — tracked separately from `detail` since it must be kept
+  // current after every successful save within this same mounted session,
+  // not just at initial load (refreshInPlace only refetches the day's trip
+  // list/warnings, never this card's own detail).
+  const [tripUpdatedAt, setTripUpdatedAt] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(!!initialScheduleId);
   const [error, setError] = useState<string | null>(null);
@@ -312,6 +318,7 @@ export function TripCard({
       if (d) {
         setForm(fromDetail(d));
         setDetail(d);
+        setTripUpdatedAt(d.updatedAt);
       }
       const byKey = new Map<string, Team>();
       rows.forEach((r) => {
@@ -512,6 +519,11 @@ export function TripCard({
 
     startTransition(async () => {
       let id = scheduleId;
+      // Carried locally rather than read back from state — setTripUpdatedAt
+      // doesn't take effect until the next render, so the very next call
+      // in this same save() needs the fresh value passed explicitly.
+      let currentUpdatedAt = tripUpdatedAt;
+
       if (!id) {
         const res = await createTrip(payload);
         if (res.error) {
@@ -520,13 +532,19 @@ export function TripCard({
         }
         id = res.scheduleId!;
         setScheduleId(id);
+        currentUpdatedAt = res.updatedAt ?? null;
       } else {
-        const res = await updateTrip(id, payload);
+        const res = await updateTrip(id, currentUpdatedAt ?? "", payload);
         if (res.error) {
           setError(res.error);
+          if (res.conflict) {
+            showToast("This trip was changed by someone else — reload the page to see their latest version.", "error");
+          }
           return;
         }
+        currentUpdatedAt = res.updatedAt ?? currentUpdatedAt;
       }
+      setTripUpdatedAt(currentUpdatedAt);
 
       const teamInputs: TripTeamInput[] = teams.map((t) => ({
         staffId: t.staffId,
@@ -539,11 +557,15 @@ export function TripCard({
           experienceType: d.experienceType,
         })),
       }));
-      const teamRes = await saveTripTeams(id, teamInputs);
+      const teamRes = await saveTripTeams(id, currentUpdatedAt ?? "", teamInputs);
       if (teamRes.error) {
         setError(teamRes.error);
+        if (teamRes.conflict) {
+          showToast("This trip was changed by someone else — reload the page to see their latest version.", "error");
+        }
         return;
       }
+      setTripUpdatedAt(teamRes.updatedAt ?? currentUpdatedAt);
 
       onSaved(id);
       onTeamsChanged();

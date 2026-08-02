@@ -406,6 +406,7 @@ export function VisitPanel({
         const course = courseRateId ? courseRates.find((c) => c.id === courseRateId) : null;
         setVisit({
           id: res.visitId!,
+          updatedAt: res.updatedAt!,
           experienceType,
           visitStart: todayManila(),
           visitEnd: null,

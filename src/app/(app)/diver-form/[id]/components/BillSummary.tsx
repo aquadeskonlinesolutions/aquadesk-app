@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { savePaymentOnly, checkoutVisit } from "../actions";
 import { computePaymentBreakdown, type PaymentInput } from "../billing";
 import type { Activity, Deposit, ExistingPayment, PaymentConfig, Visit } from "../data";
+import { useToast } from "@/components/ui/Toast";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -24,6 +25,7 @@ function emptyInput(existing: ExistingPayment | null): PaymentInput {
 export function BillSummary({
   diverId,
   visit,
+  setVisit,
   activities,
   deposits,
   existingPayment,
@@ -32,6 +34,7 @@ export function BillSummary({
 }: {
   diverId: string;
   visit: Visit;
+  setVisit: (v: Visit | null) => void;
   activities: Activity[];
   deposits: Deposit[];
   existingPayment: ExistingPayment | null;
@@ -42,6 +45,7 @@ export function BillSummary({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const showToast = useToast();
 
   const grandTotal = activities.filter((a) => a.status !== "cancelled").reduce((s, a) => s + a.total, 0);
   const depositsTotal = deposits.reduce((s, d) => s + d.amount, 0);
@@ -61,9 +65,16 @@ export function BillSummary({
     setError(null);
     setMessage(null);
     startTransition(async () => {
-      const res = await savePaymentOnly(diverId, visit.id, grandTotal, depositsTotal, input);
-      if (res.error) setError(res.error);
-      else setMessage("Payment saved. Visit stays open until checkout.");
+      const res = await savePaymentOnly(diverId, visit.id, visit.updatedAt, grandTotal, depositsTotal, input);
+      if (res.error) {
+        setError(res.error);
+        if (res.conflict) {
+          showToast("This bill was changed by someone else — reload the page to see their latest version.", "error");
+        }
+      } else {
+        setMessage("Payment saved. Visit stays open until checkout.");
+        if (res.updatedAt) setVisit({ ...visit, updatedAt: res.updatedAt });
+      }
     });
   }
 
@@ -71,9 +82,13 @@ export function BillSummary({
     setError(null);
     setMessage(null);
     startTransition(async () => {
-      const res = await checkoutVisit(diverId, visit.id, input);
-      if (res.error) setError(res.error);
-      else if (res.invoiceId) onCheckedOut(res.invoiceId);
+      const res = await checkoutVisit(diverId, visit.id, visit.updatedAt, input);
+      if (res.error) {
+        setError(res.error);
+        if (res.conflict) {
+          showToast("This bill was changed by someone else — reload the page to see their latest version.", "error");
+        }
+      } else if (res.invoiceId) onCheckedOut(res.invoiceId);
     });
   }
 

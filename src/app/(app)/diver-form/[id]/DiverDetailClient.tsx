@@ -143,6 +143,7 @@ export function DiverDetailClient({
           <BillSummary
             diverId={diver.id}
             visit={visit}
+            setVisit={setVisit}
             activities={activities}
             deposits={deposits}
             existingPayment={existingPayment}

@@ -369,6 +369,12 @@ export async function loadCourseRates(diveCenterId: string): Promise<CourseRateO
 
 export type Visit = {
   id: string;
+  // Version token for optimistic-concurrency checks (checkoutVisit/
+  // savePaymentOnly) — migration 033's visits.updated_at + set_updated_at()
+  // trigger. An owner and a secretary both working the same bill without
+  // knowing it get an explicit conflict instead of one silently
+  // overwriting the other's payment breakdown or double-processing checkout.
+  updatedAt: string;
   experienceType: "fun_diving" | "dive_course";
   visitStart: string;
   visitEnd: string | null;
@@ -415,7 +421,7 @@ export async function loadLatestVisit(diverId: string, diveCenterId: string): Pr
   const { data } = await supabase
     .from("visits")
     .select(
-      "id, experience_type, visit_start, visit_end, visit_status, is_active, invoice_count, course_rate_id",
+      "id, updated_at, experience_type, visit_start, visit_end, visit_status, is_active, invoice_count, course_rate_id",
     )
     .eq("diver_id", diverId)
     .eq("dive_center_id", diveCenterId)
@@ -432,6 +438,7 @@ export async function loadLatestVisit(diverId: string, diveCenterId: string): Pr
 
   return {
     id: data.id,
+    updatedAt: data.updated_at,
     experienceType: data.experience_type,
     visitStart: data.visit_start,
     visitEnd: data.visit_end,

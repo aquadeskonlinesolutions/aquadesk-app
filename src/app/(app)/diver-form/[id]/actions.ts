@@ -192,7 +192,7 @@ export async function createVisit(
   diverId: string,
   experienceType: "fun_diving" | "dive_course",
   courseRateId: string | null,
-): Promise<{ error?: string; visitId?: string }> {
+): Promise<{ error?: string; visitId?: string; updatedAt?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
 
@@ -207,12 +207,12 @@ export async function createVisit(
       is_active: true,
       is_paid: false,
     })
-    .select("id")
+    .select("id, updated_at")
     .single();
 
   if (error) return { error: error.message };
   revalidatePath(`/diver-form/${diverId}`);
-  return { visitId: data.id };
+  return { visitId: data.id, updatedAt: data.updated_at };
 }
 
 export async function addActivityRow(
@@ -693,12 +693,44 @@ export async function voidVisit(diverId: string, visitId: string): Promise<{ err
 export async function savePaymentOnly(
   diverId: string,
   visitId: string,
+  expectedUpdatedAt: string,
   grandTotalPhp: number,
   depositsTotal: number,
   input: PaymentInput,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; conflict?: boolean; updatedAt?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
+
+  // This action only ever writes to `payments`, not `visits` — so unlike
+  // checkoutVisit (which already has a real visits.update to piggyback the
+  // check on), the optimistic-concurrency gate needs its own self-
+  // reassignment touch: no visits column actually changes, this exists
+  // purely to atomically enforce the version check and bump
+  // visits.updated_at (visits_set_updated_at trigger, migration 033) as the
+  // shared token both this action and checkoutVisit contend on.
+  const { data: visitRow } = await supabase
+    .from("visits")
+    .select("is_active")
+    .eq("id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .single();
+  if (!visitRow) return { error: "Visit not found." };
+
+  const { data: touched, error: touchError } = await supabase
+    .from("visits")
+    .update({ is_active: visitRow.is_active })
+    .eq("id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("updated_at")
+    .maybeSingle();
+  if (touchError) return { error: touchError.message };
+  if (!touched) {
+    return {
+      error: "Someone else already changed this bill — reload the page to see their version before saving.",
+      conflict: true,
+    };
+  }
 
   const config = await loadPaymentConfig(user.diveCenterId);
   const amountOwed = grandTotalPhp - input.discount - depositsTotal;
@@ -733,7 +765,7 @@ export async function savePaymentOnly(
 
   if (error) return { error: error.message };
   revalidatePath(`/diver-form/${diverId}`);
-  return {};
+  return { updatedAt: touched.updated_at };
 }
 
 export async function addDeposit(
@@ -775,8 +807,9 @@ export async function addDeposit(
 export async function checkoutVisit(
   diverId: string,
   visitId: string,
+  expectedUpdatedAt: string,
   input: PaymentInput,
-): Promise<{ error?: string; invoiceId?: string }> {
+): Promise<{ error?: string; invoiceId?: string; conflict?: boolean }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
 
@@ -815,7 +848,13 @@ export async function checkoutVisit(
     return { error: `Balance of ₱${Math.round(balance).toLocaleString()} still due — collect full payment before checkout.` };
   }
 
-  const { error: visitError } = await supabase
+  // Optimistic-concurrency check: this WHERE clause only matches if nobody
+  // else has changed the visit since expectedUpdatedAt was loaded (the
+  // visits_set_updated_at trigger, migration 033, bumps updated_at on every
+  // write) — protects against two sessions both clicking Checkout on the
+  // same bill near-simultaneously, which would otherwise silently overwrite
+  // one payment breakdown with the other's and create two invoice snapshots.
+  const { data: visitClosed, error: visitError } = await supabase
     .from("visits")
     .update({
       is_paid: true,
@@ -824,8 +863,17 @@ export async function checkoutVisit(
       visit_status: "closed",
     })
     .eq("id", visitId)
-    .eq("dive_center_id", user.diveCenterId);
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("id")
+    .maybeSingle();
   if (visitError) return { error: visitError.message };
+  if (!visitClosed) {
+    return {
+      error: "Someone else already changed this bill — reload the page to see their version before checking out.",
+      conflict: true,
+    };
+  }
 
   const { error: paymentError } = await supabase.from("payments").upsert(
     {

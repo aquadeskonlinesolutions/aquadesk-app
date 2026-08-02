@@ -147,7 +147,7 @@ function validateOwnBoatFields(input: TripFormInput): string | null {
 
 export async function createTrip(
   input: TripFormInput,
-): Promise<{ error?: string; scheduleId?: string }> {
+): Promise<{ error?: string; scheduleId?: string; updatedAt?: string }> {
   const user = await getCurrentUser();
   if (!input.scheduleDate) return fail("A date is required.");
   if (input.siteIds.length === 0) return fail("At least one dive site is required.");
@@ -174,7 +174,7 @@ export async function createTrip(
       guest_notes: input.guestNotes.trim() || null,
       created_by: user.id,
     })
-    .select("id")
+    .select("id, updated_at")
     .single();
 
   if (error) return fail(error.message);
@@ -186,13 +186,14 @@ export async function createTrip(
   if (sitesRes.error) return fail(sitesRes.error);
 
   revalidatePath("/scheduling");
-  return { scheduleId: data.id };
+  return { scheduleId: data.id, updatedAt: data.updated_at };
 }
 
 export async function updateTrip(
   scheduleId: string,
+  expectedUpdatedAt: string,
   input: TripFormInput,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; conflict?: boolean; updatedAt?: string }> {
   const user = await getCurrentUser();
   if (!input.scheduleDate) return fail("A date is required.");
   if (input.siteIds.length === 0) return fail("At least one dive site is required.");
@@ -201,7 +202,13 @@ export async function updateTrip(
   const supabase = await createClient();
 
   const isJoiner = input.boatMode !== "own_boat";
-  const { error } = await supabase
+  // Optimistic-concurrency check: this WHERE clause only matches if nobody
+  // else has changed the trip since expectedUpdatedAt was loaded (the
+  // schedules_set_updated_at trigger bumps updated_at on every write, so a
+  // stale expectedUpdatedAt fails to match and 0 rows come back) — an owner
+  // and a secretary both editing the same trip without knowing it get an
+  // explicit conflict instead of one silently overwriting the other.
+  const { data: updated, error } = await supabase
     .from("schedules")
     .update({
       schedule_date: input.scheduleDate,
@@ -218,16 +225,26 @@ export async function updateTrip(
       guest_notes: input.guestNotes.trim() || null,
     })
     .eq("id", scheduleId)
-    .eq("dive_center_id", user.diveCenterId);
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("updated_at")
+    .maybeSingle();
 
   if (error) return fail(error.message);
+  if (!updated) {
+    return {
+      error: "Someone else already changed this trip — reload the page to see their version before saving yours.",
+      conflict: true,
+    };
+  }
   const [sitesRes] = await Promise.all([
     replaceScheduleSites(supabase, user.diveCenterId, scheduleId, input.siteIds),
     replaceScheduleCrew(supabase, user.diveCenterId, scheduleId, isJoiner ? [] : input.crew),
     replaceScheduleSpareTanks(supabase, user.diveCenterId, scheduleId, input.spareTanks),
   ]);
   if (sitesRes.error) return fail(sitesRes.error);
-  return ok();
+  revalidatePath("/scheduling");
+  return { updatedAt: updated.updated_at };
 }
 
 export async function deleteTrip(scheduleId: string): Promise<{ error?: string }> {
@@ -310,19 +327,43 @@ export type TripTeamInput = {
 
 export async function saveTripTeams(
   scheduleId: string,
+  expectedUpdatedAt: string,
   teams: TripTeamInput[],
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; conflict?: boolean; updatedAt?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
 
   const { data: schedule } = await supabase
     .from("schedules")
-    .select("id, closed")
+    .select("id, closed, cancelled")
     .eq("id", scheduleId)
     .eq("dive_center_id", user.diveCenterId)
     .single();
   if (!schedule) return fail("Trip not found.");
   if (schedule.closed) return fail("A closed trip can't be edited.");
+
+  // No schedules column actually changes here — this self-reassignment
+  // update exists purely to (a) atomically enforce the same optimistic-
+  // concurrency check updateTrip uses, gated on the version the caller
+  // last loaded, and (b) bump schedules.updated_at (via the existing
+  // schedules_set_updated_at trigger) as the version token for the whole
+  // trip aggregate, so a team-assignment save and a trip-detail save
+  // contend on the same counter.
+  const { data: touched, error: touchError } = await supabase
+    .from("schedules")
+    .update({ cancelled: schedule.cancelled })
+    .eq("id", scheduleId)
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("updated_at")
+    .maybeSingle();
+  if (touchError) return fail(touchError.message);
+  if (!touched) {
+    return {
+      error: "Someone else already changed this trip — reload the page to see their version before saving your teams.",
+      conflict: true,
+    };
+  }
 
   // schedule_divers has no independent identity beyond the trip — delete +
   // reinsert fresh on every save, same reasoning as schedule_sites.
@@ -386,7 +427,8 @@ export async function saveTripTeams(
     if (staffTankError) return fail(staffTankError.message);
   }
 
-  return ok();
+  revalidatePath("/scheduling");
+  return { updatedAt: touched.updated_at };
 }
 
 // ── Phase 1: loose divers + suggested team clips ──────────────────────────
