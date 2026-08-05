@@ -39,3 +39,24 @@ export function isDiverActive(diver: {
 
   return !diver.billFullyClosed;
 }
+
+// Group-context visibility is genuinely different from isDiverActive above
+// — no arrival-date gate at all. A group folder needs to be reachable
+// (Copy Link, registration-progress tracking) well before arrival, so a
+// member only drops out of "still active in this group" once their
+// departure has passed AND their bill is fully closed — matches
+// divers.html's isVisibleInGroup() exactly, not isVisible()/isDiverActive().
+export function isDiverActiveInGroup(diver: { departureDate: string | null; billFullyClosed: boolean }): boolean {
+  const today = todayManila();
+  if (!diver.departureDate || diver.departureDate >= today) return true;
+  return !diver.billFullyClosed;
+}
+
+// A group folder is visible from the moment it's created (matches
+// divers.html's groupIsVisible()) and stays visible as long as it has no
+// members yet, or at least one member is still active-in-group. It
+// disappears only once every member has both departed and been fully billed.
+export function isGroupActive(members: { departureDate: string | null; billFullyClosed: boolean }[]): boolean {
+  if (members.length === 0) return true;
+  return members.some(isDiverActiveInGroup);
+}

@@ -11,12 +11,13 @@ export type DiverListItem = {
   accommodation: string | null;
   certificationLevel: string;
   latestArrivalDate: string | null;
+  latestDepartureDate: string | null;
 };
 
-// arrival_date lives only on diver_registrations now (a diver's evergreen
-// profile on `divers` has no current-stay concept) — resolved per diver via
-// a second query and merged with a Map, same join-via-Map pattern already
-// used throughout reports/data.ts.
+// arrival/departure dates live only on diver_registrations now (a diver's
+// evergreen profile on `divers` has no current-stay concept) — resolved per
+// diver via a second query and merged with a Map, same join-via-Map pattern
+// already used throughout reports/data.ts.
 async function attachLatestArrival(
   diveCenterId: string,
   rows: {
@@ -36,15 +37,19 @@ async function attachLatestArrival(
   const { data: registrations } = diverIds.length
     ? await supabase
         .from("diver_registrations")
-        .select("diver_id, arrival_date, created_at")
+        .select("diver_id, arrival_date, departure_date, created_at")
         .eq("dive_center_id", diveCenterId)
         .in("diver_id", diverIds)
         .order("created_at", { ascending: false })
-    : { data: [] as { diver_id: string; arrival_date: string | null; created_at: string }[] };
+    : { data: [] as { diver_id: string; arrival_date: string | null; departure_date: string | null; created_at: string }[] };
 
   const arrivalMap = new Map<string, string | null>();
+  const departureMap = new Map<string, string | null>();
   (registrations ?? []).forEach((r) => {
-    if (!arrivalMap.has(r.diver_id)) arrivalMap.set(r.diver_id, r.arrival_date);
+    if (!arrivalMap.has(r.diver_id)) {
+      arrivalMap.set(r.diver_id, r.arrival_date);
+      departureMap.set(r.diver_id, r.departure_date);
+    }
   });
 
   return rows.map((r) => ({
@@ -57,6 +62,7 @@ async function attachLatestArrival(
     accommodation: r.accommodation,
     certificationLevel: r.certification_level,
     latestArrivalDate: arrivalMap.get(r.id) ?? null,
+    latestDepartureDate: departureMap.get(r.id) ?? null,
   }));
 }
 

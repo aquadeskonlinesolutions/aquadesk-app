@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getPaidAmount } from "@/lib/payments";
-import { isDiverActive } from "./visibility";
+import { isDiverActive, isGroupActive } from "./visibility";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -107,28 +107,53 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
     }
   });
 
-  const visitIds = [...latestVisitByDiver.values()].map((v) => v.id);
+  // Every non-voided visit per diver (not just the latest) — needed to
+  // correctly determine "bill fully closed" across a diver's entire visit
+  // history, matching the live app's billIsFullyClosed()/hasClosedBillRecord()
+  // exactly rather than only inspecting the single most recent visit (which
+  // could miss an older closed/paid visit sitting behind a newer one).
+  const nonVoidedVisitsByDiver = new Map<string, { isActive: boolean; isPaid: boolean; status: string }[]>();
+  (visits ?? []).forEach((v) => {
+    if (v.visit_status === "voided") return;
+    const list = nonVoidedVisitsByDiver.get(v.diver_id) ?? [];
+    list.push({ isActive: v.is_active, isPaid: v.is_paid, status: v.visit_status });
+    nonVoidedVisitsByDiver.set(v.diver_id, list);
+  });
+
+  // Activities/payments fetched by diver_id (not visit_id) — the bill stack
+  // still only shows the latest visit's rows (unchanged), but the fully-
+  // closed check needs every payment/activity across the diver's whole
+  // history for its own total-paid-covers-total-billed fallback.
   const [{ data: activities }, { data: payments }] = await Promise.all([
-    visitIds.length
-      ? supabase.from("activities").select("visit_id, date, total, status").in("visit_id", visitIds)
-      : Promise.resolve({ data: [] }),
-    visitIds.length
-      ? supabase
-          .from("payments")
-          .select(
-            "visit_id, total_collected, total_paid, cash_amount, card_amount, online_amount, card_surcharge_amount, online_surcharge_amount, grand_total_php, discount, paid_at",
-          )
-          .in("visit_id", visitIds)
-      : Promise.resolve({ data: [] }),
+    supabase.from("activities").select("diver_id, visit_id, date, total, status").in("diver_id", diverIds),
+    supabase
+      .from("payments")
+      .select(
+        "diver_id, visit_id, total_collected, total_paid, cash_amount, card_amount, online_amount, card_surcharge_amount, online_surcharge_amount, grand_total_php, discount, paid_at, is_paid",
+      )
+      .in("diver_id", diverIds),
   ]);
 
   const activitiesByVisit = new Map<string, { date: string; total: number; status: string }[]>();
+  const activitiesTotalByDiver = new Map<string, number>();
   (activities ?? []).forEach((a) => {
-    const list = activitiesByVisit.get(a.visit_id) ?? [];
-    list.push({ date: a.date, total: Number(a.total) || 0, status: a.status });
-    activitiesByVisit.set(a.visit_id, list);
+    const visitList = activitiesByVisit.get(a.visit_id) ?? [];
+    visitList.push({ date: a.date, total: Number(a.total) || 0, status: a.status });
+    activitiesByVisit.set(a.visit_id, visitList);
+    if (a.status !== "cancelled") {
+      activitiesTotalByDiver.set(a.diver_id, (activitiesTotalByDiver.get(a.diver_id) ?? 0) + (Number(a.total) || 0));
+    }
   });
+
   const paymentByVisit = new Map((payments ?? []).map((p) => [p.visit_id, p]));
+  const paymentsByDiver = new Map<string, { isPaid: boolean }[]>();
+  const paidTotalByDiver = new Map<string, number>();
+  (payments ?? []).forEach((p) => {
+    const list = paymentsByDiver.get(p.diver_id) ?? [];
+    list.push({ isPaid: !!p.is_paid });
+    paymentsByDiver.set(p.diver_id, list);
+    paidTotalByDiver.set(p.diver_id, (paidTotalByDiver.get(p.diver_id) ?? 0) + getPaidAmount(p));
+  });
 
   return (divers ?? []).map((d) => {
     const reg = latestRegByDiver.get(d.id);
@@ -152,11 +177,22 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
 
     const alreadyInScheduling = !!visit && visit.isActive && visit.status === "open" && !visit.isPaid;
     const billClosed = !!visit && visit.status === "closed";
-    // Mirrors the live app's billIsFullyClosed(): no open visit AND some
-    // closed/paid record exists. A diver with no visit at all (never
-    // actually processed) is NOT fully closed — matches divers.html's
-    // isVisible(), which keeps such a diver visible indefinitely.
-    const billFullyClosed = !alreadyInScheduling && billClosed;
+
+    // Mirrors the live app's billIsFullyClosed()/hasClosedBillRecord(): no
+    // currently-open visit, AND (any non-voided visit already flagged
+    // paid/inactive/closed, OR any payment row flagged is_paid, OR the
+    // diver's total paid across all visits already covers their total
+    // billed activity) — checked across the diver's ENTIRE visit/payment
+    // history, not just their single most recent visit.
+    const diverVisits = nonVoidedVisitsByDiver.get(d.id) ?? [];
+    const hasOpenVisit = diverVisits.some((v) => v.isActive && v.status !== "closed" && !v.isPaid);
+    const activitiesTotal = activitiesTotalByDiver.get(d.id) ?? 0;
+    const paidTotal = paidTotalByDiver.get(d.id) ?? 0;
+    const hasClosedRecord =
+      diverVisits.some((v) => v.isPaid || !v.isActive || v.status === "closed") ||
+      (paymentsByDiver.get(d.id) ?? []).some((p) => p.isPaid) ||
+      (activitiesTotal > 0 && paidTotal >= activitiesTotal);
+    const billFullyClosed = !hasOpenVisit && hasClosedRecord;
 
     return {
       id: d.id,
@@ -202,6 +238,18 @@ function filterActiveIndividualCards(cards: DiverCard[]): DiverCard[] {
   );
 }
 
+// A card whose bill is already fully closed but hasn't departed yet has
+// nothing left needing attention — sorts after everyone still active, so
+// secretaries scanning the top of the list see only guests still actually
+// diving/billing, not paid-up guests just waiting out their stay. Applied
+// only to the already-filtered active set above, so this alone is a
+// sufficient predicate: a visible card with billFullyClosed=true here is
+// provably not yet departed (a departed + fully-closed card was already
+// excluded by isDiverActive/isGroupActive).
+function sortDoneLast<T extends { billFullyClosed: boolean }>(cards: T[]): T[] {
+  return [...cards].sort((a, b) => Number(a.billFullyClosed) - Number(b.billFullyClosed));
+}
+
 export async function loadRecentDiverCards(diveCenterId: string): Promise<DiverCard[]> {
   const supabase = await createClient();
   const { data } = await supabase
@@ -212,7 +260,7 @@ export async function loadRecentDiverCards(diveCenterId: string): Promise<DiverC
     .order("created_at", { ascending: false })
     .limit(50);
   const cards = await buildDiverCards(supabase, diveCenterId, (data ?? []).map((d) => d.id));
-  return filterActiveIndividualCards(cards).slice(0, 20);
+  return sortDoneLast(filterActiveIndividualCards(cards)).slice(0, 20);
 }
 
 export async function searchDiverCards(diveCenterId: string, query: string): Promise<DiverCard[]> {
@@ -225,7 +273,7 @@ export async function searchDiverCards(diveCenterId: string, query: string): Pro
     .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,accommodation.ilike.%${query}%`)
     .limit(30);
   const cards = await buildDiverCards(supabase, diveCenterId, (data ?? []).map((d) => d.id));
-  return filterActiveIndividualCards(cards);
+  return sortDoneLast(filterActiveIndividualCards(cards));
 }
 
 export type GroupSummary = {
@@ -239,9 +287,13 @@ export type GroupSummary = {
 };
 
 // Only currently-active groups show up here, matching divers.html's
-// groupIsVisible(): a group with members is active iff any member is
-// active (isDiverActive); an empty group is active iff today falls within
-// arrival-1..departure (or has no arrival date at all).
+// groupIsVisible() exactly: a group with members is active iff at least one
+// member is still active-in-group (isDiverActiveInGroup — no arrival gate,
+// unlike individual isDiverActive); an empty group is always active (visible
+// from creation, since a secretary needs to reach it well before arrival to
+// share the registration link). Groups where every member is fully billed
+// but at least one hasn't departed yet ("nothing left to do") sort last,
+// same reasoning as sortDoneLast above.
 export async function loadGroups(diveCenterId: string): Promise<GroupSummary[]> {
   const supabase = await createClient();
   const [{ data: groups }, { data: memberRows }] = await Promise.all([
@@ -262,19 +314,41 @@ export async function loadGroups(diveCenterId: string): Promise<GroupSummary[]> 
     memberIdsByGroup.set(m.group_id, list);
   });
 
-  // Group Management shows every created group unconditionally, regardless
-  // of arrival date — unlike Individual Management, which is deliberately
-  // date-gated (isDiverActive). is_active above is a separate soft-delete
-  // flag, unrelated to this.
-  return (groups ?? []).map((g) => ({
-    id: g.id,
-    groupName: g.group_name,
-    leaderName: g.leader_name,
-    arrivalDate: g.arrival_date,
-    departureDate: g.departure_date,
-    expectedCount: g.expected_count,
-    memberCount: (memberIdsByGroup.get(g.id) ?? []).length,
-  }));
+  // Visibility/sort both hinge on each member's departure date + bill-closed
+  // status — reuse buildDiverCards (already computes both correctly) rather
+  // than re-deriving the same visit/payment logic a third time, batched
+  // across every group's members in one pass.
+  const allMemberIds = [...memberIdsByGroup.values()].flat();
+  const memberCards = await buildDiverCards(supabase, diveCenterId, allMemberIds);
+  const cardsByGroup = new Map<string, DiverCard[]>();
+  memberCards.forEach((c) => {
+    if (!c.groupId) return;
+    const list = cardsByGroup.get(c.groupId) ?? [];
+    list.push(c);
+    cardsByGroup.set(c.groupId, list);
+  });
+
+  const withVisibility = (groups ?? []).map((g) => {
+    const members = cardsByGroup.get(g.id) ?? [];
+    return {
+      summary: {
+        id: g.id,
+        groupName: g.group_name,
+        leaderName: g.leader_name,
+        arrivalDate: g.arrival_date,
+        departureDate: g.departure_date,
+        expectedCount: g.expected_count,
+        memberCount: members.length,
+      },
+      active: isGroupActive(members.map((m) => ({ departureDate: m.departureDate, billFullyClosed: m.billFullyClosed }))),
+      allBilledNotDeparted: members.length > 0 && members.every((m) => m.billFullyClosed),
+    };
+  });
+
+  return withVisibility
+    .filter((g) => g.active)
+    .sort((a, b) => Number(a.allBilledNotDeparted) - Number(b.allBilledNotDeparted))
+    .map((g) => g.summary);
 }
 
 export async function loadGroupMemberCards(diveCenterId: string, groupId: string): Promise<DiverCard[]> {

@@ -1,8 +1,16 @@
 import { redirect } from "next/navigation";
 import { resolveLandingPath } from "@/lib/dal";
+import { LandingPage } from "./LandingPage";
 
-// Marketing site decision deferred per blueprint Stage 1b — could live
-// entirely outside this app. For now the root just routes into the product.
+// resolveLandingPath() returns "/login" specifically when there's no
+// authenticated user — reused here as the signal for "show the public
+// marketing site" instead of bouncing straight to the login form. Any
+// other return value means a real session exists, so it still routes
+// straight into the product as before.
 export default async function Home() {
-  redirect(await resolveLandingPath());
+  const landingPath = await resolveLandingPath();
+  if (landingPath !== "/login") {
+    redirect(landingPath);
+  }
+  return <LandingPage />;
 }

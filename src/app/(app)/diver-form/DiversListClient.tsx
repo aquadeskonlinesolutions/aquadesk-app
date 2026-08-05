@@ -81,12 +81,18 @@ export function DiversListClient({
             <thead>
               <tr className="bg-gray-100 text-left">
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Diver</th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Contact</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Email</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Contact Number
+                </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
                   Accommodation
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
                   Latest Arrival
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Departure
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Action</th>
               </tr>
@@ -94,7 +100,7 @@ export function DiversListClient({
             <tbody>
               {divers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-gray-400 text-sm">
+                  <td colSpan={7} className="text-center py-12 text-gray-400 text-sm">
                     {pending ? "Searching…" : "No divers found."}
                   </td>
                 </tr>
@@ -109,11 +115,11 @@ export function DiversListClient({
                         {CERT_LEVEL_LABELS[d.certificationLevel] ?? d.certificationLevel}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {d.email || d.whatsapp || d.phone || "—"}
-                    </td>
+                    <td className="px-4 py-3 text-gray-600">{d.email || "—"}</td>
+                    <td className="px-4 py-3 text-gray-600">{d.whatsapp || d.phone || "—"}</td>
                     <td className="px-4 py-3 text-gray-600">{d.accommodation || "—"}</td>
                     <td className="px-4 py-3 text-gray-600">{fmtDate(d.latestArrivalDate)}</td>
+                    <td className="px-4 py-3 text-gray-600">{fmtDate(d.latestDepartureDate)}</td>
                     <td className="px-4 py-3">
                       <Link
                         href={`/diver-form/${d.id}`}
