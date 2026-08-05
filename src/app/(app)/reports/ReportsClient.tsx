@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import {
   getOverviewData,
+  getMonthlyFinancials,
   getStaffActivityData,
   getJoinRideData,
   getRentalGearsData,
@@ -21,6 +22,9 @@ import { GovtFeesTab } from "./GovtFeesTab";
 import { BillingAuditTab } from "./BillingAuditTab";
 import type {
   OverviewData,
+  MonthlyFinancials,
+  MonthlyFunVsCourseRevenue,
+  NationalityCount,
   StaffActivityData,
   JoinRideData,
   RentalGearsData,
@@ -60,11 +64,17 @@ export function ReportsClient({
   initialDateFrom,
   initialDateTo,
   initialOverview,
+  initialMonthlyFinancials,
+  initialMonthlyFunVsCourse,
+  initialNationalitiesYTD,
   currentUserName,
 }: {
   initialDateFrom: string;
   initialDateTo: string;
   initialOverview: OverviewData;
+  initialMonthlyFinancials: MonthlyFinancials[];
+  initialMonthlyFunVsCourse: MonthlyFunVsCourseRevenue[];
+  initialNationalitiesYTD: NationalityCount[];
   currentUserName: string;
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("overview");
@@ -73,6 +83,14 @@ export function ReportsClient({
   const [appliedFrom, setAppliedFrom] = useState(initialDateFrom);
   const [appliedTo, setAppliedTo] = useState(initialDateTo);
   const [overview, setOverview] = useState(initialOverview);
+  // Monthly/YTD charts are independent of the date-range filter above, so
+  // they're never refetched by applyDateRange — only by refreshOverview,
+  // when a Staff/Join Ride/Rental Gear mutation could have moved a figure
+  // that feeds them (monthlyFunVsCourse and nationalitiesYTD don't read
+  // from any of those three tables, so they never need refreshing here).
+  const [monthlyFinancials, setMonthlyFinancials] = useState(initialMonthlyFinancials);
+  const [monthlyFunVsCourse] = useState(initialMonthlyFunVsCourse);
+  const [nationalitiesYTD] = useState(initialNationalitiesYTD);
   const [staffData, setStaffData] = useState<StaffActivityData | null>(null);
   const [staffLoading, setStaffLoading] = useState(false);
   const [joinData, setJoinData] = useState<JoinRideData | null>(null);
@@ -122,6 +140,22 @@ export function ReportsClient({
       setAppliedFrom(dateFrom);
       setAppliedTo(dateTo);
     });
+  }
+
+  // Passed to StaffTab/JoinRideTab/RentalGearsTab, called after any
+  // mutation that could change Overview's Money In/Out or Not Yet Settled
+  // figures — Overview stays mounted (never unmounted on tab switch), so
+  // without this it would only pick up the change on the next manual
+  // "Apply" of the date range. Also refetches monthlyFinancials since it
+  // sums the same three tables (staff_commission_records/join_ride_records/
+  // rental_gear_records) by month.
+  async function refreshOverview() {
+    const [freshOverview, freshMonthly] = await Promise.all([
+      getOverviewData(appliedFrom, appliedTo),
+      getMonthlyFinancials(),
+    ]);
+    setOverview(freshOverview);
+    setMonthlyFinancials(freshMonthly);
   }
 
   function selectTab(key: (typeof TABS)[number]["key"]) {
@@ -238,12 +272,15 @@ export function ReportsClient({
           data={overview}
           dateFromLabel={formatLabel(appliedFrom)}
           dateToLabel={formatLabel(appliedTo)}
+          monthlyFinancials={monthlyFinancials}
+          monthlyFunVsCourse={monthlyFunVsCourse}
+          nationalitiesYTD={nationalitiesYTD}
         />
       </div>
 
       <div className={tab === "staff" ? "print:hidden" : "hidden"}>
         {staffData ? (
-          <StaffTab key={`${appliedFrom}|${appliedTo}`} data={staffData} />
+          <StaffTab key={`${appliedFrom}|${appliedTo}`} data={staffData} refreshOverview={refreshOverview} />
         ) : (
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
             {staffLoading ? "Loading…" : "No data yet."}
@@ -258,6 +295,7 @@ export function ReportsClient({
             appliedFrom={appliedFrom}
             appliedTo={appliedTo}
             currentUserName={currentUserName}
+            refreshOverview={refreshOverview}
           />
         ) : (
           <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
@@ -268,7 +306,12 @@ export function ReportsClient({
 
       <div className={tab === "rentals" ? "print:hidden" : "hidden"}>
         {rentalData ? (
-          <RentalGearsTab data={rentalData} appliedFrom={appliedFrom} appliedTo={appliedTo} />
+          <RentalGearsTab
+            data={rentalData}
+            appliedFrom={appliedFrom}
+            appliedTo={appliedTo}
+            refreshOverview={refreshOverview}
+          />
         ) : (
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-gray-400 text-sm">
             {rentalLoading ? "Loading…" : "No data yet."}

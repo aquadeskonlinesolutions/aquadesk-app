@@ -1,5 +1,15 @@
-import type { OverviewData } from "./data";
+import type { OverviewData, MonthlyFinancials, MonthlyFunVsCourseRevenue, NationalityCount } from "./data";
 import { EXCESS_LABEL, EXCESS_HINT } from "@/lib/payments";
+import { MonthlyBarChart, MonthlyLineChart, SimplePieChart } from "./charts";
+
+const NATIONALITY_COLORS = [
+  "var(--navy)",
+  "var(--teal)",
+  "var(--orange)",
+  "var(--green)",
+  "var(--navy-mid)",
+  "var(--teal-mid)",
+];
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -57,51 +67,22 @@ function SettledBarList({
   );
 }
 
-function BarList({ items, format }: { items: { name: string; count: number }[] | { name: string; amount: number }[]; format: (v: number) => string }) {
-  const values = items.map((i) => ("count" in i ? i.count : i.amount));
-  const max = Math.max(1, ...values);
-  if (items.length === 0) {
-    return <div className="text-center py-6 text-gray-500 text-sm">No data yet for this period.</div>;
-  }
-  return (
-    <div className="grid gap-3">
-      {items.map((item) => {
-        const value = "count" in item ? item.count : item.amount;
-        return (
-          <div key={item.name} className="grid grid-cols-[130px_1fr_60px] gap-3 items-center">
-            <div className="text-sm font-bold text-navy truncate">{item.name}</div>
-            <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-teal to-navy-mid rounded-full"
-                style={{ width: `${Math.max(4, (value / max) * 100)}%` }}
-              />
-            </div>
-            <div className="text-xs font-extrabold text-gray-600 text-right">{format(value)}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export function OverviewTab({
   data,
   dateFromLabel,
   dateToLabel,
+  monthlyFinancials,
+  monthlyFunVsCourse,
+  nationalitiesYTD,
 }: {
   data: OverviewData;
   dateFromLabel: string;
   dateToLabel: string;
+  monthlyFinancials: MonthlyFinancials[];
+  monthlyFunVsCourse: MonthlyFunVsCourseRevenue[];
+  nationalitiesYTD: NationalityCount[];
 }) {
   const { summary } = data;
-  // This donut is deliberately scoped to just Collected vs. Open Diver
-  // Bills — the two things its labels actually claim. The other
-  // "notYetSettled" lines (rental/join-ride/commissions) mix money owed
-  // TO you with money YOU owe, which isn't a meaningful single total —
-  // they stay correctly signed (owed-to-you vs. you-owe) in the "Not Yet
-  // Settled" bar list below instead of being folded into this chart.
-  const total = Math.max(1, summary.collectedFromDivers + summary.openDiverBills);
-  const collectedDeg = (summary.collectedFromDivers / total) * 360;
 
   return (
     <div>
@@ -184,68 +165,76 @@ export function OverviewTab({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4 mb-5">
+      {/* The four charts below are all independent of the date-range filter
+          above — they compute their own trailing-12-month / year-to-date
+          window (see loadMonthlyFinancials et al. in data.ts) so they stay
+          stable while the KPI cards/Business Summary respond to the filter. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
           <div className="px-5 py-4 border-b border-gray-200">
-            <div className="text-sm font-extrabold text-navy">Dive Site Activity</div>
-            <div className="text-xs text-gray-500 mt-0.5">
-              Completed dives by site, highest to lowest.
-            </div>
+            <div className="text-sm font-extrabold text-navy">Monthly Revenue vs Expenses</div>
+            <div className="text-xs text-gray-500 mt-0.5">Gross revenue vs. total expenses, last 12 months.</div>
           </div>
           <div className="p-5">
-            <BarList items={data.topSites} format={(v) => String(v)} />
+            <MonthlyBarChart
+              data={monthlyFinancials}
+              series={[
+                { key: "revenue", label: "Revenue", color: "var(--teal)" },
+                { key: "expenses", label: "Expenses", color: "var(--orange)" },
+              ]}
+              formatValue={peso}
+            />
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+          <div className="px-5 py-4 border-b border-gray-200">
+            <div className="text-sm font-extrabold text-navy">Fun Diving vs Dive Course Revenue</div>
+            <div className="text-xs text-gray-500 mt-0.5">Gross revenue by activity type, last 12 months.</div>
+          </div>
+          <div className="p-5">
+            <MonthlyBarChart
+              data={monthlyFunVsCourse}
+              series={[
+                { key: "funRevenue", label: "Fun Diving", color: "var(--teal)" },
+                { key: "courseRevenue", label: "Dive Course", color: "var(--navy)" },
+              ]}
+              formatValue={peso}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_0.6fr] gap-4">
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+          <div className="px-5 py-4 border-b border-gray-200">
+            <div className="text-sm font-extrabold text-navy">Monthly Financial Trend</div>
+            <div className="text-xs text-gray-500 mt-0.5">Revenue, expenses, and profit, last 12 months.</div>
+          </div>
+          <div className="p-5">
+            <MonthlyLineChart
+              data={monthlyFinancials}
+              series={[
+                { key: "revenue", label: "Revenue", color: "var(--teal)" },
+                { key: "expenses", label: "Expenses", color: "var(--orange)" },
+                { key: "profit", label: "Profit", color: "var(--navy)" },
+              ]}
+              formatValue={peso}
+            />
           </div>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-200">
-            <div className="text-sm font-extrabold text-navy">Money Snapshot</div>
-            <div className="text-xs text-gray-500 mt-0.5">
-              Collected vs. still-open diver bills.
-            </div>
+            <div className="text-sm font-extrabold text-navy">Top 5 Diver Nationalities</div>
+            <div className="text-xs text-gray-500 mt-0.5">Year to date.</div>
           </div>
-          <div className="p-5 flex flex-col items-center justify-center gap-4 h-full min-w-0 overflow-hidden">
-            <div
-              className="w-full max-w-[150px] aspect-square rounded-full grid place-items-center shrink-0 mx-auto"
-              style={{
-                background: `conic-gradient(var(--teal) 0deg, var(--teal) ${collectedDeg}deg, var(--orange) ${collectedDeg}deg, var(--orange) 360deg)`,
-              }}
-            >
-              <div className="w-[92px] h-[92px] bg-white rounded-full grid place-items-center text-center font-display text-navy overflow-hidden px-1">
-                <span
-                  className={
-                    peso(summary.collectedFromDivers + summary.openDiverBills).length > 9
-                      ? "text-xs leading-tight"
-                      : "text-xl leading-tight"
-                  }
-                >
-                  {peso(summary.collectedFromDivers + summary.openDiverBills)}
-                </span>
-              </div>
-            </div>
-            <div className="grid gap-2 text-sm text-gray-600 justify-center">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-teal shrink-0" />
-                Collected from divers
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-orange shrink-0" />
-                Open diver bills
-              </div>
-            </div>
+          <div className="p-5 min-w-0 overflow-hidden">
+            <SimplePieChart
+              data={nationalitiesYTD.map((n) => ({ label: n.nationality, value: n.count }))}
+              colors={NATIONALITY_COLORS}
+            />
           </div>
-        </div>
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
-        <div className="px-5 py-4 border-b border-gray-200">
-          <div className="text-sm font-extrabold text-navy">Expense Breakdown</div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            Where dive center spending went this period, by category.
-          </div>
-        </div>
-        <div className="p-5">
-          <BarList items={data.expenseCategoryTotals} format={peso} />
         </div>
       </div>
     </div>

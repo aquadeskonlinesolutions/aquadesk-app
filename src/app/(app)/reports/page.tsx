@@ -1,5 +1,5 @@
 import { requireRevenueAccess } from "@/lib/dal";
-import { loadOverviewData } from "./data";
+import { loadOverviewData, loadMonthlyFinancials, loadMonthlyFunVsCourseRevenue, loadTopNationalitiesYTD } from "./data";
 import { ReportsClient } from "./ReportsClient";
 
 function currentMonthRange(): { from: string; to: string } {
@@ -16,13 +16,21 @@ function currentMonthRange(): { from: string; to: string } {
 export default async function ReportsPage() {
   const user = await requireRevenueAccess();
   const { from, to } = currentMonthRange();
-  const overview = await loadOverviewData(user.diveCenterId, from, to);
+  const [overview, monthlyFinancials, monthlyFunVsCourse, nationalitiesYTD] = await Promise.all([
+    loadOverviewData(user.diveCenterId, from, to),
+    loadMonthlyFinancials(user.diveCenterId),
+    loadMonthlyFunVsCourseRevenue(user.diveCenterId),
+    loadTopNationalitiesYTD(user.diveCenterId),
+  ]);
 
   return (
     <ReportsClient
       initialDateFrom={from}
       initialDateTo={to}
       initialOverview={overview}
+      initialMonthlyFinancials={monthlyFinancials}
+      initialMonthlyFunVsCourse={monthlyFunVsCourse}
+      initialNationalitiesYTD={nationalitiesYTD}
       currentUserName={user.fullName}
     />
   );

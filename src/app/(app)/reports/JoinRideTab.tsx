@@ -6,9 +6,11 @@ import {
   getJoinRideData,
   saveJoinRideRecord,
   updateJoinRideStatus,
+  deleteJoinRideRecord,
 } from "./actions";
 import type { JoinRideData, JoinRideDirection, JoinRideRecord } from "./data";
 import type { StatementLineItem } from "./actions";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -33,6 +35,10 @@ const STATUS_OPTIONS: Record<JoinRideDirection, string[]> = {
   joined_our_boat: ["to_collect", "statement_printed", "collected"],
   we_joined_another_boat: ["expected_to_pay", "statement_received", "paid"],
 };
+
+function isSettled(status: string): boolean {
+  return status === "collected" || status === "paid";
+}
 
 function StatusPill({ status }: { status: string }) {
   const settled = status === "collected" || status === "paid";
@@ -100,12 +106,15 @@ export function JoinRideTab({
   appliedFrom,
   appliedTo,
   currentUserName,
+  refreshOverview,
 }: {
   data: JoinRideData;
   appliedFrom: string;
   appliedTo: string;
   currentUserName: string;
+  refreshOverview?: () => void;
 }) {
+  const confirm = useConfirm();
   const [records, setRecords] = useState<JoinRideRecord[]>(data.records);
   const [direction, setDirection] = useState<JoinRideDirection>("joined_our_boat");
   const [form, setForm] = useState<FormState | null>(null);
@@ -197,6 +206,7 @@ export function JoinRideTab({
         setForm(null);
         setFormError(null);
         await refresh();
+        refreshOverview?.();
       }
     });
   }
@@ -206,6 +216,29 @@ export function JoinRideTab({
     startTransition(async () => {
       await updateJoinRideStatus(id, status);
       await refresh();
+      refreshOverview?.();
+      setRowPending(null);
+    });
+  }
+
+  async function settleRecord(id: string, status: "collected" | "paid") {
+    const label = status === "collected" ? "Collected" : "Paid";
+    const ok = await confirm(`Once marked as ${label}, this record can still be edited but can no longer be deleted.`, {
+      title: `Mark as ${label}?`,
+      confirmLabel: `Mark ${label}`,
+    });
+    if (!ok) return;
+    changeStatus(id, status);
+  }
+
+  function removeRecord(id: string) {
+    startTransition(async () => {
+      setRowPending(id);
+      const res = await deleteJoinRideRecord(id);
+      if (!res.error) {
+        await refresh();
+        refreshOverview?.();
+      }
       setRowPending(null);
     });
   }
@@ -335,17 +368,32 @@ export function JoinRideTab({
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                  <select
-                    value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
-                  >
-                    {STATUS_OPTIONS[direction].map((s) => (
-                      <option key={s} value={s}>
-                        {STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
+                  {!form.id ? (
+                    <div className="w-full border border-gray-200 bg-gray-100 rounded-md px-2.5 py-1.5 text-sm text-gray-600">
+                      Starts as: {STATUS_LABELS[STATUS_OPTIONS[direction][0]]}
+                    </div>
+                  ) : isSettled(form.status) ? (
+                    <div className="w-full border border-gray-200 bg-gray-100 rounded-md px-2.5 py-1.5 text-sm text-gray-600">
+                      {STATUS_LABELS[form.status]} (settled)
+                    </div>
+                  ) : (
+                    <select
+                      value={form.status}
+                      onChange={(e) => setForm({ ...form, status: e.target.value })}
+                      className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+                    >
+                      {/* Settled (Collected/Paid) is deliberately excluded here — that
+                          transition only happens through the dedicated action button
+                          + confirmation below, never a plain dropdown pick. */}
+                      {STATUS_OPTIONS[direction]
+                        .filter((s) => !isSettled(s))
+                        .map((s) => (
+                          <option key={s} value={s}>
+                            {STATUS_LABELS[s]}
+                          </option>
+                        ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Number of Divers</label>
@@ -467,32 +515,43 @@ export function JoinRideTab({
                           <button onClick={() => startEdit(r)} className="text-xs text-teal hover:text-navy">
                             Edit
                           </button>
-                          {r.direction === "joined_our_boat" && r.status !== "collected" && (
-                            <button
-                              onClick={() => changeStatus(r.id, "collected")}
-                              disabled={pending && rowPending === r.id}
-                              className="text-xs font-medium text-green hover:underline disabled:opacity-60"
-                            >
-                              Mark Collected
-                            </button>
-                          )}
-                          {r.direction === "we_joined_another_boat" && r.status === "expected_to_pay" && (
-                            <button
-                              onClick={() => changeStatus(r.id, "statement_received")}
-                              disabled={pending && rowPending === r.id}
-                              className="text-xs font-medium text-teal-mid hover:underline disabled:opacity-60"
-                            >
-                              Statement Received
-                            </button>
-                          )}
-                          {r.direction === "we_joined_another_boat" && r.status !== "paid" && (
-                            <button
-                              onClick={() => changeStatus(r.id, "paid")}
-                              disabled={pending && rowPending === r.id}
-                              className="text-xs font-medium text-green hover:underline disabled:opacity-60"
-                            >
-                              Mark Paid
-                            </button>
+                          {!isSettled(r.status) && (
+                            <>
+                              {r.direction === "joined_our_boat" && (
+                                <button
+                                  onClick={() => settleRecord(r.id, "collected")}
+                                  disabled={pending && rowPending === r.id}
+                                  className="text-xs font-medium text-green hover:underline disabled:opacity-60"
+                                >
+                                  Collected
+                                </button>
+                              )}
+                              {r.direction === "we_joined_another_boat" && r.status === "expected_to_pay" && (
+                                <button
+                                  onClick={() => changeStatus(r.id, "statement_received")}
+                                  disabled={pending && rowPending === r.id}
+                                  className="text-xs font-medium text-teal-mid hover:underline disabled:opacity-60"
+                                >
+                                  Statement Received
+                                </button>
+                              )}
+                              {r.direction === "we_joined_another_boat" && (
+                                <button
+                                  onClick={() => settleRecord(r.id, "paid")}
+                                  disabled={pending && rowPending === r.id}
+                                  className="text-xs font-medium text-green hover:underline disabled:opacity-60"
+                                >
+                                  Paid
+                                </button>
+                              )}
+                              <button
+                                onClick={() => removeRecord(r.id)}
+                                disabled={pending && rowPending === r.id}
+                                className="text-xs font-medium text-red hover:underline disabled:opacity-60"
+                              >
+                                Delete
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

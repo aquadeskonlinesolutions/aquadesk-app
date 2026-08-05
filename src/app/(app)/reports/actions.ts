@@ -6,6 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { safeNum } from "@/lib/payments";
 import {
   loadOverviewData,
+  loadMonthlyFinancials,
+  loadMonthlyFunVsCourseRevenue,
+  loadTopNationalitiesYTD,
   loadStaffActivityData,
   loadJoinRideData,
   loadRentalGearsData,
@@ -22,50 +25,70 @@ export async function getOverviewData(dateFrom: string, dateTo: string) {
   return loadOverviewData(user.diveCenterId, dateFrom, dateTo);
 }
 
+export async function getMonthlyFinancials() {
+  const user = await requireRevenueAccess();
+  return loadMonthlyFinancials(user.diveCenterId);
+}
+
+export async function getMonthlyFunVsCourseRevenue() {
+  const user = await requireRevenueAccess();
+  return loadMonthlyFunVsCourseRevenue(user.diveCenterId);
+}
+
+export async function getTopNationalitiesYTD() {
+  const user = await requireRevenueAccess();
+  return loadTopNationalitiesYTD(user.diveCenterId);
+}
+
 export async function getStaffActivityData(dateFrom: string, dateTo: string) {
   const user = await requireRevenueAccess();
   return loadStaffActivityData(user.diveCenterId, dateFrom, dateTo);
 }
 
+// diverId is only ever passed (non-null) for dive_educator rows — Leading
+// Our Dives stays grouped per trip, not per diver, matching how it's
+// sourced (see loadStaffActivityData's leaderGroups).
 async function findExistingCommission(
   diveCenterId: string,
   group: "dive_leader" | "dive_educator",
   staffName: string,
   title: string,
   activityDate: string,
+  diverId: string | null,
 ) {
   const supabase = await createClient();
-  const { data } = await supabase
+  let query = supabase
     .from("staff_commission_records")
     .select("id, status, paid_at, remarks")
     .eq("dive_center_id", diveCenterId)
     .eq("commission_group", group)
     .eq("staff_name", staffName)
     .eq("title", title)
-    .eq("activity_date", activityDate)
-    .maybeSingle();
+    .eq("activity_date", activityDate);
+  query = group === "dive_educator" ? query.eq("diver_id", diverId) : query;
+  const { data } = await query.maybeSingle();
   return data;
 }
 
-// Divemaster pay is automatic (dives × rate) plus an optional manual ratio
-// bonus — never a formula, just whatever the secretary types in for that
-// specific day's over-4-diver group.
+// Commission and Additional Rate are both manually-entered lump sums —
+// Total = their sum, never multiplied from dives/divers. dives/divers are
+// still persisted (a snapshot of the trip this row is for), just no longer
+// part of the stored total's formula.
 export async function saveDiveLeaderCommission(
   activityDate: string,
   staffName: string,
   site: string,
   dives: number,
   divers: number,
-  rate: number,
-  bonusAmount: number,
+  commissionAmount: number,
+  additionalRate: number,
   markPaid: boolean,
-): Promise<{ error?: string; status?: "unpaid" | "paid"; rate?: number; bonusAmount?: number; amount?: number }> {
+): Promise<{ error?: string; status?: "unpaid" | "paid"; commissionAmount?: number; additionalRate?: number; total?: number }> {
   const user = await requireRevenueAccess();
   const supabase = await createClient();
 
-  const existing = await findExistingCommission(user.diveCenterId, "dive_leader", staffName, site, activityDate);
+  const existing = await findExistingCommission(user.diveCenterId, "dive_leader", staffName, site, activityDate, null);
   const status: "unpaid" | "paid" = markPaid ? "paid" : ((existing?.status as "unpaid" | "paid") ?? "unpaid");
-  const amount = dives * rate + bonusAmount;
   const payload = {
     dive_center_id: user.diveCenterId,
     activity_date: activityDate,
@@ -74,9 +97,9 @@ export async function saveDiveLeaderCommission(
     title: site,
     quantity: dives,
     divers,
-    rate,
-    bonus_amount: bonusAmount,
-    commission_amount: amount,
+    rate: 0,
+    bonus_amount: additionalRate,
+    commission_amount: commissionAmount,
     status,
     paid_at: markPaid ? new Date().toISOString() : (existing?.paid_at ?? null),
     remarks: existing?.remarks ?? null,
@@ -90,24 +113,33 @@ export async function saveDiveLeaderCommission(
   if (error) return { error: error.message };
 
   revalidatePath("/reports");
-  return { status, rate, bonusAmount, amount };
+  return { status, commissionAmount, additionalRate, total: commissionAmount + additionalRate };
 }
 
-// Instructor pay is never auto-multiplied — course pay structures (fixed,
-// percentage, gross/net) are too inconsistent to formulaically calculate,
-// so the secretary always types the final payout amount directly.
+// Same shape as saveDiveLeaderCommission but per-student (diverId) — course
+// pay structures (fixed/percentage/gross/net) are too inconsistent to
+// formulaically calculate from a rate, so both Commission and Additional
+// Rate are always typed directly by the secretary.
 export async function saveInstructorCommission(
   activityDate: string,
   staffName: string,
+  diverId: string,
   course: string,
-  students: number,
-  amount: number,
+  commissionAmount: number,
+  additionalRate: number,
   markPaid: boolean,
-): Promise<{ error?: string; status?: "unpaid" | "paid"; amount?: number }> {
+): Promise<{ error?: string; status?: "unpaid" | "paid"; commissionAmount?: number; additionalRate?: number; total?: number }> {
   const user = await requireRevenueAccess();
   const supabase = await createClient();
 
-  const existing = await findExistingCommission(user.diveCenterId, "dive_educator", staffName, course, activityDate);
+  const existing = await findExistingCommission(
+    user.diveCenterId,
+    "dive_educator",
+    staffName,
+    course,
+    activityDate,
+    diverId,
+  );
   const status: "unpaid" | "paid" = markPaid ? "paid" : ((existing?.status as "unpaid" | "paid") ?? "unpaid");
   const payload = {
     dive_center_id: user.diveCenterId,
@@ -115,11 +147,12 @@ export async function saveInstructorCommission(
     staff_name: staffName,
     commission_group: "dive_educator" as const,
     title: course,
-    quantity: students,
+    diver_id: diverId,
+    quantity: 1,
     divers: 0,
     rate: 0,
-    bonus_amount: 0,
-    commission_amount: amount,
+    bonus_amount: additionalRate,
+    commission_amount: commissionAmount,
     status,
     paid_at: markPaid ? new Date().toISOString() : (existing?.paid_at ?? null),
     remarks: existing?.remarks ?? null,
@@ -133,7 +166,7 @@ export async function saveInstructorCommission(
   if (error) return { error: error.message };
 
   revalidatePath("/reports");
-  return { status, amount };
+  return { status, commissionAmount, additionalRate, total: commissionAmount + additionalRate };
 }
 
 // ── Join Ride ────────────────────────────────────────────────────────────
@@ -146,6 +179,15 @@ export async function getJoinRideData() {
 function isSettledStatus(status: string): boolean {
   return status === "collected" || status === "paid";
 }
+
+// The one fixed starting status per direction — a brand-new record can
+// never be created already-settled, matching "do not allow selecting
+// status during creation." Kept as a server-side floor (not just a UI
+// omission) so a crafted request can't create a pre-settled record either.
+const STARTING_STATUS: Record<JoinRideDirection, string> = {
+  joined_our_boat: "to_collect",
+  we_joined_another_boat: "expected_to_pay",
+};
 
 export async function saveJoinRideRecord(
   id: string | null,
@@ -171,6 +213,7 @@ export async function saveJoinRideRecord(
     .single();
   const rate = safeNum(dc?.join_ride_rate_per_diver_per_dive);
   const total = numberOfDivers * numberOfDives * rate;
+  const resolvedStatus = id ? status : STARTING_STATUS[direction];
 
   const payload = {
     dive_center_id: user.diveCenterId,
@@ -181,8 +224,8 @@ export async function saveJoinRideRecord(
     number_of_dives: numberOfDives,
     dive_sites: diveSites.trim() || null,
     total_amount: total,
-    status,
-    balance: isSettledStatus(status) ? 0 : total,
+    status: resolvedStatus,
+    balance: isSettledStatus(resolvedStatus) ? 0 : total,
     remarks: remarks.trim() || null,
     updated_at: new Date().toISOString(),
   };
@@ -214,6 +257,34 @@ export async function updateJoinRideStatus(id: string, status: string): Promise<
       balance: isSettledStatus(status) ? 0 : safeNum(existing?.total_amount),
       updated_at: new Date().toISOString(),
     })
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
+}
+
+// Once Collected/Paid, a record can still be Edited but never Deleted —
+// enforced here too, not just by hiding the button, since the status
+// itself lives in the database and could be settled between page loads.
+export async function deleteJoinRideRecord(id: string): Promise<{ error?: string }> {
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const { data: existing } = await supabase
+    .from("join_ride_records")
+    .select("status")
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId)
+    .single();
+  if (existing && isSettledStatus(existing.status)) {
+    return { error: "This record is already settled and can no longer be deleted." };
+  }
+
+  const { error } = await supabase
+    .from("join_ride_records")
+    .delete()
     .eq("id", id)
     .eq("dive_center_id", user.diveCenterId);
 
@@ -330,6 +401,12 @@ export async function saveRentalGearRecord(
   const user = await requireRevenueAccess();
   const supabase = await createClient();
 
+  // Rental Gear has no separate direction column — the flat status is the
+  // only signal for "we're owed" (to_collect) vs. "we owe" (to_pay), so a
+  // new record still needs one of those two, just never a settled value
+  // (collected/paid) straight out of creation. Defense in depth to match
+  // "status should not be selectable during creation."
+  const resolvedStatus = id ? status : status === "to_pay" ? "to_pay" : "to_collect";
   const total = quantity * rate;
   const payload = {
     dive_center_id: user.diveCenterId,
@@ -339,8 +416,8 @@ export async function saveRentalGearRecord(
     quantity,
     rate,
     total_amount: total,
-    status,
-    balance: isSettledStatus(status) ? 0 : total,
+    status: resolvedStatus,
+    balance: isSettledStatus(resolvedStatus) ? 0 : total,
     remarks: remarks.trim() || null,
     updated_at: new Date().toISOString(),
   };
@@ -372,6 +449,33 @@ export async function updateRentalGearStatus(id: string, status: string): Promis
       balance: isSettledStatus(status) ? 0 : safeNum(existing?.total_amount),
       updated_at: new Date().toISOString(),
     })
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId);
+
+  if (error) return { error: error.message };
+  revalidatePath("/reports");
+  return {};
+}
+
+// Once Collected/Paid, a record can still be Edited but never Deleted —
+// same server-side floor as deleteJoinRideRecord.
+export async function deleteRentalGearRecord(id: string): Promise<{ error?: string }> {
+  const user = await requireRevenueAccess();
+  const supabase = await createClient();
+
+  const { data: existing } = await supabase
+    .from("rental_gear_records")
+    .select("status")
+    .eq("id", id)
+    .eq("dive_center_id", user.diveCenterId)
+    .single();
+  if (existing && isSettledStatus(existing.status)) {
+    return { error: "This record is already settled and can no longer be deleted." };
+  }
+
+  const { error } = await supabase
+    .from("rental_gear_records")
+    .delete()
     .eq("id", id)
     .eq("dive_center_id", user.diveCenterId);
 

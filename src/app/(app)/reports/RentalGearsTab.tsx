@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { getRentalGearsData, saveRentalGearRecord, updateRentalGearStatus } from "./actions";
+import { getRentalGearsData, saveRentalGearRecord, updateRentalGearStatus, deleteRentalGearRecord } from "./actions";
 import { EQUIPMENT_SUGGESTIONS } from "./constants";
 import type { RentalGearRecord, RentalGearsData } from "./data";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString()}`;
@@ -22,8 +23,12 @@ const STATUS_LABELS: Record<string, string> = {
   paid: "Paid",
 };
 
+function isSettled(status: string): boolean {
+  return status === "collected" || status === "paid";
+}
+
 function StatusPill({ status }: { status: string }) {
-  const settled = status === "collected" || status === "paid";
+  const settled = isSettled(status);
   return (
     <span
       className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -85,11 +90,14 @@ export function RentalGearsTab({
   data,
   appliedFrom,
   appliedTo,
+  refreshOverview,
 }: {
   data: RentalGearsData;
   appliedFrom: string;
   appliedTo: string;
+  refreshOverview?: () => void;
 }) {
+  const confirm = useConfirm();
   const [records, setRecords] = useState<RentalGearRecord[]>(data.records);
   const [form, setForm] = useState<FormState | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -148,6 +156,7 @@ export function RentalGearsTab({
         setForm(null);
         setFormError(null);
         await refresh();
+        refreshOverview?.();
       }
     });
   }
@@ -157,6 +166,29 @@ export function RentalGearsTab({
     startTransition(async () => {
       await updateRentalGearStatus(id, status);
       await refresh();
+      refreshOverview?.();
+      setRowPending(null);
+    });
+  }
+
+  async function settleRecord(id: string, status: "collected" | "paid") {
+    const label = status === "collected" ? "Collected" : "Paid";
+    const ok = await confirm(`Once marked as ${label}, this record can still be edited but can no longer be deleted.`, {
+      title: `Mark as ${label}?`,
+      confirmLabel: `Mark ${label}`,
+    });
+    if (!ok) return;
+    changeStatus(id, status);
+  }
+
+  function removeRecord(id: string) {
+    startTransition(async () => {
+      setRowPending(id);
+      const res = await deleteRentalGearRecord(id);
+      if (!res.error) {
+        await refresh();
+        refreshOverview?.();
+      }
       setRowPending(null);
     });
   }
@@ -261,17 +293,27 @@ export function RentalGearsTab({
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                <select
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
-                >
-                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                {isSettled(form.status) ? (
+                  <div className="w-full border border-gray-200 bg-gray-100 rounded-md px-2.5 py-1.5 text-sm text-gray-600">
+                    {STATUS_LABELS[form.status]} (settled)
+                  </div>
+                ) : (
+                  <select
+                    value={form.status}
+                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+                  >
+                    {/* Collected/Paid are deliberately excluded — settlement only
+                        happens through the dedicated action button + confirmation
+                        below, never a plain dropdown pick (also true at creation:
+                        a new record can only start as To Collect or To Pay). */}
+                    {(["to_collect", "to_pay"] as const).map((value) => (
+                      <option key={value} value={value}>
+                        {STATUS_LABELS[value]}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
             <div className="mb-4">
@@ -346,23 +388,34 @@ export function RentalGearsTab({
                         <button onClick={() => startEdit(r)} className="text-xs text-teal hover:text-navy">
                           Edit
                         </button>
-                        {r.status === "to_collect" && (
-                          <button
-                            onClick={() => changeStatus(r.id, "collected")}
-                            disabled={pending && rowPending === r.id}
-                            className="text-xs font-medium text-green hover:underline disabled:opacity-60"
-                          >
-                            Mark Collected
-                          </button>
-                        )}
-                        {r.status === "to_pay" && (
-                          <button
-                            onClick={() => changeStatus(r.id, "paid")}
-                            disabled={pending && rowPending === r.id}
-                            className="text-xs font-medium text-green hover:underline disabled:opacity-60"
-                          >
-                            Mark Paid
-                          </button>
+                        {!isSettled(r.status) && (
+                          <>
+                            {r.status === "to_collect" && (
+                              <button
+                                onClick={() => settleRecord(r.id, "collected")}
+                                disabled={pending && rowPending === r.id}
+                                className="text-xs font-medium text-green hover:underline disabled:opacity-60"
+                              >
+                                Mark Collected
+                              </button>
+                            )}
+                            {r.status === "to_pay" && (
+                              <button
+                                onClick={() => settleRecord(r.id, "paid")}
+                                disabled={pending && rowPending === r.id}
+                                className="text-xs font-medium text-green hover:underline disabled:opacity-60"
+                              >
+                                Mark Paid
+                              </button>
+                            )}
+                            <button
+                              onClick={() => removeRecord(r.id)}
+                              disabled={pending && rowPending === r.id}
+                              className="text-xs font-medium text-red hover:underline disabled:opacity-60"
+                            >
+                              Delete
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
