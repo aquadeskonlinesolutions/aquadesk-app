@@ -4,7 +4,7 @@ import { useState } from "react";
 import { saveRateSelectionsAndApply, type AmbiguousPackageGroup } from "../actions";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 type Answer = { siteKey: string; packageId: string | null; customPrice: number | null };

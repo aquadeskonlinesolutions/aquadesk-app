@@ -6,7 +6,7 @@ import type { Alert, BoatStatus } from "./data";
 import { EXCESS_HINT } from "@/lib/payments";
 
 function peso(amount: number): string {
-  return `₱${Math.round(amount).toLocaleString()}`;
+  return `₱${Math.round(amount).toLocaleString("en-PH")}`;
 }
 
 function StatCard({

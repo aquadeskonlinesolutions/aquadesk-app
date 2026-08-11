@@ -178,7 +178,7 @@ export function DiveCenterList({ diveCenters }: { diveCenters: DiveCenter[] }) {
                       {overdue > 0 ? `⚠ ${overdue} day${overdue > 1 ? "s" : ""} overdue` : dueLabel}
                     </div>
                     {dc.billing_amount ? (
-                      <div className="text-xs text-gray-400 mt-0.5">₱{dc.billing_amount.toLocaleString()}/mo</div>
+                      <div className="text-xs text-gray-400 mt-0.5">₱{dc.billing_amount.toLocaleString("en-PH")}/mo</div>
                     ) : null}
                   </td>
                   <td className="px-4 py-3">

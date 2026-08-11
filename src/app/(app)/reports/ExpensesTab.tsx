@@ -6,7 +6,7 @@ import { EXPENSE_CATEGORY_LABELS, PAYMENT_METHOD_LABELS } from "./constants";
 import type { ExpenseRecord, ExpensesData } from "./data";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function fmtDate(dateStr: string): string {

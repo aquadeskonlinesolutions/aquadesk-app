@@ -7,7 +7,7 @@ import type { RentalGearRecord, RentalGearsData } from "./data";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function fmtDate(dateStr: string): string {

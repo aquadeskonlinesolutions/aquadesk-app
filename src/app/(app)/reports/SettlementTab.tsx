@@ -15,7 +15,7 @@ function todayManila(): string {
 }
 
 function fmtPHP(n: number): string {
-  return n === 0 ? "—" : `₱${Math.round(n).toLocaleString()}`;
+  return n === 0 ? "—" : `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function fmtDate(dateStr: string): string {
@@ -228,7 +228,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                   </td>
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.cashPHP)}</td>
                   <td className="px-3 py-3 text-right text-xs">
-                    {tot.foreignPHP > 0 ? `≈ ₱${Math.round(tot.foreignPHP).toLocaleString()}` : "—"}
+                    {tot.foreignPHP > 0 ? `≈ ₱${Math.round(tot.foreignPHP).toLocaleString("en-PH")}` : "—"}
                   </td>
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.card)}</td>
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.cardSurcharge)}</td>
@@ -297,7 +297,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                 </td>
                 <td className="px-2 py-1.5 text-right">{fmtPHP(tot.cashPHP)}</td>
                 <td className="px-2 py-1.5 text-right text-xs">
-                  {tot.foreignPHP > 0 ? `≈ ₱${Math.round(tot.foreignPHP).toLocaleString()}` : "—"}
+                  {tot.foreignPHP > 0 ? `≈ ₱${Math.round(tot.foreignPHP).toLocaleString("en-PH")}` : "—"}
                 </td>
                 <td className="px-2 py-1.5 text-right">{fmtPHP(tot.card)}</td>
                 <td className="px-2 py-1.5 text-right">{fmtPHP(tot.cardSurcharge)}</td>

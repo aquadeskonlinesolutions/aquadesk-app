@@ -5,7 +5,7 @@ import { addDeposit } from "../actions";
 import type { Deposit } from "../data";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function fmtDate(dateStr: string): string {

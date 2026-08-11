@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { AuditInvoiceRow, BillingAuditData } from "./data";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function fmtDateTime(ts: string | null): string {

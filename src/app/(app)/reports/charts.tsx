@@ -128,17 +128,22 @@ export function MonthlyLineChart({
         ))}
         {series.map((s) =>
           data.map((d, i) => (
+            // aria-label, not a nested <title> — an SVG <title> child inside
+            // an element repeated many times in a loop is a known React/
+            // browser-parser hydration-mismatch hazard (the HTML parser's
+            // special RAWTEXT handling for the <title> tag name doesn't
+            // always stay correctly scoped to SVG "foreign content" mode
+            // across server-rendered chunk boundaries) — this caused a real,
+            // reproducible hydration failure on this exact chart. aria-label
+            // gives the same accessible name with no such risk.
             <circle
               key={`${s.key}-${d.month}`}
               cx={padding.left + i * stepX}
               cy={yFor(Number(d[s.key]) || 0)}
               r={2.5}
               fill={s.color}
-            >
-              <title>
-                {monthShortLabel(d.month)} — {s.label}: {formatValue(Number(d[s.key]) || 0)}
-              </title>
-            </circle>
+              aria-label={`${monthShortLabel(d.month)} — ${s.label}: ${formatValue(Number(d[s.key]) || 0)}`}
+            />
           )),
         )}
       </svg>

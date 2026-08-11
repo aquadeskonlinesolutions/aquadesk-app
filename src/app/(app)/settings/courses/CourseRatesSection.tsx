@@ -6,7 +6,7 @@ import { saveCourseRate, deleteCourseRate } from "./actions";
 import type { CourseRate } from "./data";
 
 function peso(n: number) {
-  return `₱${n.toLocaleString()}`;
+  return `₱${n.toLocaleString("en-PH")}`;
 }
 
 export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {

@@ -6,7 +6,7 @@ import { savePackage, deletePackage } from "./actions";
 import type { Package } from "./data";
 
 function peso(n: number) {
-  return `₱${n.toLocaleString()}`;
+  return `₱${n.toLocaleString("en-PH")}`;
 }
 
 export function PackagesSection({ packages }: { packages: Package[] }) {

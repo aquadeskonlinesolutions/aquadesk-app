@@ -5,7 +5,7 @@ import type { DiverCard as DiverCardType } from "../data";
 import { CERT_LEVEL_LABELS } from "../constants";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function fmtDate(iso: string | null): string {

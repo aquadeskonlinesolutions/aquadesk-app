@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { ActiveDiverRow } from "./data";
 
 function peso(amount: number): string {
-  return `₱${Math.round(amount).toLocaleString()}`;
+  return `₱${Math.round(amount).toLocaleString("en-PH")}`;
 }
 
 export function DiversTable({ divers }: { divers: ActiveDiverRow[] }) {

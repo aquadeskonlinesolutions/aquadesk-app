@@ -6,7 +6,7 @@
 // are different enough that trying to share one component isn't worth it.
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function num(v: unknown): number {

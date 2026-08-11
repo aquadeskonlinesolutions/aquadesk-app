@@ -6,7 +6,7 @@ import type { VisitInvoice } from "../data";
 import { EXCESS_LABEL } from "@/lib/payments";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function fmtDateTime(ts: string | null): string {

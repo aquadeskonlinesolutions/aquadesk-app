@@ -8,7 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { EXCESS_LABEL, EXCESS_HINT } from "@/lib/payments";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function emptyInput(existing: ExistingPayment | null): PaymentInput {

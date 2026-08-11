@@ -192,7 +192,13 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
       diverVisits.some((v) => v.isPaid || !v.isActive || v.status === "closed") ||
       (paymentsByDiver.get(d.id) ?? []).some((p) => p.isPaid) ||
       (activitiesTotal > 0 && paidTotal >= activitiesTotal);
-    const billFullyClosed = !hasOpenVisit && hasClosedRecord;
+    // Deliberate departure from the live app here (2026-08-08 fix): a diver
+    // who registered but never had a visit created at all has no open bill
+    // to block them either — `hasClosedRecord` alone can never go true for
+    // them (nothing ever got marked "closed"), which stranded them as
+    // permanently "active" once their departure date passed. Zero visit
+    // history is treated the same as a closed one for this purpose.
+    const billFullyClosed = !hasOpenVisit && (hasClosedRecord || diverVisits.length === 0);
 
     return {
       id: d.id,

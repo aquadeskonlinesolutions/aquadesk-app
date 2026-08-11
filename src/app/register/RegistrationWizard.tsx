@@ -1164,7 +1164,7 @@ export function RegistrationWizard({
                     />
                     Computer Rental
                     <span className="text-gray-400 text-xs">
-                      (₱{computerRate.rate.toLocaleString()}
+                      (₱{computerRate.rate.toLocaleString("en-PH")}
                       {computerRate.charge_type === "per_day" ? " per day" : ""}, separate rental)
                     </span>
                   </label>

@@ -190,7 +190,7 @@ export function EquipmentModal({
               <input type="checkbox" checked={computer} onChange={(e) => setComputer(e.target.checked)} />
               Computer Rental
               <span className="text-gray-400 text-xs">
-                (₱{computerItem.rate.toLocaleString()}
+                (₱{computerItem.rate.toLocaleString("en-PH")}
                 {computerItem.chargeType === "per_day" ? " per day" : ""})
               </span>
             </label>

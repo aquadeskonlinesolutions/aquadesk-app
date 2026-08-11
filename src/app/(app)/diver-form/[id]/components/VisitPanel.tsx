@@ -18,7 +18,7 @@ import { useToast } from "@/components/ui/Toast";
 import { RateSelectModal } from "./RateSelectModal";
 
 function peso(n: number): string {
-  return `₱${Math.round(n).toLocaleString()}`;
+  return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
 function todayManila(): string {
