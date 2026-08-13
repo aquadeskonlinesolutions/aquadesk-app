@@ -277,8 +277,16 @@ export async function resolveEquipmentCharge(diveCenterId: string, diverId: stri
 
   let items: { name?: string }[] = [];
   try {
-    const parsed = JSON.parse(diver.equipment_requested) as { items?: { name?: string }[] };
-    items = parsed?.items ?? [];
+    const parsed = JSON.parse(diver.equipment_requested) as { items?: unknown };
+    // Historical divers migrated from the old app store this as
+    // {"items": {bcd: "S", ...}} (an object keyed by item name), not this
+    // rebuild's own {"items": [{name, size}]} shape — matches the same
+    // guard EquipmentManagementTab.tsx already uses for the identical
+    // reason. Old-shape data resolves to "nothing requested" (no charge)
+    // rather than throwing — a real diver never getting an equipment line
+    // is the existing, already-accepted behavior for them; crashing the
+    // whole Apply Charges run for every other row on the visit is not.
+    items = Array.isArray(parsed?.items) ? parsed.items : [];
   } catch {
     return { perDive: 0, perDay: 0 };
   }
