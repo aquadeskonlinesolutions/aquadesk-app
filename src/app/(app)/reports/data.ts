@@ -531,6 +531,11 @@ export type LeaderCommissionRow = {
   additionalRate: number;
   total: number;
   status: "unpaid" | "paid";
+  // True once a matching row exists in staff_commission_records — false
+  // means this row is only a live computation from schedule/activity data
+  // (Round 7 Fix 3: gives the UI a way to flag rows that vanish/reset on
+  // reload if nobody clicks Save/Mark as Paid first).
+  isSaved: boolean;
 };
 
 export type EducatorCommissionRow = {
@@ -545,6 +550,7 @@ export type EducatorCommissionRow = {
   additionalRate: number;
   total: number;
   status: "unpaid" | "paid";
+  isSaved: boolean;
 };
 
 export type StaffActivityData = {
@@ -764,6 +770,7 @@ export async function loadStaffActivityData(
         additionalRate,
         total: commissionAmount + additionalRate,
         status: (existing?.status as "unpaid" | "paid") ?? "unpaid",
+        isSaved: !!existing,
       };
     })
     .sort((a, b) => a.staffName.localeCompare(b.staffName) || a.date.localeCompare(b.date));
@@ -803,6 +810,7 @@ export async function loadStaffActivityData(
         additionalRate,
         total: commissionAmount + additionalRate,
         status: (existing?.status as "unpaid" | "paid") ?? "unpaid",
+        isSaved: !!existing,
       };
     })
     .sort((a, b) => a.staffName.localeCompare(b.staffName) || a.date.localeCompare(b.date));

@@ -30,6 +30,17 @@ function StatusPill({ status }: { status: "unpaid" | "paid" }) {
   );
 }
 
+// Round 7 Fix 3: this row is only a live computation from schedule/activity
+// data — it has no matching staff_commission_records row yet, so it will
+// silently reset/disappear on reload unless Save or Mark as Paid is clicked.
+function UnsavedBadge() {
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 ml-1.5">
+      Unsaved
+    </span>
+  );
+}
+
 type EditableLeaderRow = LeaderCommissionRow & { justSaved: boolean };
 type EditableEducatorRow = EducatorCommissionRow & { justSaved: boolean };
 
@@ -148,6 +159,7 @@ function LeaderTable({
                   additionalRate: res.additionalRate!,
                   total: res.total!,
                   justSaved: true,
+                  isSaved: true,
                 }
               : r,
           ),
@@ -199,6 +211,7 @@ function LeaderTable({
                     additionalRate: res.additionalRate!,
                     total: res.total!,
                     justSaved: false,
+                    isSaved: true,
                   }
                 : r,
             ),
@@ -284,6 +297,7 @@ function LeaderTable({
                       <td className="px-4 py-3 text-right font-semibold text-navy">{peso(r.total)}</td>
                       <td className="px-4 py-3">
                         <StatusPill status={r.status} />
+                        {!r.isSaved && <UnsavedBadge />}
                         {r.justSaved && <div className="text-xs text-green mt-1">Saved.</div>}
                         {errorKey === r.key && <div className="text-xs text-red mt-1">Could not save.</div>}
                       </td>
@@ -389,6 +403,7 @@ function EducatorTable({
                   additionalRate: res.additionalRate!,
                   total: res.total!,
                   justSaved: true,
+                  isSaved: true,
                 }
               : r,
           ),
@@ -439,6 +454,7 @@ function EducatorTable({
                     additionalRate: res.additionalRate!,
                     total: res.total!,
                     justSaved: false,
+                    isSaved: true,
                   }
                 : r,
             ),
@@ -523,6 +539,7 @@ function EducatorTable({
                       <td className="px-4 py-3 text-right font-semibold text-navy">{peso(r.total)}</td>
                       <td className="px-4 py-3">
                         <StatusPill status={r.status} />
+                        {!r.isSaved && <UnsavedBadge />}
                         {r.justSaved && <div className="text-xs text-green mt-1">Saved.</div>}
                         {errorKey === r.key && <div className="text-xs text-red mt-1">Could not save.</div>}
                       </td>
