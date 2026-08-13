@@ -435,7 +435,17 @@ export async function applyChargesToVisit(
       .eq("dive_center_id", user.diveCenterId)
       .neq("status", "cancelled")
       .order("date", { ascending: true })
-      .order("created_at", { ascending: true }),
+      .order("created_at", { ascending: true })
+      // Rows from the same Boat Return call (a multi-site trip) share an
+      // identical date AND created_at (one now() per statement/transaction)
+      // — without a final tiebreaker, Postgres's order among those tied
+      // rows is unspecified and can vary between runs, which was silently
+      // flipping which specific row landed in the 1-3 vs 4+ tier band on
+      // successive Apply Charges runs. `id` carries no real chronological
+      // meaning (gen_random_uuid(), uncorrelated with insertion order) but
+      // makes the result deterministic and stable across re-runs, which is
+      // the actual property needed here.
+      .order("id", { ascending: true }),
   ]);
 
   if (!visit) return { error: "Visit not found." };
