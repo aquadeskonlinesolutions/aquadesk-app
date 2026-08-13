@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { getCurrentPlatformAdmin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { DEFAULT_COURSES } from "@/app/(app)/settings/courses/constants";
 
 function generateTempPassword(): string {
   // Not the deterministic/guessable scheme the live app used for staff
@@ -35,9 +36,18 @@ export async function createDiveCenter(
   const address = String(formData.get("address") ?? "").trim();
   const ownerName = String(formData.get("ownerName") ?? "").trim();
   const ownerEmail = String(formData.get("ownerEmail") ?? "").trim();
+  const pricingMode = String(formData.get("pricingMode") ?? "");
 
   if (!name || !ownerName || !ownerEmail) {
     return { error: "Dive center name, owner name, and owner email are required." };
+  }
+  // pricing_mode has a schema-level default ('tier'), but that default must
+  // never be what actually lands on a real dive center — it's a deliberate
+  // business decision (tier-based per-dive rates vs. flat package pricing),
+  // not something safe to assume. Require an explicit choice here rather
+  // than letting the column's own default silently stand in for one.
+  if (pricingMode !== "tier" && pricingMode !== "package") {
+    return { error: "Pricing mode (tier-based or package-based) is required." };
   }
 
   const tempPassword = generateTempPassword();
@@ -56,13 +66,34 @@ export async function createDiveCenter(
 
   const { data: diveCenter, error: dcError } = await admin
     .from("dive_centers")
-    .insert({ name, email: email || null, phone: phone || null, address: address || null })
+    .insert({
+      name,
+      email: email || null,
+      phone: phone || null,
+      address: address || null,
+      pricing_mode: pricingMode,
+    })
     .select("id")
     .single();
 
   if (dcError || !diveCenter) {
     await admin.auth.admin.deleteUser(authUser.user.id);
     return { error: `Could not create dive center: ${dcError?.message ?? "unknown error"}` };
+  }
+
+  // Tier mode needs course rates to price course visits at all — Settings >
+  // Pricing & Rates' own confirmPricingMode seeds the same defaults when an
+  // owner switches into tier mode later; do the same here so a fresh
+  // tier-mode dive center isn't missing them from day one.
+  if (pricingMode === "tier") {
+    await admin.from("course_rates").insert(
+      DEFAULT_COURSES.map((c) => ({
+        dive_center_id: diveCenter.id,
+        course_name: c.name,
+        rate: c.rate,
+        is_active: true,
+      })),
+    );
   }
 
   const { error: userError } = await admin.from("users").insert({

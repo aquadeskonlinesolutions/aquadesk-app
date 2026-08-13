@@ -91,6 +91,26 @@ export function CreateDiveCenterForm() {
           />
         </div>
         <div className="col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Pricing mode
+          </label>
+          <p className="text-xs text-gray-500 mb-2">
+            Confirm with the dive center before creating the account — this
+            can only be changed later by the owner, under Settings, and only
+            while no bills are open.
+          </p>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="radio" name="pricingMode" value="tier" required />
+              Tier-based (per-dive rates by cumulative dive count)
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="radio" name="pricingMode" value="package" required />
+              Package-based (flat price per dive-site combination)
+            </label>
+          </div>
+        </div>
+        <div className="col-span-2">
           <button
             type="submit"
             disabled={pending}
