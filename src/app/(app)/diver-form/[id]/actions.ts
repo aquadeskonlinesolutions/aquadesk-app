@@ -12,6 +12,7 @@ import {
   otherChargesForSite,
   normalizeSiteKey,
   findPackagesBySiteKey,
+  resolveEquipmentCharge,
 } from "./pricing";
 import { computePaymentBreakdown, type PaymentInput } from "./billing";
 import { loadPaymentConfig, loadInvoiceForVisit } from "./data";
@@ -459,7 +460,16 @@ export async function applyChargesToVisit(
     marineTax: new Set<string>(),
     sharkFee: new Set<string>(),
     fuel: new Set<string>(),
+    equipment: new Set<string>(),
   };
+  // Equipment rental applies in tier AND course mode — a course price
+  // covers instruction, not necessarily personal gear rental, so a
+  // course diver who requested equipment should still be charged for
+  // it. Package mode stays fully all-inclusive (see pricing.ts's
+  // autoPricePackageMode) — no separate equipment line there.
+  const equipmentTotals = !isPackage
+    ? await resolveEquipmentCharge(user.diveCenterId, diverId)
+    : { perDive: 0, perDay: 0 };
 
   let packageRateByKey: Map<string, number> | null = null;
   let packageIdByKey: Map<string, string | null> | null = null;
@@ -485,23 +495,34 @@ export async function applyChargesToVisit(
     let result;
     if (isCourse) {
       result = await autoPriceCourseMode(user.diveCenterId, visit.course_rate_id);
+      result.equipmentRental =
+        equipmentTotals.perDive + (seenPerDayCharge.equipment.has(row.date) ? 0 : equipmentTotals.perDay);
+      if (equipmentTotals.perDay > 0 && !seenPerDayCharge.equipment.has(row.date)) {
+        seenPerDayCharge.equipment.add(row.date);
+      }
     } else if (isPackage) {
+      // All-inclusive: the package price is the whole bill for this row —
+      // no separate fuel/marine/shark/equipment lines stack on top of it.
       const key = normalizeSiteKey(diveSiteText);
       const rate = packageRateByKey?.get(key);
       resolvedPackageId = packageIdByKey?.get(key);
-      const site = await resolveSite(user.diveCenterId, diveSiteText);
-      const { fuel, marine, shark } = await otherChargesForSite(user.diveCenterId, site);
       result = {
         diveRate: rate ?? 0,
-        fuelSurcharge: fuel,
-        marineTax: marine,
-        sharkFee: shark,
+        fuelSurcharge: 0,
+        marineTax: 0,
+        sharkFee: 0,
         nitroxFee: 0,
         fifteenLFee: 0,
+        equipmentRental: 0,
         note: rate === undefined ? "No dive site set on this row — enter the dive rate manually." : null,
       };
     } else if (dc?.pricing_mode === "tier") {
       result = await autoPriceTierMode(user.diveCenterId, diveSiteText, cumulativeDiveCount, wantsNitrox, wants15L);
+      result.equipmentRental =
+        equipmentTotals.perDive + (seenPerDayCharge.equipment.has(row.date) ? 0 : equipmentTotals.perDay);
+      if (equipmentTotals.perDay > 0 && !seenPerDayCharge.equipment.has(row.date)) {
+        seenPerDayCharge.equipment.add(row.date);
+      }
     } else {
       return { error: "This dive center has no pricing mode configured yet (see Settings > Pricing & Rates)." };
     }
@@ -532,6 +553,7 @@ export async function applyChargesToVisit(
         shark_fee: result.sharkFee,
         nitrox_fee: result.nitroxFee,
         fifteen_l_fee: result.fifteenLFee,
+        equipment_rental: result.equipmentRental,
         // Display-only tag (migration 032) — set whenever this row's package
         // resolved unambiguously, cleared (not left stale) if it resolved to
         // a custom price instead. Never read back for pricing itself.
