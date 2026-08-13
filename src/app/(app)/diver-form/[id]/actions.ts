@@ -462,12 +462,14 @@ export async function applyChargesToVisit(
     fuel: new Set<string>(),
     equipment: new Set<string>(),
   };
-  // Equipment rental applies in tier AND course mode — a course price
-  // covers instruction, not necessarily personal gear rental, so a
-  // course diver who requested equipment should still be charged for
-  // it. Package mode stays fully all-inclusive (see pricing.ts's
-  // autoPricePackageMode) — no separate equipment line there.
-  const equipmentTotals = !isPackage
+  // Equipment/gear is always bundled into course pricing (confirmed
+  // business rule) — a course-mode visit must never show a separate
+  // equipment charge, in either tier or package pricing mode. Package
+  // mode is separately all-inclusive for everyone (see pricing.ts's
+  // autoPricePackageMode). So equipment only ever computes for
+  // fun-diving visits at a tier-mode dive center — both isCourse and
+  // isPackage have to be false.
+  const equipmentTotals = !isCourse && !isPackage
     ? await resolveEquipmentCharge(user.diveCenterId, diverId)
     : { perDive: 0, perDay: 0 };
 
