@@ -172,7 +172,11 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
 
     const totalBill = nonCancelled.reduce((s, a) => s + a.total, 0);
     const paid = getPaidAmount(payment);
-    const grandTotal = payment ? Number(payment.grand_total_php) || 0 : totalBill;
+    // Always derive from the live activities total, never the stale
+    // payments.grand_total_php snapshot (a write-once-per-Save field that
+    // doesn't grow with the visit) — this must never disagree with
+    // "Running Bill" on the same card, which already uses totalBill.
+    const grandTotal = totalBill;
     const discount = payment ? Number(payment.discount) || 0 : 0;
 
     const alreadyInScheduling = !!visit && visit.isActive && visit.status === "open" && !visit.isPaid;
