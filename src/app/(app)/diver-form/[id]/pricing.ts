@@ -45,6 +45,7 @@ export type AutoPriceResult = {
   sharkFee: number;
   nitroxFee: number;
   fifteenLFee: number;
+  equipmentRental: number;
   note: string | null;
 };
 
@@ -55,6 +56,7 @@ const ZERO_RESULT: Omit<AutoPriceResult, "note"> = {
   sharkFee: 0,
   nitroxFee: 0,
   fifteenLFee: 0,
+  equipmentRental: 0,
 };
 
 async function lookupOtherCharge(
@@ -178,30 +180,28 @@ export async function autoPriceCourseMode(diveCenterId: string, courseRateId: st
   return { ...ZERO_RESULT, diveRate: Number(data?.rate) || 0, note: null };
 }
 
+// A package price is fully all-inclusive — fuel/marine/shark/equipment
+// never stack on top of it, matching the explicit Round 2 fix: a package
+// bill only ever shows the package price, full stop. (An earlier version
+// of this function resolved fuel/marine/shark from the row's site
+// regardless of package match — that stacking was the actual bug.)
 export async function autoPricePackageMode(diveCenterId: string, diveSiteText: string): Promise<AutoPriceResult> {
-  // Fuel/marine/shark stay resolved from the row's first real site name —
-  // unrelated to which package matched, unchanged from before.
-  const site = await resolveSite(diveCenterId, diveSiteText);
-  const { fuel, marine, shark } = await otherChargesForSite(diveCenterId, site);
-
   const pkg = await resolvePackageBySiteCombo(diveCenterId, diveSiteText);
   if (!pkg) {
     return {
       ...ZERO_RESULT,
-      fuelSurcharge: fuel,
-      marineTax: marine,
-      sharkFee: shark,
       note: "No matching package configured for this dive-site combination (set one in Settings > Pricing & Rates > Packages) — enter the dive rate manually.",
     };
   }
 
   return {
     diveRate: pkg.price,
-    fuelSurcharge: fuel,
-    marineTax: marine,
-    sharkFee: shark,
+    fuelSurcharge: 0,
+    marineTax: 0,
+    sharkFee: 0,
     nitroxFee: 0,
     fifteenLFee: 0,
+    equipmentRental: 0,
     note: null,
   };
 }
@@ -245,8 +245,62 @@ export async function autoPriceTierMode(
     sharkFee: shark,
     nitroxFee,
     fifteenLFee,
+    equipmentRental: 0,
     note: diveRate === 0 ? "No tier rate configured for this dive count — enter the dive rate manually." : null,
   };
+}
+
+// Real fix for the "equipment_rental is never charged" gap: matches a
+// diver's saved equipment_requested items against Settings > Equipment
+// Rental's item_name + rate + charge_type (case-insensitive name match,
+// active rates only) — the exact mechanism the codebase's own prior
+// "known gap" comment described but never built. Tier mode only — course
+// mode is already a flat all-inclusive price (see ZERO_RESULT), and
+// package mode is now explicitly all-inclusive too (see
+// autoPricePackageMode above), so neither should ever add an equipment
+// line. Split into per-dive vs. per-day totals so the caller (actions.ts's
+// applyChargesToVisit) can apply the same per-day-across-the-visit dedup
+// already used for marine tax/shark fee/fuel, rather than charging a
+// per_day item on every row.
+export type EquipmentChargeTotals = { perDive: number; perDay: number };
+
+export async function resolveEquipmentCharge(diveCenterId: string, diverId: string): Promise<EquipmentChargeTotals> {
+  const supabase = await createClient();
+  const { data: diver } = await supabase
+    .from("divers")
+    .select("equipment_requested")
+    .eq("id", diverId)
+    .eq("dive_center_id", diveCenterId)
+    .maybeSingle();
+
+  if (!diver?.equipment_requested) return { perDive: 0, perDay: 0 };
+
+  let items: { name?: string }[] = [];
+  try {
+    const parsed = JSON.parse(diver.equipment_requested) as { items?: { name?: string }[] };
+    items = parsed?.items ?? [];
+  } catch {
+    return { perDive: 0, perDay: 0 };
+  }
+
+  const requestedNames = new Set(items.map((i) => (i.name ?? "").trim().toLowerCase()).filter(Boolean));
+  if (requestedNames.size === 0) return { perDive: 0, perDay: 0 };
+
+  const { data: rates } = await supabase
+    .from("equipment_rental_rates")
+    .select("item_name, rate, charge_type")
+    .eq("dive_center_id", diveCenterId)
+    .eq("is_active", true);
+
+  let perDive = 0;
+  let perDay = 0;
+  for (const r of rates ?? []) {
+    if (!requestedNames.has(r.item_name.trim().toLowerCase())) continue;
+    const amount = Number(r.rate) || 0;
+    if (r.charge_type === "per_day") perDay += amount;
+    else perDive += amount;
+  }
+  return { perDive, perDay };
 }
 
 // Which of the three per-dive-site charges apply as 'per_day' (charged once
