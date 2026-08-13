@@ -160,6 +160,7 @@ export type TripDetail = {
   updatedAt: string;
   scheduleDate: string;
   boatId: string | null;
+  boatMode: "own_boat" | "join_ride" | "rental";
   isJoiner: boolean;
   joinerBoatName: string | null;
   departureTime: string | null;
@@ -830,7 +831,7 @@ export async function loadTripDetail(
   const { data: schedule } = await supabase
     .from("schedules")
     .select(
-      "id, updated_at, schedule_date, boat_id, is_joiner, joiner_boat_name, departure_time, trip_type_id, captain, notes, fuel_consumed_liters, closed, cancelled, guest_divers_count, guest_dive_center_name, guest_notes",
+      "id, updated_at, schedule_date, boat_id, boat_mode, is_joiner, joiner_boat_name, departure_time, trip_type_id, captain, notes, fuel_consumed_liters, closed, cancelled, guest_divers_count, guest_dive_center_name, guest_notes",
     )
     .eq("id", scheduleId)
     .eq("dive_center_id", diveCenterId)
@@ -848,6 +849,7 @@ export async function loadTripDetail(
     updatedAt: schedule.updated_at,
     scheduleDate: schedule.schedule_date,
     boatId: schedule.boat_id,
+    boatMode: schedule.boat_mode,
     isJoiner: schedule.is_joiner,
     joinerBoatName: schedule.joiner_boat_name,
     departureTime: schedule.departure_time,

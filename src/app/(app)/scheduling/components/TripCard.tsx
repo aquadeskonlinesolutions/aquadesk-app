@@ -119,7 +119,7 @@ function emptyForm(scheduleDate: string): TripFormInput {
 function fromDetail(detail: TripDetail): TripFormInput {
   return {
     scheduleDate: detail.scheduleDate,
-    boatMode: detail.isJoiner ? "join_ride" : "own_boat",
+    boatMode: detail.boatMode,
     boatId: detail.boatId,
     joinerBoatName: detail.joinerBoatName ?? "",
     departureTime: detail.departureTime ?? "",

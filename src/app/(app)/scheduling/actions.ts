@@ -162,6 +162,7 @@ export async function createTrip(
       dive_center_id: user.diveCenterId,
       schedule_date: input.scheduleDate,
       boat_id: isJoiner ? null : input.boatId,
+      boat_mode: input.boatMode,
       is_joiner: isJoiner,
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
@@ -213,6 +214,7 @@ export async function updateTrip(
     .update({
       schedule_date: input.scheduleDate,
       boat_id: isJoiner ? null : input.boatId,
+      boat_mode: input.boatMode,
       is_joiner: isJoiner,
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
@@ -938,6 +940,14 @@ export async function markBoatReturned(
       // is_15l/nitrox_requested already use elsewhere in this schema.
       const anyNitrox = diverTanks ? [...diverTanks.values()].some((t) => t === "nitrox") : false;
       const any15l = diverTanks ? [...diverTanks.values()].some((t) => t === "air_15l") : false;
+      // Both flags can genuinely apply together (nitrox on one dive, 15L on
+      // another, within the same package trip) — a prior ternary chain here
+      // only ever kept one of the two, silently dropping whichever flag lost
+      // the tie. Build both keys independently instead.
+      const flags: { nitrox_requested?: true; tank_15l_requested?: true } | null =
+        anyNitrox || any15l
+          ? { ...(anyNitrox ? { nitrox_requested: true as const } : {}), ...(any15l ? { tank_15l_requested: true as const } : {}) }
+          : null;
       activityRows.push({
         dive_center_id: user.diveCenterId,
         diver_id: row.diver_id,
@@ -948,7 +958,7 @@ export async function markBoatReturned(
         package_id: packageId,
         staff_name: staffName,
         status: "completed",
-        flags: anyNitrox ? { nitrox_requested: true } : any15l ? { tank_15l_requested: true } : null,
+        flags,
       });
     } else {
       const sitesForRow = siteNames.length > 0 ? siteNames : [null];
