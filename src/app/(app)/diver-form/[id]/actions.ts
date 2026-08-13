@@ -484,6 +484,15 @@ export async function applyChargesToVisit(
 
   let updatedCount = 0;
   let missingRateCount = 0;
+  // A course price is a single flat fee for the whole enrollment, not a
+  // per-boat-trip charge — a course student going out on Kimud, then Gato,
+  // then ATI during their course legitimately gets one activity row per
+  // trip (same as fun diving), but only the first non-cancelled row should
+  // ever carry the course price; every later row prices at 0. Previously
+  // every row got the full course rate independently, multiplying a single
+  // enrollment's charge by however many boat trips the student happened to
+  // go on.
+  let courseCharged = false;
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -495,6 +504,11 @@ export async function applyChargesToVisit(
     let result;
     if (isCourse) {
       result = await autoPriceCourseMode(user.diveCenterId, visit.course_rate_id);
+      if (courseCharged) {
+        result.diveRate = 0;
+      } else if (result.diveRate > 0) {
+        courseCharged = true;
+      }
       result.equipmentRental =
         equipmentTotals.perDive + (seenPerDayCharge.equipment.has(row.date) ? 0 : equipmentTotals.perDay);
       if (equipmentTotals.perDay > 0 && !seenPerDayCharge.equipment.has(row.date)) {
@@ -644,9 +658,27 @@ export async function autoFillFromActivitySelection(
 
   if (selection.kind === "course") {
     const result = await autoPriceCourseMode(user.diveCenterId, selection.courseRateId);
+    // Same one-charge-per-visit rule as applyChargesToVisit's bulk pass —
+    // this is the single-row path (a secretary manually re-picking a
+    // course on one activity row), so it needs its own check: does any
+    // OTHER non-cancelled row in this visit already carry a nonzero dive
+    // rate? For a course-mode visit that can only mean the course was
+    // already charged elsewhere.
+    const { data: activityRow } = await supabase.from("activities").select("visit_id").eq("id", activityId).maybeSingle();
+    let diveRate = result.diveRate;
+    if (activityRow?.visit_id) {
+      const { count } = await supabase
+        .from("activities")
+        .select("id", { count: "exact", head: true })
+        .eq("visit_id", activityRow.visit_id)
+        .neq("id", activityId)
+        .neq("status", "cancelled")
+        .gt("dive_rate", 0);
+      if ((count ?? 0) > 0) diveRate = 0;
+    }
     update = {
       dive_site: selection.courseName,
-      dive_rate: result.diveRate,
+      dive_rate: diveRate,
       fuel_surcharge: 0,
       marine_tax: 0,
       shark_fee: 0,
