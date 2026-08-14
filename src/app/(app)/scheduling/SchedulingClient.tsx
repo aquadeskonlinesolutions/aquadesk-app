@@ -70,7 +70,9 @@ export function SchedulingClient({
       <div className="bg-white border border-gray-200 rounded-lg px-5 py-4 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-3xl text-navy mb-1">Scheduling</h1>
-          <p className="text-gray-600 text-sm">Trip/schedule builder, boat and staff assignment.</p>
+          <p className="text-gray-600 text-sm">
+            Build today&apos;s dive trips in three steps — get divers ready, assign them to boats, then confirm and share with your crew.
+          </p>
         </div>
         <div>
           <input

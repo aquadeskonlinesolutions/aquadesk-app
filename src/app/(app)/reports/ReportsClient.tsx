@@ -44,14 +44,49 @@ function todayManila(): string {
 }
 
 const TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "staff", label: "Staff Activity Summary" },
-  { key: "join", label: "Join Ride" },
-  { key: "rentals", label: "Rental Gears" },
-  { key: "expenses", label: "Expenses" },
-  { key: "settlement", label: "Settlement" },
-  { key: "govtfees", label: "Government Fees" },
-  { key: "audit", label: "Billing Audit" },
+  {
+    key: "overview",
+    label: "Overview",
+    description: "Your business at a glance — money in, money out, net profit, and what's still owed.",
+  },
+  {
+    key: "staff",
+    label: "Staff Activity Summary",
+    description:
+      "Automatic dive-count pay for your team, plus a place to log and mark paid course-instructor payouts.",
+  },
+  {
+    key: "join",
+    label: "Join Ride",
+    description:
+      "Track divers riding on someone else's boat, or guests riding on yours — who owes what, either direction.",
+  },
+  {
+    key: "rentals",
+    label: "Rental Gears",
+    description: "Gear rented out or borrowed in — what's been collected, what's still to pay.",
+  },
+  {
+    key: "expenses",
+    label: "Expenses",
+    description: "Every cost logged for this dive center, organized by category, with who recorded it.",
+  },
+  {
+    key: "settlement",
+    label: "Settlement",
+    description: "A single day's cash drawer — every payment collected, ready to print or export for reconciliation.",
+  },
+  {
+    key: "govtfees",
+    label: "Government Fees",
+    description: "Marine, shark, and other government fees collected per diver — log today's here.",
+  },
+  {
+    key: "audit",
+    label: "Billing Audit",
+    description:
+      "A record of every invoice sent and every bill unlock, so you can trace exactly what changed and when.",
+  },
 ] as const;
 
 function formatLabel(dateStr: string): string {
@@ -256,6 +291,9 @@ export function ReportsClient({
           </button>
         ))}
       </div>
+      <p className="print:hidden text-gray-600 text-sm mb-5 -mt-3">
+        {TABS.find((t) => t.key === tab)?.description}
+      </p>
 
       {/*
         Tabs with their own client-side state (Staff, Join Ride, Rental

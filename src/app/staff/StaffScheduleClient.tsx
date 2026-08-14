@@ -252,6 +252,9 @@ export function StaffScheduleClient() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4 pb-12 grid gap-4">
+        <p className="text-gray-500 text-sm text-center -mb-1">
+          Today&apos;s dive trips — your boat, dive sites, and who&apos;s diving with you.
+        </p>
         {trips.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm p-10 text-center text-gray-400">
             🌊 No trips scheduled for today.

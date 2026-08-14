@@ -117,6 +117,9 @@ export function DiverDetailClient({
         <Link href="/diver-form" className="text-sm text-gray-500 hover:text-navy">
           ← Back to Divers
         </Link>
+        <p className="text-gray-600 text-sm mt-1">
+          This diver&apos;s dive log, equipment, billing, and signed documents — all in one place.
+        </p>
       </div>
 
       <FlagsBanner diver={diver} onUpdated={setDiver} />

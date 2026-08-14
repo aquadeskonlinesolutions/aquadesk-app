@@ -49,7 +49,9 @@ export function DiversListClient({
       <div className="print:hidden flex items-start justify-between mb-1 gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-3xl text-navy mb-1">Diver Form</h1>
-          <p className="text-gray-600 text-sm">Search every diver on file, or open a recent registration.</p>
+          <p className="text-gray-600 text-sm">
+            Search or browse divers and open their profile to log dives, record payments, and check out their bill.
+          </p>
         </div>
         <Link
           href={`/register?dc=${diveCenterId}`}

@@ -15,9 +15,9 @@ const MODE_LABELS: Record<Mode, string> = {
 };
 
 const MODE_SUBTITLES: Record<Mode, string> = {
-  group: "Pre-arrival groups, registration links, and ad-hoc groupings.",
-  individual: "Search and manage divers one at a time.",
-  equipment: "Prep checklist for divers arriving on a given date.",
+  group: "Create pre-arrival groups, share a registration link, or group divers together once they've arrived.",
+  individual: "Find one diver at a time to check their bill, gear, or documents.",
+  equipment: "See what gear each arriving diver needs, so nothing's missing when they show up.",
 };
 
 export function DiversClient({

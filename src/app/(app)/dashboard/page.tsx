@@ -276,7 +276,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="font-display text-3xl text-navy mb-1">Dashboard</h1>
           <p className="text-gray-600 text-sm">
-            Real-time operations overview
+            What&apos;s happening today — boats out, bills to close, and anything that needs your attention.
           </p>
         </div>
         <Link

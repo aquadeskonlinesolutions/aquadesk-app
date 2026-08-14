@@ -106,7 +106,7 @@ export function BoatManifestClient({
         <div>
           <h1 className="font-display text-3xl text-navy mb-1">Boat Manifest</h1>
           <p className="text-gray-600 text-sm">
-            Bureau of Customs passenger manifest — pre-filled from scheduling
+            The Bureau of Customs passenger manifest for a selected trip — pre-filled from your schedule, ready to print.
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
