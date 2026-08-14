@@ -12,10 +12,11 @@ import {
   type ActivityFields,
   type AmbiguousPackageGroup,
 } from "../actions";
-import type { Activity, Visit, CourseRateOption, DiveSiteOption, PackageOption, RateSelection } from "../data";
+import type { Activity, Visit, CourseRateOption, DiveSiteOption, PackageOption, RateSelection, BundleOption } from "../data";
 import { normalizeSiteKey } from "../constants";
 import { useToast } from "@/components/ui/Toast";
 import { RateSelectModal } from "./RateSelectModal";
+import { ApplyBundleModal } from "./ApplyBundleModal";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -219,7 +220,13 @@ function ActivityRow({
   // Charges yet) is always preserved as its own option rather than silently
   // dropped, matching the live app's own legacy-value safety net.
   let activityCell: React.ReactNode;
-  if (visitExperienceType === "dive_course") {
+  if (activity.bundleId) {
+    // The row a bundle collapsed onto shows its name in italics, matching
+    // the user's explicit spec — not a real dive site/package pick anymore,
+    // so no dropdown here (the dive-rate/fee number fields below are still
+    // manually editable as usual).
+    activityCell = <span className="italic text-navy">{fields.diveSite || "—"}</span>;
+  } else if (visitExperienceType === "dive_course") {
     const matches = courseRates.some((c) => c.courseName === fields.diveSite);
     activityCell = (
       <select
@@ -376,6 +383,7 @@ export function VisitPanel({
   diveSites,
   packages,
   rateSelections,
+  bundles,
 }: {
   diverId: string;
   visit: Visit | null;
@@ -387,6 +395,7 @@ export function VisitPanel({
   diveSites: DiveSiteOption[];
   packages: PackageOption[];
   rateSelections: RateSelection[];
+  bundles: BundleOption[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [choosingCourse, setChoosingCourse] = useState(false);
@@ -394,6 +403,7 @@ export function VisitPanel({
   const [pending, startTransition] = useTransition();
   const [ambiguousGroups, setAmbiguousGroups] = useState<AmbiguousPackageGroup[] | null>(null);
   const [changeGroup, setChangeGroup] = useState<{ group: AmbiguousPackageGroup; initial: RateSelection } | null>(null);
+  const [bundleModalOpen, setBundleModalOpen] = useState(false);
   const showToast = useToast();
 
   function startNewVisit(experienceType: "fun_diving" | "dive_course", courseRateId: string | null) {
@@ -600,6 +610,15 @@ export function VisitPanel({
                 ↺ Apply Charges
               </button>
             )}
+            {activities.length > 0 && visit.experienceType !== "dive_course" && bundles.length > 0 && (
+              <button
+                onClick={() => setBundleModalOpen(true)}
+                disabled={pending}
+                className="px-3 py-1.5 text-xs font-medium bg-teal text-white rounded-md hover:bg-teal-mid disabled:opacity-60"
+              >
+                Apply Bundle
+              </button>
+            )}
             {activities.length === 0 && (
               <button
                 onClick={handleVoid}
@@ -697,7 +716,9 @@ export function VisitPanel({
                 ) : (
                   <tr key={a.id} className="border-b border-gray-100 last:border-0 text-xs">
                     <td className="px-2 py-2">{a.date}</td>
-                    <td className="px-2 py-2">{a.diveSite || "—"}</td>
+                    <td className="px-2 py-2">
+                      {a.bundleId ? <span className="italic">{a.diveSite || "—"}</span> : a.diveSite || "—"}
+                    </td>
                     <td className="px-2 py-2">{a.staffName || "—"}</td>
                     <td className="px-2 py-2">{peso(a.diveRate)}</td>
                     <td className="px-2 py-2">{peso(a.fuelSurcharge)}</td>
@@ -750,6 +771,17 @@ export function VisitPanel({
             },
           }}
           onClose={() => setChangeGroup(null)}
+          onApplied={() => window.location.reload()}
+        />
+      )}
+
+      {bundleModalOpen && visit && (
+        <ApplyBundleModal
+          diverId={diverId}
+          visitId={visit.id}
+          diveCount={activities.filter((a) => a.status !== "cancelled").length}
+          bundles={bundles}
+          onClose={() => setBundleModalOpen(false)}
           onApplied={() => window.location.reload()}
         />
       )}

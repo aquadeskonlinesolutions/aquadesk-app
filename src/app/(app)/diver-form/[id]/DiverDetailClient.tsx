@@ -30,6 +30,7 @@ import type {
   DiveSiteOption,
   PackageOption,
   RateSelection,
+  BundleOption,
 } from "./data";
 
 export function DiverDetailClient({
@@ -51,6 +52,7 @@ export function DiverDetailClient({
   diveSites,
   packages,
   initialRateSelections,
+  bundles,
 }: {
   initialDiver: DiverDetail;
   initialNotes: DiverNote[];
@@ -70,6 +72,7 @@ export function DiverDetailClient({
   diveSites: DiveSiteOption[];
   packages: PackageOption[];
   initialRateSelections: RateSelection[];
+  bundles: BundleOption[];
 }) {
   const [diver, setDiver] = useState(initialDiver);
   const [editOpen, setEditOpen] = useState(false);
@@ -136,6 +139,7 @@ export function DiverDetailClient({
         diveSites={diveSites}
         packages={packages}
         rateSelections={initialRateSelections}
+        bundles={bundles}
       />
 
       {visit && visit.isActive && visit.visitStatus === "open" && (

@@ -15,6 +15,7 @@ import {
   loadDiveSites,
   loadActivePackages,
   loadRateSelections,
+  loadBundles,
 } from "./data";
 import { createClient } from "@/lib/supabase/server";
 import { DiverDetailClient } from "./DiverDetailClient";
@@ -27,7 +28,7 @@ export default async function DiverDetailPage({ params }: { params: Promise<{ id
   if (!diver) notFound();
 
   const supabase = await createClient();
-  const [notes, rentalItems, visit, courseRates, paymentConfig, dc, registrations, diveSites, packages] =
+  const [notes, rentalItems, visit, courseRates, paymentConfig, dc, registrations, diveSites, packages, bundles] =
     await Promise.all([
       loadDiverNotes(id),
       loadEquipmentRentalRates(user.diveCenterId),
@@ -38,6 +39,7 @@ export default async function DiverDetailPage({ params }: { params: Promise<{ id
       loadDiverRegistrations(id),
       loadDiveSites(user.diveCenterId),
       loadActivePackages(user.diveCenterId),
+      loadBundles(user.diveCenterId),
     ]);
   const [activities, deposits, existingPayment, rateSelections] = visit
     ? await Promise.all([
@@ -69,6 +71,7 @@ export default async function DiverDetailPage({ params }: { params: Promise<{ id
       diveSites={diveSites}
       packages={packages}
       initialRateSelections={rateSelections}
+      bundles={bundles}
     />
   );
 }

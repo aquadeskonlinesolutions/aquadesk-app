@@ -365,6 +365,34 @@ export async function loadCourseRates(diveCenterId: string): Promise<CourseRateO
   return (data ?? []).map((c) => ({ id: c.id, courseName: c.course_name, rate: Number(c.rate) || 0 }));
 }
 
+// Multi-dive bundles (Settings > Courses > Bundles, migration 037) — flat
+// price for a fixed dive count, applied per visit via "Apply Bundle".
+export type BundleOption = {
+  id: string;
+  name: string;
+  diveCount: number;
+  price: number;
+  equipmentIncluded: boolean;
+};
+
+export async function loadBundles(diveCenterId: string): Promise<BundleOption[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("bundles")
+    .select("id, name, dive_count, price, equipment_included")
+    .eq("dive_center_id", diveCenterId)
+    .eq("is_active", true)
+    .order("dive_count");
+
+  return (data ?? []).map((b) => ({
+    id: b.id,
+    name: b.name,
+    diveCount: b.dive_count,
+    price: Number(b.price) || 0,
+    equipmentIncluded: !!b.equipment_included,
+  }));
+}
+
 // ── Visits + Activities ─────────────────────────────────────────────────
 
 export type Visit = {
@@ -396,6 +424,11 @@ export type Activity = {
   // never read for pricing; diveSite always stays the raw site combo that
   // pricing/Reports actually match and count on.
   packageId: string | null;
+  // Which bundle collapsed this row's charges (Settings > Courses >
+  // Bundles, migration 037) — set only on the one row carrying the bundle's
+  // lump-sum price, purely a display tag (VisitPanel italicizes diveSite
+  // when set), never read for pricing.
+  bundleId: string | null;
   staffName: string | null;
   diveRate: number;
   fuelSurcharge: number;
@@ -456,7 +489,7 @@ export async function loadActivities(visitId: string): Promise<Activity[]> {
   const { data } = await supabase
     .from("activities")
     .select(
-      "id, visit_id, schedule_id, date, dive_site, package_id, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, discount, total, status, notes",
+      "id, visit_id, schedule_id, date, dive_site, package_id, bundle_id, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, discount, total, status, notes",
     )
     .eq("visit_id", visitId)
     .order("date", { ascending: true });
@@ -468,6 +501,7 @@ export async function loadActivities(visitId: string): Promise<Activity[]> {
     date: a.date,
     diveSite: a.dive_site,
     packageId: a.package_id,
+    bundleId: a.bundle_id,
     staffName: a.staff_name,
     diveRate: Number(a.dive_rate) || 0,
     fuelSurcharge: Number(a.fuel_surcharge) || 0,

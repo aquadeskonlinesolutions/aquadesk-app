@@ -424,7 +424,7 @@ export async function applyChargesToVisit(
   const [{ data: visit }, { data: dc }, { data: rowsRaw }] = await Promise.all([
     supabase
       .from("visits")
-      .select("experience_type, course_rate_id")
+      .select("experience_type, course_rate_id, course_rates(equipment_included)")
       .eq("id", visitId)
       .eq("dive_center_id", user.diveCenterId)
       .single(),
@@ -462,16 +462,20 @@ export async function applyChargesToVisit(
     fuel: new Set<string>(),
     equipment: new Set<string>(),
   };
-  // Equipment/gear is always bundled into course pricing (confirmed
-  // business rule) — a course-mode visit must never show a separate
-  // equipment charge, in either tier or package pricing mode. Package
-  // mode is separately all-inclusive for everyone (see pricing.ts's
-  // autoPricePackageMode). So equipment only ever computes for
-  // fun-diving visits at a tier-mode dive center — both isCourse and
-  // isPackage have to be false.
-  const equipmentTotals = !isCourse && !isPackage
-    ? await resolveEquipmentCharge(user.diveCenterId, diverId)
-    : { perDive: 0, perDay: 0 };
+  // Equipment/gear inclusion is a real per-course Settings toggle
+  // (course_rates.equipment_included, default true) — most courses bundle
+  // it into the flat course price, but a dive center can flag a specific
+  // course as gear-excluded to charge it on top. Package mode stays
+  // separately all-inclusive for everyone regardless of this flag (see
+  // pricing.ts's autoPricePackageMode) — only course mode reads it.
+  const courseRatesJoin = (visit as { course_rates?: { equipment_included: boolean } | { equipment_included: boolean }[] | null }).course_rates;
+  const courseEquipmentIncluded = Array.isArray(courseRatesJoin)
+    ? (courseRatesJoin[0]?.equipment_included ?? true)
+    : (courseRatesJoin?.equipment_included ?? true);
+  const equipmentTotals =
+    (!isCourse && !isPackage) || (isCourse && !courseEquipmentIncluded)
+      ? await resolveEquipmentCharge(user.diveCenterId, diverId)
+      : { perDive: 0, perDay: 0 };
 
   let packageRateByKey: Map<string, number> | null = null;
   let packageIdByKey: Map<string, string | null> | null = null;
@@ -583,6 +587,97 @@ export async function applyChargesToVisit(
 
   revalidatePath(`/diver-form/${diverId}`);
   return { updatedCount, missingRateCount };
+}
+
+// Applies a configured multi-dive Bundle (Settings > Courses > Bundles,
+// migration 037) to a fun-diving visit: every non-cancelled activity row
+// except the chronologically last one has its dive_rate/fuel_surcharge/
+// marine_tax/shark_fee/equipment_rental zeroed; the last row carries the
+// bundle's flat price as dive_rate, bundle.name as dive_site (rendered in
+// italics — see VisitPanel.tsx), and bundle_id for the display tag.
+// Per the confirmed business rule, a bundle price is fully inclusive of
+// everything EXCEPT nitrox_fee/fifteen_l_fee, which stay untouched on every
+// row — and every field remains manually editable afterward, same as any
+// other Apply Charges result. Equipment is folded into the bundle price
+// unless the bundle's own equipment_included flag is false, in which case
+// the diver's saved equipment selection is priced and added to the last
+// row's equipment_rental (same resolveEquipmentCharge lookup and per-dive/
+// per-day cadence dedup as applyChargesToVisit's tier-mode fun-diving path).
+export async function applyBundleToVisit(
+  diverId: string,
+  visitId: string,
+  bundleId: string,
+): Promise<{ error?: string; updatedCount?: number }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  const { data: bundle } = await supabase
+    .from("bundles")
+    .select("id, name, price, equipment_included")
+    .eq("id", bundleId)
+    .eq("dive_center_id", user.diveCenterId)
+    .maybeSingle();
+  if (!bundle) return { error: "Bundle not found." };
+
+  const { data: rowsRaw } = await supabase
+    .from("activities")
+    .select("id, date")
+    .eq("visit_id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .neq("status", "cancelled")
+    .order("date", { ascending: true })
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+
+  const rows = rowsRaw ?? [];
+  if (rows.length === 0) return { error: "Add at least one activity before applying a bundle." };
+
+  let equipmentRental = 0;
+  if (!bundle.equipment_included) {
+    const totals = await resolveEquipmentCharge(user.diveCenterId, diverId);
+    const seenDates = new Set<string>();
+    for (const row of rows) {
+      equipmentRental += totals.perDive;
+      if (totals.perDay > 0 && !seenDates.has(row.date)) {
+        equipmentRental += totals.perDay;
+        seenDates.add(row.date);
+      }
+    }
+  }
+
+  const lastRow = rows[rows.length - 1];
+  for (const row of rows) {
+    const isLast = row.id === lastRow.id;
+    const { error } = await supabase
+      .from("activities")
+      .update(
+        isLast
+          ? {
+              dive_rate: bundle.price,
+              fuel_surcharge: 0,
+              marine_tax: 0,
+              shark_fee: 0,
+              equipment_rental: equipmentRental,
+              dive_site: bundle.name,
+              bundle_id: bundle.id,
+              package_id: null,
+            }
+          : {
+              dive_rate: 0,
+              fuel_surcharge: 0,
+              marine_tax: 0,
+              shark_fee: 0,
+              equipment_rental: 0,
+              bundle_id: null,
+            },
+      )
+      .eq("id", row.id)
+      .eq("dive_center_id", user.diveCenterId);
+    if (error) return { error: error.message };
+  }
+
+  revalidatePath(`/diver-form/${diverId}`);
+  return { updatedCount: rows.length };
 }
 
 // Persists the secretary's picks for each ambiguous site-combo (a package,

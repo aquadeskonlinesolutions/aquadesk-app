@@ -2,17 +2,20 @@
 
 import { useState, useTransition } from "react";
 import { SettingsSection } from "@/components/settings/SettingsSection";
-import { saveCourseRate, deleteCourseRate } from "./actions";
-import type { CourseRate } from "./data";
+import { saveBundle, deleteBundle } from "./actions";
+import type { Bundle } from "./data";
+
+const DIVE_COUNT_OPTIONS = Array.from({ length: 100 }, (_, i) => i + 1);
 
 function peso(n: number) {
   return `₱${n.toLocaleString("en-PH")}`;
 }
 
-export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {
+export function BundlesSection({ bundles }: { bundles: Bundle[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
+  const [diveCount, setDiveCount] = useState("3");
   const [price, setPrice] = useState("");
   const [equipmentIncluded, setEquipmentIncluded] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,16 +25,18 @@ export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {
     setAdding(true);
     setEditingId(null);
     setName("");
+    setDiveCount("3");
     setPrice("");
     setEquipmentIncluded(true);
     setError(null);
   }
-  function startEdit(c: CourseRate) {
-    setEditingId(c.id);
+  function startEdit(b: Bundle) {
+    setEditingId(b.id);
     setAdding(false);
-    setName(c.course_name);
-    setPrice(String(c.rate));
-    setEquipmentIncluded(c.equipment_included);
+    setName(b.name);
+    setDiveCount(String(b.dive_count));
+    setPrice(String(b.price));
+    setEquipmentIncluded(b.equipment_included);
     setError(null);
   }
   function cancel() {
@@ -40,7 +45,13 @@ export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {
   }
   function save() {
     startTransition(async () => {
-      const res = await saveCourseRate(editingId, name, parseFloat(price) || 0, equipmentIncluded);
+      const res = await saveBundle(
+        editingId,
+        name,
+        parseInt(diveCount, 10) || 0,
+        parseFloat(price) || 0,
+        equipmentIncluded,
+      );
       if (res.error) setError(res.error);
       else {
         setError(null);
@@ -51,21 +62,21 @@ export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {
   }
   function remove(id: string) {
     startTransition(async () => {
-      await deleteCourseRate(id);
+      await deleteBundle(id);
     });
   }
 
   return (
     <SettingsSection
-      title="Course Rates"
-      subtitle="Fixed prices for all dive courses — not affected by pricing mode"
+      title="Bundles"
+      subtitle="Multi-dive packages (e.g. 3, 6, 9, or 10-dive packages) at a flat price — applied per visit from Diver Form"
       action={
         !adding && (
           <button
             onClick={startAdd}
             className="px-3 py-1.5 text-xs font-medium bg-navy text-white rounded-md hover:bg-navy-dark transition-colors"
           >
-            + Add Course
+            + Add Bundle
           </button>
         )
       }
@@ -76,13 +87,30 @@ export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {
         <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-off-white rounded-lg border border-gray-200">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              Course Name
+              Bundle Name
             </label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. 6-Dive Package"
               className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Number of Dives
+            </label>
+            <select
+              value={diveCount}
+              onChange={(e) => setDiveCount(e.target.value)}
+              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+            >
+              {DIVE_COUNT_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -103,7 +131,7 @@ export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {
                 checked={equipmentIncluded}
                 onChange={(e) => setEquipmentIncluded(e.target.checked)}
               />
-              Equipment included in rate
+              Equipment included
             </label>
           </div>
           <button
@@ -119,32 +147,33 @@ export function CourseRatesSection({ courses }: { courses: CourseRate[] }) {
         </div>
       )}
 
-      {courses.length === 0 && !adding ? (
+      {bundles.length === 0 && !adding ? (
         <div className="text-center py-8 text-gray-400 text-sm">
-          No courses yet
+          No bundles yet
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {courses.map((c) => (
+          {bundles.map((b) => (
             <div
-              key={c.id}
+              key={b.id}
               className="flex items-center gap-4 px-4 py-3 border border-gray-200 rounded-lg"
             >
               <div className="flex-1">
-                <div className="font-medium text-navy">{c.course_name}</div>
-                {!c.equipment_included && (
-                  <div className="text-xs text-orange">Equipment charged separately</div>
-                )}
+                <div className="font-medium text-navy">{b.name}</div>
+                <div className="text-xs text-gray-500">
+                  {b.dive_count} dive{b.dive_count === 1 ? "" : "s"}
+                  {!b.equipment_included && " · Equipment charged separately"}
+                </div>
               </div>
-              <div className="font-semibold text-navy">{peso(c.rate)}</div>
+              <div className="font-semibold text-navy">{peso(b.price)}</div>
               <button
-                onClick={() => startEdit(c)}
+                onClick={() => startEdit(b)}
                 className="text-xs text-teal hover:text-navy"
               >
                 Edit
               </button>
               <button
-                onClick={() => remove(c.id)}
+                onClick={() => remove(b.id)}
                 className="text-xs text-red hover:underline"
               >
                 Delete
