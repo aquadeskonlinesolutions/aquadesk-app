@@ -75,6 +75,12 @@ export function LoginForm() {
           className="w-full rounded-card border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal"
         />
       </div>
+      <div className="flex items-center justify-between">
+        <label htmlFor="remember" className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <input id="remember" name="remember" type="checkbox" value="true" className="accent-teal" />
+          Remember me
+        </label>
+      </div>
       {state?.error && (
         <p className="text-sm text-red">{state.error}</p>
       )}

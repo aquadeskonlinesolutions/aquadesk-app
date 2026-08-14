@@ -1,9 +1,18 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { resolveLandingPath } from "@/lib/dal";
+
+// Matches the old app's login.html localStorage "remember me" flag —
+// ported as a cookie (not localStorage) since the gate it controls,
+// /login redirecting an already-authenticated visitor straight into the
+// app, is enforced server-side in proxy.ts, which can only read cookies.
+// A year-long expiry mirrors the old app's flag, which never expired on
+// its own either — only an explicit non-remembered login clears it.
+const REMEMBER_COOKIE = "aquadesk_remember";
+const REMEMBER_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 export async function signOut() {
   const supabase = await createClient();
@@ -28,6 +37,7 @@ export async function signIn(
 ): Promise<SignInState> {
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
+  const remember = formData.get("remember") === "true";
 
   if (!email || !password) {
     return { error: "Email and password are required." };
@@ -54,6 +64,21 @@ export async function signIn(
   }
 
   await supabase.rpc("login_guard_reset", { p_email: email });
+
+  const cookieStore = await cookies();
+  if (remember) {
+    cookieStore.set(REMEMBER_COOKIE, "true", {
+      maxAge: REMEMBER_MAX_AGE_SECONDS,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+  } else {
+    // Matches the old app: signing in without "remember me" explicitly
+    // un-remembers this browser, not just leaves the flag untouched.
+    cookieStore.delete(REMEMBER_COOKIE);
+  }
 
   redirect(await resolveLandingPath());
 }

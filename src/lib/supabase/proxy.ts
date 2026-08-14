@@ -45,7 +45,13 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && pathname === "/login") {
+  // Matches the old app's login.html: a valid session alone doesn't skip
+  // the login form — only a valid session AND a prior "remember me" both
+  // do. Visiting /login with a live-but-not-remembered session (e.g. this
+  // browser wasn't the one "remembered" at last sign-in) shows the form
+  // again rather than silently bouncing straight into the app.
+  const remembered = request.cookies.get("aquadesk_remember")?.value === "true";
+  if (user && remembered && pathname === "/login") {
     // Root page.tsx does the real "where does this user belong" check
     // (platform admin vs. dive-center user vs. forced password change).
     return NextResponse.redirect(new URL("/", request.url));
