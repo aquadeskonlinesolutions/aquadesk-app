@@ -103,20 +103,34 @@ export function RentalGearsTab({
   const [formError, setFormError] = useState<string | null>(null);
   const [rowPending, setRowPending] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [equipmentFilter, setEquipmentFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   async function refresh() {
     const fresh = await getRentalGearsData();
     setRecords(fresh.records);
   }
 
-  const income = records.filter((r) => r.status === "collected").reduce((s, r) => s + r.totalAmount, 0);
-  const expense = records.filter((r) => r.status === "paid").reduce((s, r) => s + r.totalAmount, 0);
-  const stillToCollect = records.filter((r) => r.status === "to_collect").reduce((s, r) => s + r.balance, 0);
-  const stillToPay = records.filter((r) => r.status === "to_pay").reduce((s, r) => s + r.balance, 0);
+  // Every card below (including the two outstanding-balance ones) is scoped
+  // to the applied date range, per the user's explicit choice — none of
+  // these are all-time running balances anymore.
+  const dateRows = records.filter((r) => r.date >= appliedFrom && r.date <= appliedTo);
+  const income = dateRows.filter((r) => r.status === "collected").reduce((s, r) => s + r.totalAmount, 0);
+  const expense = dateRows.filter((r) => r.status === "paid").reduce((s, r) => s + r.totalAmount, 0);
+  const stillToCollect = dateRows.filter((r) => r.status === "to_collect").reduce((s, r) => s + r.balance, 0);
+  const stillToPay = dateRows.filter((r) => r.status === "to_pay").reduce((s, r) => s + r.balance, 0);
   const netBalance = income + stillToCollect - expense - stillToPay;
 
-  const tableRows = records
-    .filter((r) => r.date >= appliedFrom && r.date <= appliedTo)
+  const companyOptions = [...new Set(dateRows.map((r) => r.company).filter((c): c is string => !!c))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const equipmentOptions = [...new Set(dateRows.map((r) => r.equipment))].sort((a, b) => a.localeCompare(b));
+
+  const tableRows = dateRows
+    .filter((r) => !companyFilter || r.company === companyFilter)
+    .filter((r) => !equipmentFilter || r.equipment === equipmentFilter)
+    .filter((r) => !statusFilter || r.status === statusFilter)
     .sort((a, b) => b.date.localeCompare(a.date));
 
   function startAdd() {
@@ -222,6 +236,58 @@ export function RentalGearsTab({
           >
             + Add Rental Record
           </button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-gray-200 bg-off-white flex items-center gap-3 flex-wrap">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Filter</span>
+          <select
+            value={equipmentFilter}
+            onChange={(e) => setEquipmentFilter(e.target.value)}
+            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-white"
+          >
+            <option value="">All equipment</option>
+            {equipmentOptions.map((eq) => (
+              <option key={eq} value={eq}>
+                {eq}
+              </option>
+            ))}
+          </select>
+          <select
+            value={companyFilter}
+            onChange={(e) => setCompanyFilter(e.target.value)}
+            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-white"
+          >
+            <option value="">All companies</option>
+            {companyOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-white"
+          >
+            <option value="">All statuses</option>
+            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          {(companyFilter || equipmentFilter || statusFilter) && (
+            <button
+              onClick={() => {
+                setCompanyFilter("");
+                setEquipmentFilter("");
+                setStatusFilter("");
+              }}
+              className="text-xs text-teal hover:text-navy"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
 
         {form && (
@@ -367,7 +433,9 @@ export function RentalGearsTab({
               {tableRows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="text-center py-8 text-gray-400 text-sm">
-                    No rental records for the selected date range.
+                    {dateRows.length === 0
+                      ? "No rental records for the selected date range."
+                      : "No rental records match the current filters."}
                   </td>
                 </tr>
               ) : (

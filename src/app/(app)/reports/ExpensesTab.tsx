@@ -107,6 +107,9 @@ export function ExpensesTab({
   const [formError, setFormError] = useState<string | null>(null);
   const [rowPending, setRowPending] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
+  const [recordedByFilter, setRecordedByFilter] = useState("");
 
   function applyFresh(fresh: ExpensesData) {
     setRecords(fresh.records);
@@ -114,6 +117,21 @@ export function ExpensesTab({
     setTotalAmount(fresh.totalAmount);
     setUncategorizedAmount(fresh.uncategorizedAmount);
   }
+
+  // The cards/category bars above are already date-range scoped server-side
+  // (getExpensesData(appliedFrom, appliedTo)) — these filters only narrow
+  // which of that already-scoped set of rows the table itself shows.
+  const categoryOptions = [...new Set(records.map((r) => r.category))].sort((a, b) =>
+    categoryLabel(a, null).localeCompare(categoryLabel(b, null)),
+  );
+  const paymentMethodOptions = [...new Set(records.map((r) => r.paymentMethod).filter((m): m is string => !!m))].sort(
+    (a, b) => a.localeCompare(b),
+  );
+  const recordedByOptions = [...new Set(records.map((r) => r.recordedBy))].sort((a, b) => a.localeCompare(b));
+  const tableRows = records
+    .filter((r) => !categoryFilter || r.category === categoryFilter)
+    .filter((r) => !paymentMethodFilter || r.paymentMethod === paymentMethodFilter)
+    .filter((r) => !recordedByFilter || r.recordedBy === recordedByFilter);
 
   const topCategory = categoryTotals[0];
 
@@ -222,6 +240,58 @@ export function ExpensesTab({
           >
             + Add Expense
           </button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-gray-200 bg-off-white flex items-center gap-3 flex-wrap">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Filter</span>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-white"
+          >
+            <option value="">All categories</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>
+                {categoryLabel(c, null)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={paymentMethodFilter}
+            onChange={(e) => setPaymentMethodFilter(e.target.value)}
+            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-white"
+          >
+            <option value="">All payment methods</option>
+            {paymentMethodOptions.map((m) => (
+              <option key={m} value={m}>
+                {PAYMENT_METHOD_LABELS[m] ?? m}
+              </option>
+            ))}
+          </select>
+          <select
+            value={recordedByFilter}
+            onChange={(e) => setRecordedByFilter(e.target.value)}
+            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-white"
+          >
+            <option value="">All recorded by</option>
+            {recordedByOptions.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          {(categoryFilter || paymentMethodFilter || recordedByFilter) && (
+            <button
+              onClick={() => {
+                setCategoryFilter("");
+                setPaymentMethodFilter("");
+                setRecordedByFilter("");
+              }}
+              className="text-xs text-teal hover:text-navy"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
 
         {form && (
@@ -336,14 +406,16 @@ export function ExpensesTab({
               </tr>
             </thead>
             <tbody>
-              {records.length === 0 ? (
+              {tableRows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-8 text-gray-400 text-sm">
-                    No expenses recorded for the selected date range.
+                    {records.length === 0
+                      ? "No expenses recorded for the selected date range."
+                      : "No expenses match the current filters."}
                   </td>
                 </tr>
               ) : (
-                records.map((r) => (
+                tableRows.map((r) => (
                   <tr key={r.id} className="border-b border-gray-100 last:border-0">
                     <td className="px-4 py-3 whitespace-nowrap">{fmtDate(r.date)}</td>
                     <td className="px-4 py-3 font-semibold text-navy">

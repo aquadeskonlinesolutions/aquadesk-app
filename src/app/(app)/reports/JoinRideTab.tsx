@@ -121,6 +121,8 @@ export function JoinRideTab({
   const [formError, setFormError] = useState<string | null>(null);
   const [rowPending, setRowPending] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const [stmtOpen, setStmtOpen] = useState(false);
   const [stmtCompany, setStmtCompany] = useState("");
@@ -142,19 +144,33 @@ export function JoinRideTab({
     setRecords(fresh.records);
   }
 
-  const collect = records.filter((r) => r.direction === "joined_our_boat");
-  const pay = records.filter((r) => r.direction === "we_joined_another_boat");
+  const inRange = (r: JoinRideRecord) => r.date >= appliedFrom && r.date <= appliedTo;
+
+  // "collect"/"pay" drive the summary cards, so they're scoped to the
+  // applied date range — per the user's explicit choice, an outstanding
+  // balance card only reflects records dated inside the picked range, not
+  // an all-time running balance. "allCollect" stays unscoped: it's what
+  // feeds the statement generator's company picker below, which has its
+  // own independent date range (stmtFrom/stmtTo) and shouldn't be limited
+  // by whatever range happens to be applied on the page right now.
+  const allCollect = records.filter((r) => r.direction === "joined_our_boat");
+  const collect = allCollect.filter(inRange);
+  const pay = records.filter((r) => r.direction === "we_joined_another_boat" && inRange(r));
   const toCollect = collect.filter((r) => r.status !== "collected").reduce((s, r) => s + r.balance, 0);
   const collected = collect.filter((r) => r.status === "collected").reduce((s, r) => s + r.totalAmount, 0);
   const toPay = pay.filter((r) => r.status !== "paid").reduce((s, r) => s + r.balance, 0);
   const paid = pay.filter((r) => r.status === "paid").reduce((s, r) => s + r.totalAmount, 0);
-  const joinerDives = records.reduce((s, r) => s + r.numberOfDivers * r.numberOfDives, 0);
+  const joinerDives = [...collect, ...pay].reduce((s, r) => s + r.numberOfDivers * r.numberOfDives, 0);
 
-  const tableRows = records
-    .filter((r) => r.direction === direction && r.date >= appliedFrom && r.date <= appliedTo)
+  const directionDateRows = records.filter((r) => r.direction === direction && inRange(r));
+  const companyOptions = [...new Set(directionDateRows.map((r) => r.company))].sort((a, b) => a.localeCompare(b));
+
+  const tableRows = directionDateRows
+    .filter((r) => !companyFilter || r.company === companyFilter)
+    .filter((r) => !statusFilter || r.status === statusFilter)
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const statementCompanies = [...new Set(collect.filter((r) => r.status !== "collected").map((r) => r.company))].sort(
+  const statementCompanies = [...new Set(allCollect.filter((r) => r.status !== "collected").map((r) => r.company))].sort(
     (a, b) => a.localeCompare(b),
   );
 
@@ -294,7 +310,12 @@ export function JoinRideTab({
           <StatCard label="Collected" value={peso(collected)} sub="Money in" accent="green" />
           <StatCard label="To Pay" value={peso(toPay)} sub="Expected / outstanding" accent="orange" />
           <StatCard label="Paid" value={peso(paid)} sub="Money out" accent="green" />
-          <StatCard label="Joiner Dives" value={String(joinerDives)} sub="Divers × dives, all time" accent="teal" />
+          <StatCard
+            label="Joiner Dives"
+            value={String(joinerDives)}
+            sub="Divers × dives, selected range"
+            accent="teal"
+          />
         </div>
 
         <div className="flex gap-1.5 bg-white border border-gray-200 rounded-2xl p-1.5 shadow-sm w-fit">
@@ -304,6 +325,8 @@ export function JoinRideTab({
               onClick={() => {
                 setDirection(d);
                 setForm(null);
+                setCompanyFilter("");
+                setStatusFilter("");
               }}
               className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${
                 direction === d ? "bg-navy text-white" : "text-gray-600 hover:bg-gray-100"
@@ -342,6 +365,45 @@ export function JoinRideTab({
                 </button>
               )}
             </div>
+          </div>
+
+          <div className="px-5 py-3 border-b border-gray-200 bg-off-white flex items-center gap-3 flex-wrap">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Filter</span>
+            <select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-white"
+            >
+              <option value="">All companies</option>
+              {companyOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm bg-white"
+            >
+              <option value="">All statuses</option>
+              {STATUS_OPTIONS[direction].map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
+            {(companyFilter || statusFilter) && (
+              <button
+                onClick={() => {
+                  setCompanyFilter("");
+                  setStatusFilter("");
+                }}
+                className="text-xs text-teal hover:text-navy"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
 
           {form && (
@@ -493,7 +555,9 @@ export function JoinRideTab({
                 {tableRows.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="text-center py-8 text-gray-400 text-sm">
-                      No join ride records for the selected date range.
+                      {directionDateRows.length === 0
+                        ? "No join ride records for the selected date range."
+                        : "No join ride records match the current filters."}
                     </td>
                   </tr>
                 ) : (
