@@ -242,9 +242,12 @@ export async function sendOwnerResetLink(email: string): Promise<{ error?: strin
   return {};
 }
 
-export async function unlockOwnerLogin(email: string): Promise<{ error?: string }> {
+// Unlocks any dive-center user's login — owner or secretary. login_guard_reset
+// operates generically by email, not scoped to a role; the caller (office
+// console) is what previously only ever surfaced this for the owner.
+export async function unlockUserLogin(email: string): Promise<{ error?: string }> {
   await getCurrentPlatformAdmin();
-  if (!email) return { error: "No owner email on file." };
+  if (!email) return { error: "No email on file." };
 
   const supabase = await createClient();
   await supabase.rpc("login_guard_reset", { p_email: email });

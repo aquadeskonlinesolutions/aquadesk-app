@@ -5,7 +5,7 @@ import {
   updateSubscriptionStatus,
   markPaid,
   sendOwnerResetLink,
-  unlockOwnerLogin,
+  unlockUserLogin,
 } from "@/lib/actions/office";
 import { StartBillingForm } from "./StartBillingForm";
 
@@ -141,7 +141,13 @@ export function DiveCenterList({ diveCenters }: { diveCenters: DiveCenter[] }) {
             {filtered.map((dc) => {
               const owner = ownerOf(dc);
               const overdue = daysOverdue(dc);
-              const isLocked = !!owner?.locked_until && new Date(owner.locked_until) > new Date();
+              // Every locked user gets its own unlock action, not just the
+              // owner — a dive center can have any number of secretary
+              // logins, and any of them can independently trip the 5-attempt
+              // lockout.
+              const lockedUsers = (dc.users ?? []).filter(
+                (u) => !!u.locked_until && new Date(u.locked_until) > new Date(),
+              );
               const dueLabel = dc.billing_due_date
                 ? `Due ${new Date(`${dc.billing_due_date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
                 : "Billing not started";
@@ -220,21 +226,22 @@ export function DiveCenterList({ diveCenters }: { diveCenters: DiveCenter[] }) {
                           Reset Link
                         </button>
                       )}
-                      {isLocked && owner?.email && (
+                      {lockedUsers.map((u) => (
                         <button
+                          key={u.id}
                           disabled={pending}
                           onClick={() => {
                             setActionError(null);
                             startTransition(async () => {
-                              const res = await unlockOwnerLogin(owner.email);
+                              const res = await unlockUserLogin(u.email);
                               if (res.error) setActionError(res.error);
                             });
                           }}
                           className="text-red hover:underline text-xs font-medium"
                         >
-                          Unlock Login
+                          Unlock {u.role === "owner" ? "Owner" : u.full_name || "Secretary"}
                         </button>
-                      )}
+                      ))}
                     </div>
                   </td>
                 </tr>

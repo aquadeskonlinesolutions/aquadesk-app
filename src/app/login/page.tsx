@@ -3,7 +3,7 @@ import { LoginForm } from "./LoginForm";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ suspended?: string }>;
+  searchParams: Promise<{ suspended?: string; timeout?: string }>;
 }) {
   const params = await searchParams;
   return (
@@ -22,6 +22,11 @@ export default async function LoginPage({
           {params.suspended && (
             <p className="text-sm text-red mb-4">
               This dive center&apos;s account is suspended. Contact AquaDesk support for help.
+            </p>
+          )}
+          {params.timeout && (
+            <p className="text-sm text-orange mb-4">
+              You were signed out after a period of inactivity. Please sign in again.
             </p>
           )}
           <LoginForm />
