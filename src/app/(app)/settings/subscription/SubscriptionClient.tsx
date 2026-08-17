@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { SettingsSection, InfoBox } from "@/components/settings/SettingsSection";
 import { Button } from "@/components/ui/Button";
 import { createSubscriptionCheckoutTransaction } from "./actions";
+import { SERVICE_AGREEMENT } from "./constants";
 
 type Plan = "monthly" | "annual";
 
@@ -83,6 +84,13 @@ export function SubscriptionClient({
         >
           {SUBSCRIPTION_LABELS[subscriptionStatus] ?? subscriptionStatus}
         </span>
+      </div>
+
+      <div className="mb-5">
+        <label className="block text-sm font-medium text-gray-700 mb-1">Service Agreement</label>
+        <div className="text-sm text-gray-700 max-h-64 overflow-y-auto border border-gray-200 rounded-card p-3 whitespace-pre-wrap">
+          {SERVICE_AGREEMENT}
+        </div>
       </div>
 
       {alreadyActive ? (
