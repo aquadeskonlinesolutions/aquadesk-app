@@ -14,8 +14,6 @@ export default async function SettingsSubscriptionPage() {
 
   return (
     <SubscriptionClient
-      diveCenterId={user.diveCenterId}
-      userId={user.id}
       email={user.email}
       subscriptionStatus={dc?.subscription_status ?? "trial"}
     />

@@ -199,7 +199,15 @@ export function DiveCenterList({ diveCenters }: { diveCenters: DiveCenter[] }) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
-                      {!dc.billing_due_date ? (
+                      {dc.paddle_subscription_id ? (
+                        // The Paddle webhook never writes billing_due_date/
+                        // billing_amount/last_payment_date, so a Paddle-active
+                        // row always looks like "billing not started" to the
+                        // check below — without this branch, an admin could
+                        // click Start Billing and spin up a parallel manual
+                        // cycle on top of live Paddle autopay on the same row.
+                        <span className="text-gray-400 text-xs italic">Managed by Paddle</span>
+                      ) : !dc.billing_due_date ? (
                         <button
                           onClick={() => setBillingModalDc(dc)}
                           className="text-teal-mid hover:underline text-xs font-medium"

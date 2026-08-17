@@ -5,12 +5,23 @@ import { processEvent } from "@/lib/paddle/process-webhook";
 export async function POST(request: NextRequest) {
   const signature = request.headers.get("paddle-signature") ?? "";
   const rawBody = await request.text();
-  const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET ?? "";
+  const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;
 
   // Cheap pre-check: a request with no signature header or empty body can't
   // be verified at all. 400 is fine — Paddle still retries.
   if (!signature || !rawBody) {
     return Response.json({ error: "Missing signature or body" }, { status: 400 });
+  }
+
+  // A missing secret would otherwise silently coerce to "" and make every
+  // delivery fail unmarshal with the exact same log line as a genuinely
+  // tampered request or rotated secret — logged distinctly here so a
+  // misconfigured deploy is diagnosable instead of looking like an attack.
+  // Response to Paddle is still the same generic non-2xx either way (see catch
+  // below) — this only changes what shows up in our own logs.
+  if (!secret) {
+    console.error("Paddle webhook error: PADDLE_NOTIFICATION_WEBHOOK_SECRET is not set");
+    return Response.json({ error: "Internal error" }, { status: 500 });
   }
 
   try {
