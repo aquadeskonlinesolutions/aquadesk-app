@@ -6,6 +6,7 @@ import {
   markPaid,
   sendOwnerResetLink,
   unlockUserLogin,
+  updateBoatManifestEnabled,
 } from "@/lib/actions/office";
 import { StartBillingForm } from "./StartBillingForm";
 
@@ -32,6 +33,7 @@ type DiveCenter = {
   last_payment_date: string | null;
   paddle_subscription_id: string | null;
   paddle_customer_id: string | null;
+  boat_manifest_enabled: boolean;
   created_at: string;
   users: Owner[] | null;
 };
@@ -260,6 +262,20 @@ export function DiveCenterList({ diveCenters }: { diveCenters: DiveCenter[] }) {
                           Unlock {u.role === "owner" ? "Owner" : u.full_name || "Secretary"}
                         </button>
                       ))}
+                      <button
+                        disabled={pending}
+                        onClick={() => {
+                          setActionError(null);
+                          startTransition(() => {
+                            updateBoatManifestEnabled(dc.id, !dc.boat_manifest_enabled);
+                          });
+                        }}
+                        className={`text-xs font-medium hover:underline ${
+                          dc.boat_manifest_enabled ? "text-gray-500" : "text-teal-mid"
+                        }`}
+                      >
+                        {dc.boat_manifest_enabled ? "Disable Boat Manifest" : "Enable Boat Manifest"}
+                      </button>
                     </div>
                   </td>
                 </tr>

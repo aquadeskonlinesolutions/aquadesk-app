@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/dal";
+import { requireBoatManifestEnabled } from "@/lib/dal";
 import { loadTripsForDate } from "./data";
 import { BoatManifestClient } from "./BoatManifestClient";
 
@@ -12,7 +12,7 @@ function todayManila(): string {
 }
 
 export default async function BoatManifestPage() {
-  const user = await getCurrentUser();
+  const user = await requireBoatManifestEnabled();
   const today = todayManila();
   const trips = await loadTripsForDate(user.diveCenterId, today);
 

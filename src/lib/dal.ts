@@ -12,6 +12,7 @@ export type CurrentUser = {
   canViewRevenue: boolean;
   isActive: boolean;
   passwordChanged: boolean;
+  boatManifestEnabled: boolean;
 };
 
 // Centralizes the "who is this and are they allowed here" check. Optimistic
@@ -45,7 +46,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
   // password_changed check just above.
   const { data: dc } = await supabase
     .from("dive_centers")
-    .select("subscription_status")
+    .select("subscription_status, boat_manifest_enabled")
     .eq("id", profile.dive_center_id)
     .single();
 
@@ -67,6 +68,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     canViewRevenue: profile.can_view_revenue,
     isActive: profile.is_active,
     passwordChanged: profile.password_changed,
+    boatManifestEnabled: dc?.boat_manifest_enabled ?? true,
   };
 });
 
@@ -88,6 +90,18 @@ export async function requireOwner(): Promise<CurrentUser> {
 export async function requireRevenueAccess(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (user.role !== "owner" && !user.canViewRevenue) {
+    redirect("/dashboard");
+  }
+  return user;
+}
+
+// Boat Manifest is a Malapascua-specific Bureau of Customs requirement, not
+// something every dive center needs as AquaDesk expands to other regions —
+// the nav link hiding it is optimistic UI, this is the real boundary, same
+// pattern as requireOwner/requireRevenueAccess above.
+export async function requireBoatManifestEnabled(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (!user.boatManifestEnabled) {
     redirect("/dashboard");
   }
   return user;

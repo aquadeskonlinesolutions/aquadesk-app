@@ -6,6 +6,10 @@ export type NavItem = {
   // list explicit exceptions here per the Stage 1a RLS pattern.
   ownerOnly?: boolean;
   requiresRevenue?: boolean;
+  // Malapascua-specific (Bureau of Customs manifest) — not every dive
+  // center needs this as AquaDesk expands to other regions. Per-dive-center
+  // flag, not a per-user permission like the two above.
+  requiresBoatManifest?: boolean;
 };
 
 // Order and destinations match the live app's own sidebar exactly —
@@ -19,7 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Divers", href: "/divers", icon: "🤿" },
   { label: "Diver Form", href: "/diver-form", icon: "📋" },
   { label: "Scheduling", href: "/scheduling", icon: "📅" },
-  { label: "Boat Manifest", href: "/boat-manifest", icon: "🚤" },
+  { label: "Boat Manifest", href: "/boat-manifest", icon: "🚤", requiresBoatManifest: true },
   { label: "Reports", href: "/reports", icon: "📊", requiresRevenue: true },
   { label: "Settings", href: "/settings", icon: "⚙️", ownerOnly: true },
 ];

@@ -24,6 +24,7 @@ export function Sidebar({ user }: { user: CurrentUser }) {
     if (item.ownerOnly && user.role !== "owner") return false;
     if (item.requiresRevenue && user.role !== "owner" && !user.canViewRevenue)
       return false;
+    if (item.requiresBoatManifest && !user.boatManifestEnabled) return false;
     return true;
   });
 

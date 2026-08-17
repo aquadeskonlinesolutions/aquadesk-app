@@ -132,6 +132,22 @@ export async function updateSubscriptionStatus(
   revalidatePath("/office");
 }
 
+// Boat Manifest is a Malapascua-specific (Bureau of Customs) requirement —
+// this is how it gets turned on for new regions during onboarding.
+// enforce_dive_center_update_scope (migration 039) already allowlists this
+// column for platform-admin writes, same as the billing/status fields above.
+export async function updateBoatManifestEnabled(diveCenterId: string, enabled: boolean) {
+  await getCurrentPlatformAdmin();
+
+  const supabase = await createClient();
+  await supabase
+    .from("dive_centers")
+    .update({ boat_manifest_enabled: enabled })
+    .eq("id", diveCenterId);
+
+  revalidatePath("/office");
+}
+
 export type StartBillingState = { error?: string } | undefined;
 
 export async function startBilling(
