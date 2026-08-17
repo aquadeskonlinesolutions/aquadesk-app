@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { isSubscriptionTabEnabled } from "@/lib/featureFlags";
 
 // The live app's settings.html has these 12 tabs, in this exact order
 // (tab buttons, lines 282-293) — a prior session had consolidated these
@@ -15,11 +16,19 @@ const TABS = [
     description:
       "Your dive center's name, contact info, and logo — how you appear across the app and to divers registering online.",
   },
-  {
-    label: "Subscription",
-    href: "/settings/subscription",
-    description: "Your AquaDesk plan status and billing — choose Monthly or Annual and manage payment.",
-  },
+  // Hidden until the live Paddle account is verified — see featureFlags.ts.
+  // A build-time constant, so this array is only ever computed once per
+  // deployed build, not per request.
+  ...(isSubscriptionTabEnabled()
+    ? [
+        {
+          label: "Subscription",
+          href: "/settings/subscription",
+          description:
+            "Your AquaDesk plan status and billing — choose Monthly or Annual and manage payment.",
+        },
+      ]
+    : []),
   {
     label: "Staff",
     href: "/settings/staff",
