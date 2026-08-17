@@ -16,6 +16,11 @@ const TABS = [
       "Your dive center's name, contact info, and logo — how you appear across the app and to divers registering online.",
   },
   {
+    label: "Subscription",
+    href: "/settings/subscription",
+    description: "Your AquaDesk plan status and billing — choose Monthly or Annual and manage payment.",
+  },
+  {
     label: "Staff",
     href: "/settings/staff",
     description:

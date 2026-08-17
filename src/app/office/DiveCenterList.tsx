@@ -30,6 +30,8 @@ type DiveCenter = {
   billing_due_date: string | null;
   billing_amount: number | null;
   last_payment_date: string | null;
+  paddle_subscription_id: string | null;
+  paddle_customer_id: string | null;
   created_at: string;
   users: Owner[] | null;
 };
@@ -178,6 +180,14 @@ export function DiveCenterList({ diveCenters }: { diveCenters: DiveCenter[] }) {
                         </option>
                       ))}
                     </select>
+                    {dc.paddle_subscription_id && (
+                      <div
+                        className="mt-1 inline-block rounded-full bg-teal-light px-2 py-0.5 text-xs font-medium text-teal-mid"
+                        title={`Paddle subscription: ${dc.paddle_subscription_id}\nPaddle customer: ${dc.paddle_customer_id ?? "—"}`}
+                      >
+                        Paddle-managed · {dc.paddle_subscription_id.slice(0, 11)}…
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className={overdue > 0 ? "text-red text-xs font-medium" : "text-gray-500 text-xs"}>

@@ -1,7 +1,19 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_ROUTES = ["/login", "/register", "/account/password", "/staff", "/reset-password"];
+// /api/webhooks/paddle is a server-to-server callback from Paddle — no
+// browser session, no cookie, ever. It authenticates itself via the
+// Paddle-Signature header (verified inside the route), not this cookie
+// check, so it must never redirect to /login the way a real logged-out
+// visitor would.
+const PUBLIC_ROUTES = [
+  "/login",
+  "/register",
+  "/account/password",
+  "/staff",
+  "/reset-password",
+  "/api/webhooks/paddle",
+];
 
 // Real idle-timeout session expiry — the user's explicit ask, since
 // Supabase's own session cookies otherwise auto-refresh forever (there's
