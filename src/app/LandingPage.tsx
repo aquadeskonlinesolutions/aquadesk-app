@@ -264,7 +264,7 @@ export function LandingPage() {
             </a>
           </div>
           <div className="text-sm text-gray-400 mt-4 flex items-center gap-1.5 flex-wrap">
-            ✓ 14-day free trial &nbsp;·&nbsp; ✓ No credit card required &nbsp;·&nbsp; ✓ Setup in 1 day
+            ✓ Cancel anytime &nbsp;·&nbsp; ✓ Setup in 1 day
           </div>
         </div>
 
@@ -438,10 +438,21 @@ export function LandingPage() {
               <div className="text-xs font-semibold uppercase tracking-[0.12em] text-teal mb-2">
                 AquaDesk Complete
               </div>
-              <div className="font-display text-5xl text-white tracking-tight leading-none mb-1">
-                ₱4,000 <span className="text-xl text-white/60">/mo</span>
+              <div className="grid grid-cols-2 gap-4 sm:gap-6 mt-3">
+                <div>
+                  <div className="font-display text-4xl text-white tracking-tight leading-none mb-1">
+                    $65 <span className="text-lg text-white/60">/mo</span>
+                  </div>
+                  <div className="text-xs text-white/40">≈ ₱4,000/mo</div>
+                </div>
+                <div className="border-l border-white/10">
+                  <div className="font-display text-4xl text-white tracking-tight leading-none mb-1">
+                    $733 <span className="text-lg text-white/60">/yr</span>
+                  </div>
+                  <div className="text-xs text-white/40">≈ ₱45,000/yr</div>
+                </div>
               </div>
-              <div className="text-sm text-white/50">Everything included · Cancel anytime</div>
+              <div className="text-sm text-white/50 mt-4">Everything included · Cancel anytime</div>
             </div>
             <div className="px-8 sm:px-10 py-8">
               <div className="bg-off-white border border-gray-200 rounded-[10px] px-5 py-4 mb-6 text-center">
@@ -467,7 +478,7 @@ export function LandingPage() {
                 Request a free demo →
               </button>
               <div className="text-center text-[0.82rem] text-gray-400 mt-4">
-                14-day free trial · No credit card required
+                Billed in USD · Cancel anytime
               </div>
             </div>
           </div>
