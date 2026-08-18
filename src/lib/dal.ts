@@ -13,6 +13,7 @@ export type CurrentUser = {
   isActive: boolean;
   passwordChanged: boolean;
   boatManifestEnabled: boolean;
+  paddleBillingEnabled: boolean;
 };
 
 // Centralizes the "who is this and are they allowed here" check. Optimistic
@@ -46,7 +47,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
   // password_changed check just above.
   const { data: dc } = await supabase
     .from("dive_centers")
-    .select("subscription_status, boat_manifest_enabled")
+    .select("subscription_status, boat_manifest_enabled, paddle_billing_enabled")
     .eq("id", profile.dive_center_id)
     .single();
 
@@ -69,6 +70,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     isActive: profile.is_active,
     passwordChanged: profile.password_changed,
     boatManifestEnabled: dc?.boat_manifest_enabled ?? true,
+    // Opt-in, unlike boat manifest above — defaults false, not true.
+    paddleBillingEnabled: dc?.paddle_billing_enabled ?? false,
   };
 });
 

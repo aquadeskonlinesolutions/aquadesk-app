@@ -9,90 +9,111 @@ import { isSubscriptionTabEnabled } from "@/lib/featureFlags";
 // into 6 rebuild tabs, but the user asked to split back to the real 12
 // once they started using Settings day-to-day and found Fleet/Dive Sites
 // had no click target of their own.
-const TABS = [
-  {
-    label: "Profile",
-    href: "/settings/profile",
-    description:
-      "Your dive center's name, contact info, and logo — how you appear across the app and to divers registering online.",
-  },
-  // Hidden until the live Paddle account is verified — see featureFlags.ts.
-  // A build-time constant, so this array is only ever computed once per
-  // deployed build, not per request.
-  ...(isSubscriptionTabEnabled()
-    ? [
-        {
-          label: "Subscription",
-          href: "/settings/subscription",
-          description:
-            "Your AquaDesk plan status and billing — choose Monthly or Annual and manage payment.",
-        },
-      ]
-    : []),
-  {
-    label: "Staff",
-    href: "/settings/staff",
-    description:
-      "Your team roster, emergency contacts, and certifications. Secretary logins are created separately under Access & Permissions.",
-  },
-  {
-    label: "Fleet",
-    href: "/settings/fleet",
-    description: "Your boats — names, captains, and passenger capacity, used when building each day's schedule.",
-  },
-  {
-    label: "Pricing & Rates",
-    href: "/settings/pricing",
-    description: "How diving is priced — package or tier mode, add-on charges, and staff commission rates.",
-  },
-  {
-    label: "Courses & Bundles",
-    href: "/settings/courses",
-    description:
-      "Course prices, whether gear is included, and multi-dive bundles divers can be charged as one flat fee.",
-  },
-  {
-    label: "Dive Sites",
-    href: "/settings/dive-sites",
-    description:
-      "Your dive sites and trip types, used when building schedules and estimating fuel, marine tax, and shark fee charges.",
-  },
-  {
-    label: "Equipment Rental",
-    href: "/settings/equipment-rental",
-    description: "Rental rates for gear like BCDs, wetsuits, and computers — charged per dive or per day.",
-  },
-  {
-    label: "Exchange Rates",
-    href: "/settings/exchange-rates",
-    description: "Foreign currency conversion rates and card/online surcharges, used when recording payments.",
-  },
-  {
-    label: "Waiver",
-    href: "/settings/waiver",
-    description: "The waiver text and medical questions divers see and sign during online registration.",
-  },
-  {
-    label: "Inventory",
-    href: "/settings/inventory",
-    description: "Tank counts, fuel levels, and rental gear stock — what you actually have on hand.",
-  },
-  {
-    label: "Passwords",
-    href: "/settings/passwords",
-    description: "Change the owner and billing-unlock passwords that protect sensitive actions.",
-  },
-  {
-    label: "Access & Permissions",
-    href: "/settings/access",
-    description: "Create secretary logins and control what each one can see, including revenue.",
-  },
-];
+//
+// A function, not a module-level constant, because the Subscription tab's
+// visibility now also depends on paddle_billing_enabled — a per-dive-center
+// value passed in as a prop, not just the build-time global flag.
+function getTabs(paddleBillingEnabled: boolean) {
+  return [
+    {
+      label: "Profile",
+      href: "/settings/profile",
+      description:
+        "Your dive center's name, contact info, and logo — how you appear across the app and to divers registering online.",
+    },
+    // Hidden until the live Paddle account is verified (build-time global
+    // kill switch, see featureFlags.ts) AND until this specific dive center
+    // has been opted into Paddle billing (paddle_billing_enabled) — most
+    // customers stay on manual bank-transfer billing to avoid Paddle's fees,
+    // so both gates must pass.
+    ...(isSubscriptionTabEnabled() && paddleBillingEnabled
+      ? [
+          {
+            label: "Subscription",
+            href: "/settings/subscription",
+            description:
+              "Your AquaDesk plan status and billing — choose Monthly or Annual and manage payment.",
+          },
+        ]
+      : []),
+    {
+      label: "Staff",
+      href: "/settings/staff",
+      description:
+        "Your team roster, emergency contacts, and certifications. Secretary logins are created separately under Access & Permissions.",
+    },
+    {
+      label: "Fleet",
+      href: "/settings/fleet",
+      description:
+        "Your boats — names, captains, and passenger capacity, used when building each day's schedule.",
+    },
+    {
+      label: "Pricing & Rates",
+      href: "/settings/pricing",
+      description:
+        "How diving is priced — package or tier mode, add-on charges, and staff commission rates.",
+    },
+    {
+      label: "Courses & Bundles",
+      href: "/settings/courses",
+      description:
+        "Course prices, whether gear is included, and multi-dive bundles divers can be charged as one flat fee.",
+    },
+    {
+      label: "Dive Sites",
+      href: "/settings/dive-sites",
+      description:
+        "Your dive sites and trip types, used when building schedules and estimating fuel, marine tax, and shark fee charges.",
+    },
+    {
+      label: "Equipment Rental",
+      href: "/settings/equipment-rental",
+      description:
+        "Rental rates for gear like BCDs, wetsuits, and computers — charged per dive or per day.",
+    },
+    {
+      label: "Exchange Rates",
+      href: "/settings/exchange-rates",
+      description:
+        "Foreign currency conversion rates and card/online surcharges, used when recording payments.",
+    },
+    {
+      label: "Waiver",
+      href: "/settings/waiver",
+      description:
+        "The waiver text and medical questions divers see and sign during online registration.",
+    },
+    {
+      label: "Inventory",
+      href: "/settings/inventory",
+      description:
+        "Tank counts, fuel levels, and rental gear stock — what you actually have on hand.",
+    },
+    {
+      label: "Passwords",
+      href: "/settings/passwords",
+      description:
+        "Change the owner and billing-unlock passwords that protect sensitive actions.",
+    },
+    {
+      label: "Access & Permissions",
+      href: "/settings/access",
+      description:
+        "Create secretary logins and control what each one can see, including revenue.",
+    },
+  ];
+}
 
-export function SettingsTabs() {
+export function SettingsTabs({
+  paddleBillingEnabled,
+}: {
+  paddleBillingEnabled: boolean;
+}) {
   const pathname = usePathname();
+  const TABS = getTabs(paddleBillingEnabled);
   const activeTab = TABS.find(
-    (tab) => pathname === tab.href || pathname.startsWith(`${tab.href}/`)
+    (tab) => pathname === tab.href || pathname.startsWith(`${tab.href}/`),
   );
 
   return (

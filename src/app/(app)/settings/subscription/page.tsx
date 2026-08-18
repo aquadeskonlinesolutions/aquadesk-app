@@ -5,14 +5,18 @@ import { isSubscriptionTabEnabled } from "@/lib/featureFlags";
 import { SubscriptionClient } from "./SubscriptionClient";
 
 export default async function SettingsSubscriptionPage() {
+  const user = await requireOwner();
+
   // Real enforcement boundary, not just the nav link being hidden — matches
   // requireBoatManifestEnabled's "hiding the tab is optimistic UI" pattern.
   // Same redirect target settings/page.tsx's own index route already uses.
-  if (!isSubscriptionTabEnabled()) {
+  // Both the build-time global kill switch and this dive center's own
+  // paddle_billing_enabled opt-in must be true — most customers stay on
+  // manual bank-transfer billing, so the per-dive-center flag defaults off.
+  if (!isSubscriptionTabEnabled() || !user.paddleBillingEnabled) {
     redirect("/settings/pricing");
   }
 
-  const user = await requireOwner();
   const supabase = await createClient();
 
   const { data: dc } = await supabase

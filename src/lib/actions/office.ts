@@ -148,6 +148,23 @@ export async function updateBoatManifestEnabled(diveCenterId: string, enabled: b
   revalidatePath("/office");
 }
 
+// Per-dive-center opt-in to Paddle self-serve billing, separate from the
+// global NEXT_PUBLIC_SUBSCRIPTION_TAB_ENABLED build-time kill switch — most
+// customers stay on manual bank-transfer billing to avoid Paddle's fees.
+// enforce_dive_center_update_scope (migration 040) already allowlists this
+// column for platform-admin writes, same as boat_manifest_enabled above.
+export async function updatePaddleBillingEnabled(diveCenterId: string, enabled: boolean) {
+  await getCurrentPlatformAdmin();
+
+  const supabase = await createClient();
+  await supabase
+    .from("dive_centers")
+    .update({ paddle_billing_enabled: enabled })
+    .eq("id", diveCenterId);
+
+  revalidatePath("/office");
+}
+
 export type StartBillingState = { error?: string } | undefined;
 
 export async function startBilling(

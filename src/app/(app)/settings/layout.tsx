@@ -18,7 +18,7 @@ export default async function SettingsLayout({
   return (
     <div>
       <h1 className="font-display text-3xl text-navy mb-6">Settings</h1>
-      <SettingsTabs />
+      <SettingsTabs paddleBillingEnabled={user.paddleBillingEnabled} />
       <div className="mt-6">{children}</div>
     </div>
   );

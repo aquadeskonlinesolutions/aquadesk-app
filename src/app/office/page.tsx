@@ -23,7 +23,7 @@ export default async function OfficePage() {
   const { data: diveCenters, error: diveCentersError } = await supabase
     .from("dive_centers")
     .select(
-      "id, name, email, phone, address, subscription_status, billing_due_date, billing_amount, last_payment_date, paddle_subscription_id, paddle_customer_id, boat_manifest_enabled, created_at, users:users!users_dive_center_id_fkey(id, full_name, email, is_active, locked_until, role)",
+      "id, name, email, phone, address, subscription_status, billing_due_date, billing_amount, last_payment_date, paddle_subscription_id, paddle_customer_id, boat_manifest_enabled, paddle_billing_enabled, created_at, users:users!users_dive_center_id_fkey(id, full_name, email, is_active, locked_until, role)",
     )
     .order("created_at", { ascending: false });
 
