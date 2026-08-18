@@ -1,8 +1,22 @@
 import type { NextRequest } from "next/server";
 import { getPaddleInstance } from "@/lib/paddle/server";
 import { processEvent } from "@/lib/paddle/process-webhook";
+import { isAllowedPaddleIp } from "@/lib/paddle/webhook-ip-allowlist";
 
 export async function POST(request: NextRequest) {
+  // Gated to production only: sandbox testing (including local dev via a
+  // cloudflared tunnel, which doesn't set cf-connecting-ip the way
+  // Cloudflare's own edge does) must keep working unaffected. This is
+  // defense-in-depth, not the security boundary - see the signature check
+  // below, which is what actually authenticates a delivery.
+  if (process.env.NEXT_PUBLIC_PADDLE_ENV === "production") {
+    const clientIp = request.headers.get("cf-connecting-ip");
+    if (!(await isAllowedPaddleIp(clientIp))) {
+      console.error(`Paddle webhook error: rejected request from disallowed IP ${clientIp ?? "(missing)"}`);
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
   const signature = request.headers.get("paddle-signature") ?? "";
   const rawBody = await request.text();
   const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;

@@ -17,7 +17,7 @@ export default async function SettingsSubscriptionPage() {
 
   const { data: dc } = await supabase
     .from("dive_centers")
-    .select("subscription_status")
+    .select("subscription_status, paddle_customer_id")
     .eq("id", user.diveCenterId)
     .single();
 
@@ -25,6 +25,7 @@ export default async function SettingsSubscriptionPage() {
     <SubscriptionClient
       email={user.email}
       subscriptionStatus={dc?.subscription_status ?? "trial"}
+      paddleCustomerId={dc?.paddle_customer_id ?? null}
     />
   );
 }

@@ -26,9 +26,11 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
 export function SubscriptionClient({
   email,
   subscriptionStatus,
+  paddleCustomerId,
 }: {
   email: string;
   subscriptionStatus: string;
+  paddleCustomerId: string | null;
 }) {
   const [paddle, setPaddle] = useState<Paddle | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<Plan>("monthly");
@@ -45,8 +47,12 @@ export function SubscriptionClient({
     initializePaddle({
       token: process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN,
       environment: process.env.NEXT_PUBLIC_PADDLE_ENV as "sandbox" | "production",
+      // Paddle Retain needs the customer's own Paddle ID (never our internal
+      // id/email) to recognize them - only present once they've completed a
+      // checkout at least once, so omitted (not even the key) until then.
+      ...(paddleCustomerId ? { pwCustomer: { id: paddleCustomerId } } : {}),
     }).then((p) => p && setPaddle(p));
-  }, []);
+  }, [paddleCustomerId]);
 
   async function openCheckout() {
     if (!paddle) return;
