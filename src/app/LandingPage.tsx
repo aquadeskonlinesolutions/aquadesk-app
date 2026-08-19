@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { requestDemo } from "@/lib/actions/demoRequest";
 
 // Public marketing site for AquaDesk itself (not a tenant-facing operator
 // screen like every other page in this app) — ported from the reference
@@ -66,11 +67,31 @@ function NavIcon() {
   );
 }
 
+type DemoModalStatus = "idle" | "submitting" | "success" | "error";
+
 function DemoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
+  const [honeypot, setHoneypot] = useState("");
   const [errors, setErrors] = useState<{ name?: boolean; email?: boolean; whatsapp?: boolean }>({});
+  const [status, setStatus] = useState<DemoModalStatus>("idle");
+  const [serverError, setServerError] = useState("");
+
+  // Reset to a blank form each time the modal is (re)opened, rather than
+  // leaving a prior success/error state visible — the modal stays mounted
+  // (open just toggles a `return null`), so state would otherwise persist.
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setEmail("");
+      setWhatsapp("");
+      setHoneypot("");
+      setErrors({});
+      setStatus("idle");
+      setServerError("");
+    }
+  }, [open]);
 
   if (!open) return null;
 
@@ -85,6 +106,21 @@ function DemoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     return !next.name && !next.email && !next.whatsapp;
   }
 
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validate()) return;
+
+    setStatus("submitting");
+    setServerError("");
+    const result = await requestDemo({ name, email, whatsapp, honeypot });
+    if (result.error) {
+      setServerError(result.error);
+      setStatus("error");
+    } else {
+      setStatus("success");
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-dark/60 backdrop-blur-sm" onClick={onClose} />
@@ -96,76 +132,94 @@ function DemoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         >
           ×
         </button>
-        <h2 className="font-display text-2xl text-navy mb-1">Request a Free Demo</h2>
-        <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-          We&apos;ll reach out within 24 hours to set up your personalised walkthrough.
-        </p>
 
-        <form
-          noValidate
-          onSubmit={(e) => {
-            e.preventDefault();
-            validate();
-          }}
-          className="grid gap-4"
-        >
-          <div className="grid gap-1.5">
-            <label htmlFor="dmName" className="text-sm font-semibold text-gray-700">
-              Full Name
-            </label>
-            <input
-              id="dmName"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Juan dela Cruz"
-              autoComplete="name"
-              className={`px-4 py-3 rounded-card border-[1.5px] bg-off-white text-sm outline-none focus:border-teal focus:bg-white focus:ring-3 focus:ring-teal/10 ${errors.name ? "border-red" : "border-gray-200"}`}
-            />
-            {errors.name && <span className="text-xs text-red">Please enter your full name.</span>}
-          </div>
-          <div className="grid gap-1.5">
-            <label htmlFor="dmEmail" className="text-sm font-semibold text-gray-700">
-              Email
-            </label>
-            <input
-              id="dmEmail"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="juan@divecenter.ph"
-              autoComplete="email"
-              className={`px-4 py-3 rounded-card border-[1.5px] bg-off-white text-sm outline-none focus:border-teal focus:bg-white focus:ring-3 focus:ring-teal/10 ${errors.email ? "border-red" : "border-gray-200"}`}
-            />
-            {errors.email && <span className="text-xs text-red">Please enter a valid email address.</span>}
-          </div>
-          <div className="grid gap-1.5">
-            <label htmlFor="dmWhatsApp" className="text-sm font-semibold text-gray-700">
-              WhatsApp Number
-            </label>
-            <input
-              id="dmWhatsApp"
-              type="tel"
-              value={whatsapp}
-              onChange={(e) => setWhatsapp(e.target.value)}
-              placeholder="+63 917 123 4567"
-              autoComplete="tel"
-              className={`px-4 py-3 rounded-card border-[1.5px] bg-off-white text-sm outline-none focus:border-teal focus:bg-white focus:ring-3 focus:ring-teal/10 ${errors.whatsapp ? "border-red" : "border-gray-200"}`}
-            />
-            {errors.whatsapp && <span className="text-xs text-red">Please enter your WhatsApp number.</span>}
-          </div>
+        {status === "success" ? (
+          <>
+            <h2 className="font-display text-2xl text-navy mb-1">Request received</h2>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Thanks{name ? `, ${name.trim().split(" ")[0]}` : ""}! We&apos;ll reach out within 24 hours to set
+              up your personalised walkthrough.
+            </p>
+          </>
+        ) : (
+          <>
+            <h2 className="font-display text-2xl text-navy mb-1">Request a Free Demo</h2>
+            <p className="text-sm text-gray-600 mb-6 leading-relaxed">
+              We&apos;ll reach out within 24 hours to set up your personalised walkthrough.
+            </p>
 
-          <button
-            type="submit"
-            disabled
-            title="Demo requests aren't connected yet — reach out directly using the contact details in the footer."
-            className="w-full py-3.5 mt-1 bg-navy text-white rounded-card font-semibold text-sm cursor-not-allowed opacity-50"
-          >
-            Send Request
-          </button>
-          <p className="text-xs text-gray-400 text-center -mt-2">
-            Demo requests aren&apos;t wired up yet — reach out directly via the contact details in the footer below.
-          </p>
-        </form>
+            <form noValidate onSubmit={handleSubmit} className="grid gap-4">
+              <div className="grid gap-1.5">
+                <label htmlFor="dmName" className="text-sm font-semibold text-gray-700">
+                  Full Name
+                </label>
+                <input
+                  id="dmName"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Juan dela Cruz"
+                  autoComplete="name"
+                  className={`px-4 py-3 rounded-card border-[1.5px] bg-off-white text-sm outline-none focus:border-teal focus:bg-white focus:ring-3 focus:ring-teal/10 ${errors.name ? "border-red" : "border-gray-200"}`}
+                />
+                {errors.name && <span className="text-xs text-red">Please enter your full name.</span>}
+              </div>
+              <div className="grid gap-1.5">
+                <label htmlFor="dmEmail" className="text-sm font-semibold text-gray-700">
+                  Email
+                </label>
+                <input
+                  id="dmEmail"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="juan@divecenter.ph"
+                  autoComplete="email"
+                  className={`px-4 py-3 rounded-card border-[1.5px] bg-off-white text-sm outline-none focus:border-teal focus:bg-white focus:ring-3 focus:ring-teal/10 ${errors.email ? "border-red" : "border-gray-200"}`}
+                />
+                {errors.email && <span className="text-xs text-red">Please enter a valid email address.</span>}
+              </div>
+              <div className="grid gap-1.5">
+                <label htmlFor="dmWhatsApp" className="text-sm font-semibold text-gray-700">
+                  WhatsApp Number
+                </label>
+                <input
+                  id="dmWhatsApp"
+                  type="tel"
+                  value={whatsapp}
+                  onChange={(e) => setWhatsapp(e.target.value)}
+                  placeholder="+63 917 123 4567"
+                  autoComplete="tel"
+                  className={`px-4 py-3 rounded-card border-[1.5px] bg-off-white text-sm outline-none focus:border-teal focus:bg-white focus:ring-3 focus:ring-teal/10 ${errors.whatsapp ? "border-red" : "border-gray-200"}`}
+                />
+                {errors.whatsapp && <span className="text-xs text-red">Please enter your WhatsApp number.</span>}
+              </div>
+
+              {/* Honeypot — hidden from real users via off-screen positioning
+                  (not display:none, which some bots skip), never focusable. */}
+              <div className="absolute -left-[9999px] w-px h-px overflow-hidden" aria-hidden="true">
+                <label htmlFor="dmCompany">Company</label>
+                <input
+                  id="dmCompany"
+                  name="company"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={honeypot}
+                  onChange={(e) => setHoneypot(e.target.value)}
+                />
+              </div>
+
+              {status === "error" && <p className="text-xs text-red text-center -mt-1">{serverError}</p>}
+
+              <button
+                type="submit"
+                disabled={status === "submitting"}
+                className="w-full py-3.5 mt-1 bg-navy text-white rounded-card font-semibold text-sm hover:bg-navy-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {status === "submitting" ? "Sending…" : "Send Request"}
+              </button>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
