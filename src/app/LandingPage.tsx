@@ -515,8 +515,19 @@ export function LandingPage() {
         <div className="font-display text-lg text-white/60 mb-2">
           Aqua<span className="text-teal">Desk</span> Solutions
         </div>
-        <div className="text-sm text-white/30">
+        <div className="text-sm text-white/30 mb-3">
           aquadesk.online · mkbusiness.ai@gmail.com · Built in Malapascua Island, Philippines · © 2026
+        </div>
+        <div className="flex justify-center gap-4 text-xs text-white/30">
+          <Link href="/terms" className="hover:text-white/60 transition-colors">
+            Terms
+          </Link>
+          <Link href="/privacy" className="hover:text-white/60 transition-colors">
+            Privacy
+          </Link>
+          <Link href="/refund-policy" className="hover:text-white/60 transition-colors">
+            Refund Policy
+          </Link>
         </div>
       </footer>
 
