@@ -525,55 +525,63 @@ export function VisitPanel({
     .filter((a) => a.status !== "cancelled")
     .reduce((s, a) => s + a.total, 0);
 
+  // Shared by the "never had a visit" empty state and the "latest visit is
+  // closed/voided" read-only view below — starting a new visit is the same
+  // action (createVisit against the existing diver) regardless of why there's
+  // currently no open one, and it must never reopen/edit the old visit.
+  function renderStartVisitControls() {
+    return !choosingCourse ? (
+      <div className="flex gap-2">
+        <button
+          onClick={() => startNewVisit("fun_diving", null)}
+          disabled={pending}
+          className="px-4 py-2 bg-navy text-white text-sm font-medium rounded-lg hover:bg-navy-dark disabled:opacity-60"
+        >
+          Start Fun Diving Visit
+        </button>
+        <button
+          onClick={() => setChoosingCourse(true)}
+          disabled={pending || courseRates.length === 0}
+          title={courseRates.length === 0 ? "No courses configured in Settings > Courses" : undefined}
+          className="px-4 py-2 bg-teal text-white text-sm font-medium rounded-lg hover:bg-teal-mid disabled:opacity-60"
+        >
+          Start Course Visit
+        </button>
+      </div>
+    ) : (
+      <div className="flex items-center gap-2">
+        <select
+          value={selectedCourseId}
+          onChange={(e) => setSelectedCourseId(e.target.value)}
+          className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+        >
+          {courseRates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.courseName} ({peso(c.rate)})
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => startNewVisit("dive_course", selectedCourseId)}
+          disabled={pending}
+          className="px-4 py-2 bg-teal text-white text-sm font-medium rounded-lg hover:bg-teal-mid disabled:opacity-60"
+        >
+          Start
+        </button>
+        <button onClick={() => setChoosingCourse(false)} className="px-3 py-2 text-sm text-gray-600">
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
   if (!visit) {
     return (
       <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
         <div className="text-sm font-extrabold text-navy mb-3">Visit</div>
         {error && <div className="text-sm text-red mb-3">{error}</div>}
         <div className="text-sm text-gray-500 mb-3">No open visit. Start one to log dives or a course.</div>
-        {!choosingCourse ? (
-          <div className="flex gap-2">
-            <button
-              onClick={() => startNewVisit("fun_diving", null)}
-              disabled={pending}
-              className="px-4 py-2 bg-navy text-white text-sm font-medium rounded-lg hover:bg-navy-dark disabled:opacity-60"
-            >
-              Start Fun Diving Visit
-            </button>
-            <button
-              onClick={() => setChoosingCourse(true)}
-              disabled={pending || courseRates.length === 0}
-              title={courseRates.length === 0 ? "No courses configured in Settings > Courses" : undefined}
-              className="px-4 py-2 bg-teal text-white text-sm font-medium rounded-lg hover:bg-teal-mid disabled:opacity-60"
-            >
-              Start Course Visit
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedCourseId}
-              onChange={(e) => setSelectedCourseId(e.target.value)}
-              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
-            >
-              {courseRates.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.courseName} ({peso(c.rate)})
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => startNewVisit("dive_course", selectedCourseId)}
-              disabled={pending}
-              className="px-4 py-2 bg-teal text-white text-sm font-medium rounded-lg hover:bg-teal-mid disabled:opacity-60"
-            >
-              Start
-            </button>
-            <button onClick={() => setChoosingCourse(false)} className="px-3 py-2 text-sm text-gray-600">
-              Cancel
-            </button>
-          </div>
-        )}
+        {renderStartVisitControls()}
       </div>
     );
   }
@@ -592,7 +600,7 @@ export function VisitPanel({
             {!isEditable && " (read-only — visit is closed)"}
           </div>
         </div>
-        {isEditable && (
+        {isEditable ? (
           <div className="flex gap-2">
             <button
               onClick={addRow}
@@ -629,6 +637,8 @@ export function VisitPanel({
               </button>
             )}
           </div>
+        ) : (
+          <div>{renderStartVisitControls()}</div>
         )}
       </div>
 
