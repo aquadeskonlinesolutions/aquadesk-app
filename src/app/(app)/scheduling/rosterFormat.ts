@@ -59,7 +59,7 @@ export function nationalityAdjective(raw: string | null): string {
   return NATIONALITY_ADJECTIVES[v.toLowerCase()] ?? v;
 }
 
-export const CERT_LEVEL_SHORT: Record<string, string> = {
+const CERT_LEVEL_SHORT: Record<string, string> = {
   none: "None",
   open_water_diver: "OW",
   advanced_open_water: "AOW",
