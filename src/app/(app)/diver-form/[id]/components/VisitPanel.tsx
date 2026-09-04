@@ -401,6 +401,7 @@ export function VisitPanel({
   const [choosingCourse, setChoosingCourse] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState(courseRates[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
+  const [startingVisit, setStartingVisit] = useState(false);
   const [ambiguousGroups, setAmbiguousGroups] = useState<AmbiguousPackageGroup[] | null>(null);
   const [changeGroup, setChangeGroup] = useState<{ group: AmbiguousPackageGroup; initial: RateSelection } | null>(null);
   const [bundleModalOpen, setBundleModalOpen] = useState(false);
@@ -529,9 +530,12 @@ export function VisitPanel({
   // closed/voided" read-only view below — starting a new visit is the same
   // action (createVisit against the existing diver) regardless of why there's
   // currently no open one, and it must never reopen/edit the old visit.
-  function renderStartVisitControls() {
+  // `onCancelAll`, when passed, adds a way to back out of the whole flow
+  // (used by the closed-visit header, which gates this behind its own
+  // "+ Start New Visit" button rather than showing it open by default).
+  function renderStartVisitControls(onCancelAll?: () => void) {
     return !choosingCourse ? (
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <button
           onClick={() => startNewVisit("fun_diving", null)}
           disabled={pending}
@@ -547,6 +551,11 @@ export function VisitPanel({
         >
           Start Course Visit
         </button>
+        {onCancelAll && (
+          <button onClick={onCancelAll} className="px-3 py-2 text-sm text-gray-600">
+            Cancel
+          </button>
+        )}
       </div>
     ) : (
       <div className="flex items-center gap-2">
@@ -637,8 +646,18 @@ export function VisitPanel({
               </button>
             )}
           </div>
+        ) : startingVisit ? (
+          renderStartVisitControls(() => {
+            setStartingVisit(false);
+            setChoosingCourse(false);
+          })
         ) : (
-          <div>{renderStartVisitControls()}</div>
+          <button
+            onClick={() => setStartingVisit(true)}
+            className="px-3 py-1.5 text-xs font-medium bg-teal text-white rounded-md hover:bg-teal-mid"
+          >
+            + Start New Visit
+          </button>
         )}
       </div>
 
