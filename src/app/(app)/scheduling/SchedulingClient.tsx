@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import type { TripSummary, BoatOption, DiveSiteOption, StaffOption, DayAssignment, TripTypeOption } from "./data";
-import { getTripsForDate, getDayAssignmentsForWarnings } from "./actions";
+import { useEffect, useState, useTransition } from "react";
+import type { TripSummary, BoatOption, DiveSiteOption, StaffOption, DayAssignment, TripTypeOption, RosterData } from "./data";
+import { getTripsForDate, getDayAssignmentsForWarnings, getRosterData } from "./actions";
 import { PhaseTabs, type Phase } from "./components/PhaseTabs";
 import { PhaseOnePanel } from "./components/PhaseOnePanel";
 import { PhaseTwoPanel } from "./components/PhaseTwoPanel";
 import { PhaseThreePanel } from "./components/PhaseThreePanel";
+import { RosterPrintView } from "./components/RosterPrintView";
 
 function todayManila(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -33,8 +34,23 @@ export function SchedulingClient({
   const [dayContext, setDayContext] = useState<DayAssignment[]>([]);
   const [phase, setPhase] = useState<Phase>("phase1");
   const [pending, startTransition] = useTransition();
+  const [roster, setRoster] = useState<RosterData | null>(null);
+  const [rosterPending, startRosterTransition] = useTransition();
 
   const isPastDate = date !== "" && date < todayManila();
+
+  function printRoster() {
+    startRosterTransition(async () => {
+      setRoster(await getRosterData());
+    });
+  }
+
+  // Roster is loaded on demand (it's dive-center-wide, not scoped to the
+  // selected schedule date) — print once the fetch actually lands rather
+  // than firing window.print() synchronously against stale/empty state.
+  useEffect(() => {
+    if (roster) window.print();
+  }, [roster]);
 
   function loadForDate(newDate: string) {
     startTransition(async () => {
@@ -66,7 +82,8 @@ export function SchedulingClient({
   }
 
   return (
-    <div className="grid gap-5">
+    <>
+      <div className="grid gap-5 print:hidden">
       <div className="bg-white border border-gray-200 rounded-lg px-5 py-4 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-3xl text-navy mb-1">Scheduling</h1>
@@ -74,13 +91,20 @@ export function SchedulingClient({
             Build today&apos;s dive trips in three steps — get divers ready, assign them to boats, then confirm and share with your crew.
           </p>
         </div>
-        <div>
+        <div className="flex items-center gap-2 flex-wrap">
           <input
             type="date"
             value={date}
             onChange={(e) => changeDate(e.target.value)}
             className="border border-gray-300 rounded-md px-3 py-2 text-sm"
           />
+          <button
+            onClick={printRoster}
+            disabled={rosterPending}
+            className="px-4 py-2 bg-white border border-gray-300 text-navy text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-60"
+          >
+            {rosterPending ? "Loading…" : "🖨 Print Roster"}
+          </button>
         </div>
       </div>
 
@@ -140,6 +164,8 @@ export function SchedulingClient({
           )}
         </>
       )}
-    </div>
+      </div>
+      {roster && <RosterPrintView data={roster} />}
+    </>
   );
 }

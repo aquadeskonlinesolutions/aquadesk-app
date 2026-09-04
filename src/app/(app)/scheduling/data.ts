@@ -1,5 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { getPaidAmount } from "@/lib/payments";
+import { isDiverActive, isGroupActive } from "../divers/visibility";
 import type { TripTypeDurations } from "./tripWindow";
 
 // Plain calendar-year arithmetic, same as the old app's diverAge() — no
@@ -866,4 +868,220 @@ export async function loadTripDetail(
     guestNotes: schedule.guest_notes,
     spareTanks: (spareTankRows ?? []).map((r) => ({ id: r.id, tankType: r.tank_type, quantity: r.quantity })),
   };
+}
+
+// ── Roster (Print Roster) ───────────────────────────────────────────────
+//
+// The full current active roster — same audience as the Divers page's
+// Individual + Group Management tabs combined, not scoped to a single
+// schedule date. Scheduling's own "ready pool" (loadReadyPool above) is a
+// narrower, different-purpose thing: only divers with an open unpaid visit
+// today, built for assigning to boats. A roster meant to match the old
+// app's definition of "active" needs the real isDiverActive/isGroupActive
+// window (arrival/departure dates + "closed bill doesn't mean departed"),
+// reused directly from divers/visibility.ts rather than reimplemented a
+// third time.
+//
+// billFullyClosed below duplicates divers/data.ts's buildDiverCards
+// computation (per this codebase's established small-helper-duplication
+// precedent — divers/visibility.ts's own header comment is what makes
+// importing *that* module directly, rather than duplicating it too, the
+// right call: it's the shared pure predicate, this per-diver billing
+// derivation is not) — keep in sync manually if that version changes.
+// Grouped divers aren't individually re-filtered by billFullyClosed here,
+// matching how the Divers page's own Group tab shows every member of an
+// active group unfiltered — only the group-level isGroupActive check
+// (which does use each member's billFullyClosed) decides whether the
+// group's members appear at all.
+
+export type RosterDiver = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  nationality: string | null;
+  birthday: string | null;
+  age: number | null;
+  certificationLevel: string;
+  loggedDives: number;
+  groupName: string | null;
+  leaderName: string | null;
+  experienceType: "fun_diving" | "dive_course" | null;
+  courseName: string | null;
+};
+
+export type RosterData = {
+  diveCenterName: string;
+  divers: RosterDiver[];
+};
+
+export async function loadRosterDivers(diveCenterId: string): Promise<RosterData> {
+  const supabase = await createClient();
+
+  const [{ data: dc }, { data: diversRaw }, { data: registrations }, { data: visitsRaw }, { data: groups }] =
+    await Promise.all([
+      supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
+      supabase
+        .from("divers")
+        .select("id, first_name, last_name, nationality, birthday, certification_level, logged_dives, group_id")
+        .eq("dive_center_id", diveCenterId),
+      supabase
+        .from("diver_registrations")
+        .select("diver_id, arrival_date, departure_date")
+        .eq("dive_center_id", diveCenterId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("visits")
+        .select("diver_id, is_active, is_paid, visit_status, experience_type, course_rate_id, created_at")
+        .eq("dive_center_id", diveCenterId)
+        .neq("visit_status", "voided")
+        .order("created_at", { ascending: false }),
+      supabase.from("groups").select("id, group_name, leader_name").eq("dive_center_id", diveCenterId),
+    ]);
+
+  const divers = diversRaw ?? [];
+  const visits = visitsRaw ?? [];
+  const diverIds = divers.map((d) => d.id);
+
+  const [{ data: activitiesRaw }, { data: paymentsRaw }] = await Promise.all([
+    diverIds.length
+      ? supabase.from("activities").select("diver_id, total, status").in("diver_id", diverIds)
+      : Promise.resolve({ data: [] as { diver_id: string; total: number; status: string }[] }),
+    diverIds.length
+      ? supabase
+          .from("payments")
+          .select(
+            "diver_id, total_collected, total_paid, cash_amount, card_amount, online_amount, card_surcharge_amount, online_surcharge_amount, is_paid",
+          )
+          .in("diver_id", diverIds)
+      : Promise.resolve({
+          data: [] as {
+            diver_id: string;
+            total_collected: number | null;
+            total_paid: number | null;
+            cash_amount: number | null;
+            card_amount: number | null;
+            online_amount: number | null;
+            card_surcharge_amount: number | null;
+            online_surcharge_amount: number | null;
+            is_paid: boolean;
+          }[],
+        }),
+  ]);
+  const activities = activitiesRaw ?? [];
+  const payments = paymentsRaw ?? [];
+
+  const latestRegByDiver = new Map<string, { arrival_date: string | null; departure_date: string | null }>();
+  registrations?.forEach((r) => {
+    if (!latestRegByDiver.has(r.diver_id)) {
+      latestRegByDiver.set(r.diver_id, { arrival_date: r.arrival_date, departure_date: r.departure_date });
+    }
+  });
+
+  // Most recent open (non-closed, unpaid) visit per diver — drives both
+  // hasOpenVisit below and the fun-diving/course status line.
+  const openVisitByDiver = new Map<string, { experience_type: string; course_rate_id: string | null }>();
+  const hasOpenVisitByDiver = new Set<string>();
+  const anyVisitByDiver = new Map<string, { is_paid: boolean; is_active: boolean; visit_status: string }[]>();
+  visits.forEach((v) => {
+    const list = anyVisitByDiver.get(v.diver_id) ?? [];
+    list.push({ is_paid: v.is_paid, is_active: v.is_active, visit_status: v.visit_status });
+    anyVisitByDiver.set(v.diver_id, list);
+    if (v.is_active && v.visit_status !== "closed" && !v.is_paid) {
+      hasOpenVisitByDiver.add(v.diver_id);
+      if (!openVisitByDiver.has(v.diver_id)) {
+        openVisitByDiver.set(v.diver_id, { experience_type: v.experience_type, course_rate_id: v.course_rate_id });
+      }
+    }
+  });
+
+  const activitiesTotalByDiver = new Map<string, number>();
+  activities.forEach((a) => {
+    if (a.status === "cancelled") return;
+    activitiesTotalByDiver.set(a.diver_id, (activitiesTotalByDiver.get(a.diver_id) ?? 0) + (Number(a.total) || 0));
+  });
+  const paidTotalByDiver = new Map<string, number>();
+  const anyPaymentIsPaidByDiver = new Set<string>();
+  payments.forEach((p) => {
+    paidTotalByDiver.set(p.diver_id, (paidTotalByDiver.get(p.diver_id) ?? 0) + getPaidAmount(p));
+    if (p.is_paid) anyPaymentIsPaidByDiver.add(p.diver_id);
+  });
+
+  const billFullyClosedByDiver = new Set<string>();
+  divers.forEach((d) => {
+    const diverVisits = anyVisitByDiver.get(d.id) ?? [];
+    const hasClosedVisitRecord = diverVisits.some((v) => v.is_paid || !v.is_active || v.visit_status === "closed");
+    const activitiesTotal = activitiesTotalByDiver.get(d.id) ?? 0;
+    const paidTotal = paidTotalByDiver.get(d.id) ?? 0;
+    const settled =
+      hasClosedVisitRecord ||
+      anyPaymentIsPaidByDiver.has(d.id) ||
+      (activitiesTotal > 0 && paidTotal >= activitiesTotal);
+    if (!hasOpenVisitByDiver.has(d.id) && (settled || diverVisits.length === 0)) {
+      billFullyClosedByDiver.add(d.id);
+    }
+  });
+
+  const groupById = new Map((groups ?? []).map((g) => [g.id, g]));
+  const memberIdsByGroup = new Map<string, string[]>();
+  divers.forEach((d) => {
+    if (!d.group_id) return;
+    const list = memberIdsByGroup.get(d.group_id) ?? [];
+    list.push(d.id);
+    memberIdsByGroup.set(d.group_id, list);
+  });
+  const activeGroupIds = new Set(
+    [...memberIdsByGroup.entries()]
+      .filter(([, memberIds]) =>
+        isGroupActive(
+          memberIds.map((id) => ({
+            departureDate: latestRegByDiver.get(id)?.departure_date ?? null,
+            billFullyClosed: billFullyClosedByDiver.has(id),
+          })),
+        ),
+      )
+      .map(([groupId]) => groupId),
+  );
+
+  const courseRateIds = [
+    ...new Set([...openVisitByDiver.values()].map((v) => v.course_rate_id).filter((id): id is string => !!id)),
+  ];
+  const { data: courseRates } = courseRateIds.length
+    ? await supabase.from("course_rates").select("id, course_name").in("id", courseRateIds)
+    : { data: [] as { id: string; course_name: string }[] };
+  const courseNameById = new Map((courseRates ?? []).map((c) => [c.id, c.course_name]));
+
+  const rosterDivers: RosterDiver[] = [];
+  divers.forEach((d) => {
+    const reg = latestRegByDiver.get(d.id);
+    const group = d.group_id ? groupById.get(d.group_id) : null;
+    const isActive = d.group_id
+      ? activeGroupIds.has(d.group_id)
+      : isDiverActive({
+          arrivalDate: reg?.arrival_date ?? null,
+          departureDate: reg?.departure_date ?? null,
+          hasOpenVisit: hasOpenVisitByDiver.has(d.id),
+          billFullyClosed: billFullyClosedByDiver.has(d.id),
+        });
+    if (!isActive) return;
+
+    const openVisit = openVisitByDiver.get(d.id);
+    rosterDivers.push({
+      id: d.id,
+      firstName: d.first_name,
+      lastName: d.last_name,
+      nationality: d.nationality,
+      birthday: d.birthday,
+      age: calcAge(d.birthday),
+      certificationLevel: d.certification_level,
+      loggedDives: d.logged_dives ?? 0,
+      groupName: group?.group_name ?? null,
+      leaderName: group?.leader_name ?? null,
+      experienceType: (openVisit?.experience_type as "fun_diving" | "dive_course" | undefined) ?? null,
+      courseName: openVisit?.course_rate_id ? (courseNameById.get(openVisit.course_rate_id) ?? null) : null,
+    });
+  });
+
+  rosterDivers.sort((a, b) => `${a.lastName}${a.firstName}`.localeCompare(`${b.lastName}${b.firstName}`));
+
+  return { diveCenterName: dc?.name ?? "Dive Center", divers: rosterDivers };
 }

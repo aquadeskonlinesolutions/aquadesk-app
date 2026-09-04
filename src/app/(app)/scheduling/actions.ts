@@ -12,6 +12,7 @@ import {
   loadDayAssignmentsForWarnings,
   loadPhaseOneData,
   findMatchingClip,
+  loadRosterDivers,
   type TripSummary,
   type TripDetail,
   type ScheduleDiverRow,
@@ -19,6 +20,7 @@ import {
   type DayAssignment,
   type PhaseOneData,
   type Clip,
+  type RosterData,
 } from "./data";
 
 export async function getTripsForDate(date: string): Promise<TripSummary[]> {
@@ -44,6 +46,11 @@ export async function getStaffDiveTanks(scheduleId: string): Promise<StaffDiveTa
 export async function getDayAssignmentsForWarnings(scheduleDate: string): Promise<DayAssignment[]> {
   const user = await getCurrentUser();
   return loadDayAssignmentsForWarnings(user.diveCenterId, scheduleDate);
+}
+
+export async function getRosterData(): Promise<RosterData> {
+  const user = await getCurrentUser();
+  return loadRosterDivers(user.diveCenterId);
 }
 
 function ok() {
