@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { getSettlementData } from "./actions";
 import type { SettlementRow, SettlementData } from "./data";
 import { EXCESS_LABEL } from "@/lib/payments";
@@ -186,12 +187,13 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                 <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400 text-right">
                   {EXCESS_LABEL}
                 </th>
+                <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Action</th>
               </tr>
             </thead>
             <tbody>
               {!hasRows ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-8 text-gray-400 text-sm">
+                  <td colSpan={12} className="text-center py-8 text-gray-400 text-sm">
                     No payments recorded for this date.
                   </td>
                 </tr>
@@ -216,6 +218,16 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                     <td className="px-3 py-3 text-right text-orange">
                       {r.isDeposit ? "—" : fmtPHP(r.excessAmount)}
                     </td>
+                    <td className="px-3 py-3">
+                      <Link
+                        href={`/diver-form/${r.diverId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block px-3.5 py-1.5 bg-navy text-white text-xs font-medium rounded-md hover:bg-navy-dark transition-colors whitespace-nowrap"
+                      >
+                        Open Form
+                      </Link>
+                    </td>
                   </tr>
                 ))
               )}
@@ -236,6 +248,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.onlineSurcharge)}</td>
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.totalCollected)}</td>
                   <td className="px-3 py-3 text-right">{fmtPHP(tot.excessAmount)}</td>
+                  <td className="px-3 py-3"></td>
                 </tr>
               </tfoot>
             )}

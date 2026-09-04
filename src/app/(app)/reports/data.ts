@@ -979,6 +979,7 @@ export type ExpensesData = {
 
 export type SettlementRow = {
   date: string;
+  diverId: string;
   diverName: string;
   closedBy: string;
   cashPHP: number;
@@ -1077,6 +1078,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
       // an early-morning Manila payment and make the printed
       // reconciliation sheet look like it's missing/misdating a row.
       date,
+      diverId: p.diver_id,
       diverName: diverMap.get(p.diver_id) ?? "—",
       closedBy: closedByMap.get(p.visit_id) ?? "—",
       cashPHP: safeNum(p.cash_amount),
@@ -1094,6 +1096,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
 
   const depositRows: SettlementRow[] = deposits.map((d) => ({
     date: String(d.deposit_date),
+    diverId: d.diver_id,
     diverName: diverMap.get(d.diver_id) ?? "—",
     closedBy: d.received_by || "—",
     cashPHP: d.method === "cash" ? safeNum(d.amount) : 0,
