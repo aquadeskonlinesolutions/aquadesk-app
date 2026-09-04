@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import type { StaffOption, Clip, ClipMember, DiverPickResult, PhaseOneData } from "../data";
 import {
@@ -13,6 +14,7 @@ import {
   updateClipStaff,
   excludeDiverForDay,
   includeDiverForDay,
+  reopenVisitForDiver,
 } from "../actions";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
@@ -233,52 +235,30 @@ function ClipMemberRow({
 
   return (
     <div className={`rounded-md ${moving ? "bg-off-white" : ""}`}>
-      <div className={`flex items-center justify-between gap-3 py-1.5 ${member.excluded ? "opacity-50" : ""}`}>
+      <div className="flex items-center justify-between gap-3 py-1.5">
         <div className="flex items-center gap-2">
           <DiverInfoCard d={member} />
-          {member.excluded && (
-            <span className="shrink-0 text-xs font-medium text-orange bg-orange-light px-1.5 py-0.5 rounded-full">
-              Not diving this trip
-            </span>
-          )}
         </div>
         {!readOnly && (
           <div className="flex items-center gap-2 shrink-0">
-            {member.excluded ? (
-              <button
-                onClick={() =>
-                  startTransition(async () => {
-                    await includeDiverInClip(clip.id, member.diverId);
-                    onChanged();
-                  })
-                }
-                disabled={pending}
-                className="px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
-              >
-                Include
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={onStartMove}
-                  className="px-2 py-1 text-xs font-medium text-navy border border-gray-200 rounded-md hover:bg-gray-100"
-                >
-                  Move
-                </button>
-                <button
-                  onClick={() =>
-                    startTransition(async () => {
-                      await excludeDiverFromClip(clip.id, member.diverId);
-                      onChanged();
-                    })
-                  }
-                  disabled={pending}
-                  className="px-2 py-1 text-xs font-medium text-red border border-red/30 rounded-md hover:bg-red-light"
-                >
-                  Exclude
-                </button>
-              </>
-            )}
+            <button
+              onClick={onStartMove}
+              className="px-2 py-1 text-xs font-medium text-navy border border-gray-200 rounded-md hover:bg-gray-100"
+            >
+              Move
+            </button>
+            <button
+              onClick={() =>
+                startTransition(async () => {
+                  await excludeDiverFromClip(clip.id, member.diverId);
+                  onChanged();
+                })
+              }
+              disabled={pending}
+              className="px-2 py-1 text-xs font-medium text-red border border-red/30 rounded-md hover:bg-red-light"
+            >
+              Exclude
+            </button>
           </div>
         )}
       </div>
@@ -373,10 +353,11 @@ function ClipCard({
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
   const showToast = useToast();
-  // Excluded members stay listed (grayed, "Not diving this trip") rather
-  // than disappearing — see includeDiverInClip/excludeDiverFromClip.
-  const members = clip.members;
-  const activeMembers = members.filter((m) => !m.excluded);
+  // Excluded members (manual or auto-detected — see data.ts's ClipMember.
+  // exclusionReason) move down into PhaseOnePanel's Excluded Divers section
+  // instead of rendering here, so a clip card only ever shows who's
+  // actually still schedulable.
+  const activeMembers = clip.members.filter((m) => !m.excluded);
   const activeCount = activeMembers.length;
   // Same mixed-cert-level check Phase 2's WarningsBanner does per team —
   // applies here regardless of whether the clip is led by named staff or a
@@ -448,7 +429,7 @@ function ClipCard({
         )}
       </div>
       <div className="grid gap-1 divide-y divide-gray-100">
-        {members.map((m) => (
+        {activeMembers.map((m) => (
           <ClipMemberRow
             key={m.diverId}
             clip={clip}
@@ -463,7 +444,11 @@ function ClipCard({
             onChanged={onChanged}
           />
         ))}
-        {members.length === 0 && <div className="text-xs text-gray-400 py-1">No divers.</div>}
+        {activeMembers.length === 0 && (
+          <div className="text-xs text-gray-400 py-1">
+            No divers currently scheduled here — see Excluded Divers below.
+          </div>
+        )}
       </div>
       {clipWarnings.map((w, i) => (
         <div
@@ -473,6 +458,157 @@ function ClipCard({
           ⚠️ {w}
         </div>
       ))}
+    </div>
+  );
+}
+
+// Reason labels/pill colors shared by both loose divers and clip members —
+// "manual" covers both excludeDiverForDay (loose) and excludeDiverFromClip
+// (clip member), which is why it's the only reason that keeps the exact
+// pre-existing Include behavior. "bill_closed"/"departed" are computed
+// fresh every load (see data.ts's fetchClipsRaw/buildDiverPickResults) —
+// nothing here is ever "un-excluded" by writing a flag, since there's
+// nothing to write: the diver just needs an open visit again (bill_closed)
+// or a corrected departure date (departed).
+function reasonLabel(reason: "manual" | "bill_closed" | "departed"): string {
+  if (reason === "bill_closed") return "Bill closed";
+  if (reason === "departed") return "Departed";
+  return "Excluded";
+}
+
+function ExcludedDiverRow({
+  id,
+  name,
+  reason,
+  context,
+  action,
+}: {
+  id: string;
+  name: string;
+  reason: "manual" | "bill_closed" | "departed";
+  context?: string;
+  action: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
+      <div className="min-w-0">
+        <div className="text-gray-600 truncate">
+          {name}
+          {context && <span className="text-gray-400"> — {context}</span>}
+        </div>
+        <span className="text-xs text-gray-400">{reasonLabel(reason)}</span>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {action}
+        <Link
+          href={`/diver-form/${id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-gray-400 hover:underline"
+        >
+          Open Form
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// Third Phase 1 section, below Suggested Clips — collapsed by default since
+// this is meant to stay out of the way for the common 50+-diver case (see
+// the clutter complaint this replaced "Not Diving Today" and clip-inline
+// excluded rows to fix). Combines every reason a diver isn't currently
+// being suggested: a manual day/clip exclusion (Include still works exactly
+// as before) or the new automatic bill_closed/departed detection.
+function ExcludedDiversSection({
+  data,
+  readOnly,
+  scheduleDate,
+  refresh,
+}: {
+  data: PhaseOneData;
+  readOnly: boolean;
+  scheduleDate: string;
+  refresh: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [, startTransition] = useTransition();
+  const total = data.excludedDivers.length + data.excludedClipMembers.length;
+  if (total === 0) return null;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-sm font-semibold text-navy mb-2"
+      >
+        <span className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
+        Excluded Divers ({total})
+      </button>
+      {open && (
+        <div className="grid gap-1.5">
+          {data.excludedDivers.map((d) => (
+            <ExcludedDiverRow
+              key={`loose-${d.id}`}
+              id={d.id}
+              name={`${d.firstName} ${d.lastName}`}
+              reason={d.exclusionReason}
+              action={
+                !readOnly && d.exclusionReason === "manual" ? (
+                  <button
+                    onClick={() =>
+                      startTransition(async () => {
+                        await includeDiverForDay(d.id, scheduleDate);
+                        refresh();
+                      })
+                    }
+                    className="px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
+                  >
+                    Include
+                  </button>
+                ) : null
+              }
+            />
+          ))}
+          {data.excludedClipMembers.map((m) => (
+            <ExcludedDiverRow
+              key={`clip-${m.clipId}-${m.diverId}`}
+              id={m.diverId}
+              name={`${m.firstName} ${m.lastName}`}
+              reason={m.exclusionReason ?? "manual"}
+              context={`${m.clipStaffName}'s clip`}
+              action={
+                !readOnly ? (
+                  m.exclusionReason === "manual" ? (
+                    <button
+                      onClick={() =>
+                        startTransition(async () => {
+                          await includeDiverInClip(m.clipId, m.diverId);
+                          refresh();
+                        })
+                      }
+                      className="px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
+                    >
+                      Include
+                    </button>
+                  ) : m.exclusionReason === "bill_closed" ? (
+                    <button
+                      onClick={() =>
+                        startTransition(async () => {
+                          await reopenVisitForDiver(m.diverId);
+                          refresh();
+                        })
+                      }
+                      className="px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
+                    >
+                      Put back on schedule
+                    </button>
+                  ) : null
+                ) : null
+              }
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -615,38 +751,7 @@ export function PhaseOnePanel({
         )}
       </div>
 
-      {data.excludedDivers.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-navy mb-2">
-            Not Diving Today ({data.excludedDivers.length})
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {data.excludedDivers.map((d) => (
-              <div
-                key={d.id}
-                className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-500"
-              >
-                <span>
-                  {d.firstName} {d.lastName}
-                </span>
-                {!readOnly && (
-                  <button
-                    onClick={() =>
-                      startTransition(async () => {
-                        await includeDiverForDay(d.id, scheduleDate);
-                        refresh();
-                      })
-                    }
-                    className="text-xs text-teal hover:underline"
-                  >
-                    Include
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ExcludedDiversSection data={data} readOnly={readOnly} scheduleDate={scheduleDate} refresh={refresh} />
 
       {!readOnly && (
         <div className="flex justify-end">

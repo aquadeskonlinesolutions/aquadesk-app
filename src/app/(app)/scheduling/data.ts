@@ -195,6 +195,12 @@ export type DiverPickResult = {
   openVisitExperienceType: "fun_diving" | "dive_course" | null;
   alreadyScheduledToday: boolean;
   suggestedStaffId: string | null;
+  // Departure has passed as of scheduleDate — see loadPhaseOneData's
+  // looseDivers/excludedDivers split below. Only meaningful alongside an
+  // open visit; a closed bill already keeps a diver out of the ready pool
+  // entirely (the visits filter below), so this is the one additional
+  // "shouldn't really be suggested" signal loose divers still need.
+  departed: boolean;
 };
 
 async function buildDiverPickResults(
@@ -206,7 +212,7 @@ async function buildDiverPickResults(
 ): Promise<DiverPickResult[]> {
   if (diverIds.length === 0) return [];
 
-  const [{ data: divers }, { data: visits }, { data: defaults }, { data: scheduledToday }] =
+  const [{ data: divers }, { data: visits }, { data: defaults }, { data: scheduledToday }, { data: registrations }] =
     await Promise.all([
       supabase
         .from("divers")
@@ -232,7 +238,18 @@ async function buildDiverPickResults(
         .in("diver_id", diverIds)
         .eq("dive_center_id", diveCenterId)
         .eq("schedules.schedule_date", scheduleDate),
+      supabase
+        .from("diver_registrations")
+        .select("diver_id, departure_date, created_at")
+        .eq("dive_center_id", diveCenterId)
+        .in("diver_id", diverIds)
+        .order("created_at", { ascending: false }),
     ]);
+
+  const latestDepartureByDiver = new Map<string, string | null>();
+  (registrations ?? []).forEach((r) => {
+    if (!latestDepartureByDiver.has(r.diver_id)) latestDepartureByDiver.set(r.diver_id, r.departure_date);
+  });
 
   const groupIds = [...new Set((divers ?? []).map((d) => d.group_id).filter(Boolean))] as string[];
   const { data: groups } = groupIds.length
@@ -272,6 +289,10 @@ async function buildDiverPickResults(
       openVisitExperienceType: (visit?.experienceType as "fun_diving" | "dive_course") ?? null,
       alreadyScheduledToday: scheduledTodayIds.has(d.id),
       suggestedStaffId: defaultStaffByDiver.get(d.id) ?? null,
+      departed: (() => {
+        const departureDate = latestDepartureByDiver.get(d.id);
+        return !!departureDate && departureDate < scheduleDate;
+      })(),
     };
   });
 }
@@ -562,7 +583,15 @@ export type ClipMember = {
   age: number | null;
   groupId: string | null;
   groupName: string | null;
+  // true whenever exclusionReason is non-null — kept alongside it (rather
+  // than derived ad hoc by every consumer) since TripCard.tsx's own clip
+  // picker already filters on this exact field name.
   excluded: boolean;
+  // "manual" = staff explicitly excluded this member from this clip
+  // (schedule_team_clip_divers.excluded_on_date). "bill_closed"/"departed"
+  // are computed fresh on every load, never persisted — see fetchClipsRaw.
+  // null means the member is a normal, currently-schedulable clip member.
+  exclusionReason: "manual" | "bill_closed" | "departed" | null;
   experienceType: "fun_diving" | "dive_course" | null;
   courseName: string | null;
 };
@@ -684,12 +713,54 @@ async function fetchClipsRaw(
     : { data: [] };
   const courseNameById = new Map((courseRates ?? []).map((c) => [c.id, c.course_name]));
 
+  // Clip membership (schedule_team_clip_divers) is a persisted pairing that
+  // never gets re-validated once created — a diver's bill can close (or
+  // their registered departure date pass) hours after being clipped, and
+  // without this check they'd sit in Suggested Clips forever regardless.
+  // Deliberately a separate query from openVisits/experienceTypeByDiver
+  // above (which omits is_paid and exists only to resolve display fields)
+  // rather than reusing it, so this doesn't silently change what course/
+  // experience-type gets shown for a normal, still-open-visit member.
+  const [{ data: activeOpenVisits }, { data: regRows }] = await Promise.all([
+    diverIds.length
+      ? supabase
+          .from("visits")
+          .select("diver_id")
+          .in("diver_id", diverIds)
+          .eq("is_active", true)
+          .eq("visit_status", "open")
+          .eq("is_paid", false)
+      : Promise.resolve({ data: [] as { diver_id: string }[] }),
+    diverIds.length
+      ? supabase
+          .from("diver_registrations")
+          .select("diver_id, departure_date, created_at")
+          .eq("dive_center_id", diveCenterId)
+          .in("diver_id", diverIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as { diver_id: string; departure_date: string | null; created_at: string }[] }),
+  ]);
+  const hasOpenVisitByDiver = new Set((activeOpenVisits ?? []).map((v) => v.diver_id));
+  const latestDepartureByDiver = new Map<string, string | null>();
+  (regRows ?? []).forEach((r) => {
+    if (!latestDepartureByDiver.has(r.diver_id)) latestDepartureByDiver.set(r.diver_id, r.departure_date);
+  });
+
   const membersByClip = new Map<string, ClipMember[]>();
   (memberRows ?? []).forEach((m) => {
     const d = diverById.get(m.diver_id);
     if (!d) return;
     const list = membersByClip.get(m.clip_id) ?? [];
     const courseRateId = courseRateIdByDiver.get(d.id);
+    const departureDate = latestDepartureByDiver.get(d.id) ?? null;
+    const departed = !!departureDate && departureDate < date;
+    const exclusionReason: ClipMember["exclusionReason"] = m.excluded_on_date
+      ? "manual"
+      : !hasOpenVisitByDiver.has(d.id)
+        ? "bill_closed"
+        : departed
+          ? "departed"
+          : null;
     list.push({
       diverId: d.id,
       firstName: d.first_name,
@@ -701,7 +772,8 @@ async function fetchClipsRaw(
       age: calcAge(d.birthday),
       groupId: d.group_id,
       groupName: d.group_id ? (groupNameById.get(d.group_id) ?? null) : null,
-      excluded: m.excluded_on_date,
+      excluded: exclusionReason !== null,
+      exclusionReason,
       experienceType: experienceTypeByDiver.get(d.id) ?? null,
       courseName: courseRateId ? (courseNameById.get(courseRateId) ?? null) : null,
     });
@@ -795,10 +867,18 @@ async function carryOverLatestSharedClips(
   }
 }
 
+// A clip member currently hidden from its clip card — tagged with which
+// clip/staff it belongs to so the Excluded Divers section can label it and
+// route "Include" back to the right clip.
+export type ExcludedClipMember = ClipMember & { clipId: string; clipStaffName: string };
+
+export type ExcludedLooseDiver = DiverPickResult & { exclusionReason: "manual" | "departed" };
+
 export type PhaseOneData = {
   clips: Clip[];
   looseDivers: DiverPickResult[];
-  excludedDivers: DiverPickResult[];
+  excludedDivers: ExcludedLooseDiver[];
+  excludedClipMembers: ExcludedClipMember[];
 };
 
 export async function loadPhaseOneData(diveCenterId: string, date: string, userId: string): Promise<PhaseOneData> {
@@ -817,11 +897,16 @@ export async function loadPhaseOneData(diveCenterId: string, date: string, userI
   // scheduling.html's allClipDiverIds(), which is unfiltered by exclusion.
   const clippedIds = new Set(clips.flatMap((c) => c.members.map((m) => m.diverId)));
   const looseDivers = readyPool.filter(
-    (d) => !clippedIds.has(d.id) && !excludedSet.has(d.id) && !d.alreadyScheduledToday,
+    (d) => !clippedIds.has(d.id) && !excludedSet.has(d.id) && !d.alreadyScheduledToday && !d.departed,
   );
-  const excludedDivers = readyPool.filter((d) => excludedSet.has(d.id));
+  const excludedDivers: ExcludedLooseDiver[] = readyPool
+    .filter((d) => excludedSet.has(d.id) || d.departed)
+    .map((d) => ({ ...d, exclusionReason: excludedSet.has(d.id) ? ("manual" as const) : ("departed" as const) }));
+  const excludedClipMembers: ExcludedClipMember[] = clips.flatMap((c) =>
+    c.members.filter((m) => m.excluded).map((m) => ({ ...m, clipId: c.id, clipStaffName: c.staffName })),
+  );
 
-  return { clips, looseDivers, excludedDivers };
+  return { clips, looseDivers, excludedDivers, excludedClipMembers };
 }
 
 export async function loadTripDetail(

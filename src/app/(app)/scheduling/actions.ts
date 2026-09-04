@@ -53,6 +53,43 @@ export async function getRosterData(): Promise<RosterData> {
   return loadRosterDivers(user.diveCenterId);
 }
 
+// "Put back on schedule" for a clip member hidden for the "bill_closed"
+// reason (see data.ts's fetchClipsRaw) — their existing schedule_team_clip_
+// divers row was never touched, they only disappeared because they no
+// longer have an open, unpaid visit. Reopening one is the real fix (matches
+// the Divers page's own addDiversToSchedule) rather than any Scheduling-
+// side override, since nothing downstream (billing, activities) should
+// treat this diver as ready to dive again without one. Guarded by
+// hasOpenVisitByDiver in the caller — this always inserts, never checked
+// here, so it must never be exposed for a diver who already has one open
+// (the "departed" reason deliberately gets no such button in the UI).
+export async function reopenVisitForDiver(diverId: string): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  const { data: lastVisit } = await supabase
+    .from("visits")
+    .select("experience_type, course_rate_id")
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("diver_id", diverId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const experienceType = (lastVisit?.experience_type as "fun_diving" | "dive_course" | undefined) ?? "fun_diving";
+  const { error } = await supabase.from("visits").insert({
+    dive_center_id: user.diveCenterId,
+    diver_id: diverId,
+    experience_type: experienceType,
+    course_rate_id: experienceType === "dive_course" ? (lastVisit?.course_rate_id ?? null) : null,
+    visit_status: "open",
+    is_active: true,
+    is_paid: false,
+  });
+  if (error) return fail(error.message);
+  return ok();
+}
+
 function ok() {
   revalidatePath("/scheduling");
   return { error: undefined };
