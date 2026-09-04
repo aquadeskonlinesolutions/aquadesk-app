@@ -48,6 +48,9 @@ export function ProfileHeader({
         <div>
           <div className="font-display text-2xl text-navy">
             {diver.firstName} {diver.lastName}
+            {diver.traceNumber && (
+              <span className="ml-2 align-middle text-xs font-normal text-gray-400">{diver.traceNumber}</span>
+            )}
           </div>
           <div className="text-sm text-gray-500 mt-0.5">
             {CERT_LEVEL_LABELS[diver.certificationLevel] ?? diver.certificationLevel}
