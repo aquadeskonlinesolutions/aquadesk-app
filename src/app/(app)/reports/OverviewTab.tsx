@@ -130,6 +130,7 @@ export function OverviewTab({
           <div className="mb-4">
             <SummaryRow label="Money In" value={peso(summary.moneyIn)} bold />
             <SummaryRow label="Collected from Divers" value={peso(summary.collectedFromDivers)} />
+            <SummaryRow label="Deposits Collected" value={peso(summary.depositsCollected)} />
             <SummaryRow label="Gear Rental Income (Collected)" value={peso(summary.rentalIncome)} />
             <SummaryRow label="Join Ride Income (Collected)" value={peso(summary.joinIncome)} />
             {summary.excessCollected > 0 && (

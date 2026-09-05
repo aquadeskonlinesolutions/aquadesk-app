@@ -86,6 +86,7 @@ function expenseGroupLabel(category: string, customCategory: string | null, cust
 export type BusinessSummary = {
   moneyIn: number;
   collectedFromDivers: number;
+  depositsCollected: number;
   excessCollected: number;
   rentalIncome: number;
   joinIncome: number;
@@ -129,6 +130,7 @@ export async function loadOverviewData(
     { data: dc },
     { data: activitiesInRange },
     { data: paymentsInRange },
+    { data: depositsInRange },
     { data: openVisits },
     { data: rentalRecords },
     { data: joinRecords },
@@ -151,6 +153,18 @@ export async function loadOverviewData(
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", manilaDayBoundsUtcIso(dateFrom).startIso)
       .lte("paid_at", manilaDayBoundsUtcIso(dateTo).endIso),
+    // Deposits are a real amount collected on the day they're taken, but
+    // never re-entered into `payments` — checkout only records the
+    // *remaining* balance after the deposit is subtracted. Without this,
+    // "Collected from Divers"/"Money In" silently loses every deposit
+    // forever (found 2026-09-05: Settlement already showed deposits
+    // correctly, Overview never did).
+    supabase
+      .from("deposits")
+      .select("amount")
+      .eq("dive_center_id", diveCenterId)
+      .gte("deposit_date", dateFrom)
+      .lte("deposit_date", dateTo),
     supabase
       .from("visits")
       .select("id")
@@ -200,6 +214,13 @@ export async function loadOverviewData(
   // would silently re-inflate past that cap.
   const collectedFromDivers = (paymentsInRange ?? []).reduce((sum, p) => sum + getPaidAmount(p), 0);
 
+  // Real money collected the day it's taken, but never counted in
+  // `collectedFromDivers` above since it lives in a separate table and
+  // is never copied into `payments` (checkout only records what's left
+  // after subtracting the deposit) — shown as its own line so it stays
+  // distinguishable from a final-payment amount, matching Settlement.
+  const depositsCollected = (depositsInRange ?? []).reduce((sum, d) => sum + safeNum(d.amount), 0);
+
   // Tendered above what was billed (foreign cash overshoot, etc.) — real
   // money handled, but deliberately excluded from collectedFromDivers/
   // moneyIn/netProfit above. Informational only; see payments.excess_amount.
@@ -209,7 +230,7 @@ export async function loadOverviewData(
   const openVisitIds = (openVisits ?? []).map((v) => v.id);
   let openDiverBills = 0;
   if (openVisitIds.length > 0) {
-    const [{ data: openActivities }, { data: openPayments }] = await Promise.all([
+    const [{ data: openActivities }, { data: openPayments }, { data: openDeposits }] = await Promise.all([
       supabase.from("activities").select("visit_id, total").in("visit_id", openVisitIds),
       supabase
         .from("payments")
@@ -217,13 +238,20 @@ export async function loadOverviewData(
           "visit_id, total_collected, total_paid, cash_amount, card_amount, online_amount, card_surcharge_amount, online_surcharge_amount",
         )
         .in("visit_id", openVisitIds),
+      // Not date-bound (unlike depositsInRange above) — a deposit taken
+      // last month against a bill that's still open today still reduces
+      // what's actually still owed right now.
+      supabase.from("deposits").select("visit_id, amount").in("visit_id", openVisitIds),
     ]);
     openDiverBills = openVisitIds.reduce((sum, visitId) => {
       const total = (openActivities ?? [])
         .filter((a) => a.visit_id === visitId)
         .reduce((s, a) => s + safeNum(a.total), 0);
       const payment = (openPayments ?? []).find((p) => p.visit_id === visitId);
-      return sum + Math.max(0, total - getPaidAmount(payment));
+      const depositsForVisit = (openDeposits ?? [])
+        .filter((d) => d.visit_id === visitId)
+        .reduce((s, d) => s + safeNum(d.amount), 0);
+      return sum + Math.max(0, total - getPaidAmount(payment) - depositsForVisit);
     }, 0);
   }
 
@@ -291,7 +319,7 @@ export async function loadOverviewData(
   // ── Government fees ─────────────────────────────────────────────────────
   const govtFeesTotal = (govtFeesInRange ?? []).reduce((s, r) => s + safeNum(r.total), 0);
 
-  const moneyIn = collectedFromDivers + rentalIncome + joinIncome;
+  const moneyIn = collectedFromDivers + depositsCollected + rentalIncome + joinIncome;
   const moneyOut = govtFeesTotal + expenseTotal + rentalExpense + joinExpense + commissionsPaid;
   const netProfit = moneyIn - moneyOut;
   const notYetSettled =
@@ -304,6 +332,7 @@ export async function loadOverviewData(
     summary: {
       moneyIn,
       collectedFromDivers,
+      depositsCollected,
       excessCollected,
       rentalIncome,
       joinIncome,
@@ -351,6 +380,7 @@ export async function loadMonthlyFinancials(diveCenterId: string, months = 12): 
 
   const [
     { data: paymentsRaw },
+    { data: depositsRaw },
     { data: rentalsRaw },
     { data: joinRaw },
     { data: commissionsRaw },
@@ -365,6 +395,15 @@ export async function loadMonthlyFinancials(diveCenterId: string, months = 12): 
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", rangeStartIso)
       .lte("paid_at", rangeEndIso),
+    // Same gap as loadOverviewData's collectedFromDivers — deposits are
+    // never copied into `payments`, so without this every month with a
+    // deposit taken understates its own revenue bar.
+    supabase
+      .from("deposits")
+      .select("deposit_date, amount")
+      .eq("dive_center_id", diveCenterId)
+      .gte("deposit_date", rangeFrom)
+      .lte("deposit_date", rangeTo),
     supabase
       .from("rental_gear_records")
       .select("date, status, total_amount")
@@ -406,6 +445,9 @@ export async function loadMonthlyFinancials(diveCenterId: string, months = 12): 
 
   (paymentsRaw ?? []).forEach((p) => {
     add(revenueByMonth, manilaMonthFromIso(p.paid_at), getPaidAmount(p));
+  });
+  (depositsRaw ?? []).forEach((d) => {
+    add(revenueByMonth, d.deposit_date.slice(0, 7), safeNum(d.amount));
   });
   (rentalsRaw ?? []).forEach((r) => {
     const key = r.date.slice(0, 7);
