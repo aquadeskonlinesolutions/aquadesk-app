@@ -589,6 +589,15 @@ export function PhaseOnePanel({
     return <div className="text-center text-gray-400 text-sm py-8">Loading…</div>;
   }
 
+  // A clip with zero members left (its last member's bill closed, or every
+  // member was manually excluded) is an empty card with nothing to show —
+  // matches TripCard.tsx's own "+ Add Team" picker, which already drops a
+  // clip once .members.length is 0. The clip row itself isn't deleted (a
+  // manually-excluded member's "Include" button still needs it to exist),
+  // it's just not worth a card here. allClips (used by Move) still passes
+  // the unfiltered data.clips so a diver can be moved into one of these.
+  const visibleClips = data.clips.filter((c) => c.members.length > 0);
+
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -672,14 +681,14 @@ export function PhaseOnePanel({
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-navy mb-2">Suggested Clips ({data.clips.length})</h3>
-        {data.clips.length === 0 ? (
+        <h3 className="text-sm font-semibold text-navy mb-2">Suggested Clips ({visibleClips.length})</h3>
+        {visibleClips.length === 0 ? (
           <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg p-4 text-center">
             No clips yet — select loose divers above and create one.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {data.clips.map((c) => (
+            {visibleClips.map((c) => (
               <ClipCard
                 key={c.id}
                 clip={c}
