@@ -16,6 +16,7 @@ export type PaymentInput = {
   onlineAmount: number;
   onlineChannel: PaymentChannel | null;
   discount: number;
+  notes: string;
 };
 
 export type PaymentBreakdown = PaymentInput & {

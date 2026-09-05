@@ -1158,10 +1158,12 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
 
 export type DiverPaymentExportRow = {
   date: string;
+  traceNumber: string;
   diverName: string;
   amount: number;
   paymentMethod: "Cash" | "Card" | "Online";
   paymentChannel: string;
+  notes: string;
 };
 
 export async function loadDiverPaymentsExport(
@@ -1175,7 +1177,7 @@ export async function loadDiverPaymentsExport(
   const [{ data: paymentsRaw }, { data: depositsRaw }] = await Promise.all([
     supabase
       .from("payments")
-      .select("paid_at, diver_id, cash_amount, card_amount, online_amount, online_channel")
+      .select("paid_at, diver_id, cash_amount, card_amount, online_amount, online_channel, notes")
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", startIso)
       .lte("paid_at", endIso)
@@ -1194,11 +1196,12 @@ export async function loadDiverPaymentsExport(
 
   const diverIds = [...new Set([...payments.map((p) => p.diver_id), ...deposits.map((d) => d.diver_id)].filter(Boolean))];
   const { data: diversData } = diverIds.length
-    ? await supabase.from("divers").select("id, first_name, last_name").in("id", diverIds)
-    : { data: [] as { id: string; first_name: string; last_name: string }[] };
+    ? await supabase.from("divers").select("id, first_name, last_name, trace_number").in("id", diverIds)
+    : { data: [] as { id: string; first_name: string; last_name: string; trace_number: string | null }[] };
   const diverMap = new Map(
     (diversData ?? []).map((d) => [d.id, `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim() || "Unknown Diver"]),
   );
+  const traceMap = new Map((diversData ?? []).map((d) => [d.id, d.trace_number ?? ""]));
 
   function channelLabel(method: "cash" | "card" | "online", channel: PaymentChannel | null): string {
     if (method === "cash") return "Cash";
@@ -1211,19 +1214,23 @@ export async function loadDiverPaymentsExport(
   payments.forEach((p) => {
     const date = manilaDateFromIso(p.paid_at);
     const diverName = diverMap.get(p.diver_id) ?? "Unknown Diver";
+    const traceNumber = traceMap.get(p.diver_id) ?? "";
+    const notes = p.notes ?? "";
     if (safeNum(p.cash_amount) > 0) {
-      rows.push({ date, diverName, amount: safeNum(p.cash_amount), paymentMethod: "Cash", paymentChannel: "Cash" });
+      rows.push({ date, traceNumber, diverName, amount: safeNum(p.cash_amount), paymentMethod: "Cash", paymentChannel: "Cash", notes });
     }
     if (safeNum(p.card_amount) > 0) {
-      rows.push({ date, diverName, amount: safeNum(p.card_amount), paymentMethod: "Card", paymentChannel: "Card" });
+      rows.push({ date, traceNumber, diverName, amount: safeNum(p.card_amount), paymentMethod: "Card", paymentChannel: "Card", notes });
     }
     if (safeNum(p.online_amount) > 0) {
       rows.push({
         date,
+        traceNumber,
         diverName,
         amount: safeNum(p.online_amount),
         paymentMethod: "Online",
         paymentChannel: channelLabel("online", p.online_channel),
+        notes,
       });
     }
   });
@@ -1232,10 +1239,12 @@ export async function loadDiverPaymentsExport(
     const method = d.method as "cash" | "card" | "online";
     rows.push({
       date: String(d.deposit_date),
+      traceNumber: traceMap.get(d.diver_id) ?? "",
       diverName: diverMap.get(d.diver_id) ?? "Unknown Diver",
       amount: safeNum(d.amount),
       paymentMethod: method === "cash" ? "Cash" : method === "card" ? "Card" : "Online",
       paymentChannel: channelLabel(method, d.channel),
+      notes: "",
     });
   });
 

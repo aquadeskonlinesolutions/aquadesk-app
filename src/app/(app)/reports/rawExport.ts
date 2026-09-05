@@ -83,8 +83,8 @@ export async function exportRawData(
   const joinRows = joinRide.records.filter((r) => r.date >= dateFrom && r.date <= dateTo);
 
   const diversCsv = toCsv(
-    ["Date", "Name of Diver", "Amount", "Payment Method", "Payment Channel"],
-    diverPayments.map((r) => [r.date, r.diverName, r.amount, r.paymentMethod, r.paymentChannel]),
+    ["Date", "Trace Number", "Name of Diver", "Amount", "Payment Method", "Payment Channel", "Notes"],
+    diverPayments.map((r) => [r.date, r.traceNumber, r.diverName, r.amount, r.paymentMethod, r.paymentChannel, r.notes]),
   );
 
   const expensesCsv = toCsv(

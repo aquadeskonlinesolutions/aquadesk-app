@@ -207,6 +207,7 @@ export type ExistingPayment = {
   onlineAmount: number;
   onlineChannel: PaymentChannel | null;
   discount: number;
+  notes: string;
 };
 
 // `payments.is_paid` isn't fetched — BillSummary (the only reader of this
@@ -218,7 +219,7 @@ export async function loadExistingPayment(visitId: string): Promise<ExistingPaym
   const { data } = await supabase
     .from("payments")
     .select(
-      "cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, online_amount, online_channel, discount",
+      "cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, online_amount, online_channel, discount, notes",
     )
     .eq("visit_id", visitId)
     .maybeSingle();
@@ -233,6 +234,7 @@ export async function loadExistingPayment(visitId: string): Promise<ExistingPaym
     onlineAmount: Number(data.online_amount) || 0,
     onlineChannel: data.online_channel,
     discount: Number(data.discount) || 0,
+    notes: data.notes ?? "",
   };
 }
 

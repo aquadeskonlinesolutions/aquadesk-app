@@ -21,6 +21,7 @@ function emptyInput(existing: ExistingPayment | null): PaymentInput {
     onlineAmount: existing?.onlineAmount ?? 0,
     onlineChannel: existing?.onlineChannel ?? null,
     discount: existing?.discount ?? 0,
+    notes: existing?.notes ?? "",
   };
 }
 
@@ -224,6 +225,16 @@ export function BillSummary({
             <label className="block text-xs font-medium text-gray-600 mb-1">Discount</label>
             {num(input.discount, (v) => update({ discount: v }), "w-full")}
           </div>
+        </div>
+
+        <div className="border-t border-gray-200 pt-4">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+          <textarea
+            value={input.notes}
+            onChange={(e) => update({ notes: e.target.value })}
+            placeholder="Optional notes about this bill…"
+            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm min-h-[60px]"
+          />
         </div>
 
         {hasOpenActivities && (
