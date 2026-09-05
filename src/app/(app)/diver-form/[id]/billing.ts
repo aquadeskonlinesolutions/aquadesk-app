@@ -5,8 +5,6 @@
 // (matches this project's existing precedent of duplicating small pure
 // helpers like peso() across files rather than over-centralizing).
 
-import type { PaymentChannel } from "@/lib/payments";
-
 export type PaymentInput = {
   cashAmount: number;
   cashAmountForeign: number;
@@ -14,7 +12,17 @@ export type PaymentInput = {
   cashExchangeRate: number;
   cardAmount: number;
   onlineAmount: number;
-  onlineChannel: PaymentChannel | null;
+  // Holds a base PaymentChannel key (e.g. "wise"), "custom" (an existing
+  // per-dive-center channel, identified by customOnlineChannelId), or the
+  // transient ADD_CHANNEL_VALUE sentinel while composing a brand-new one
+  // via "+ Add Channel" (identified by newOnlineChannelLabel) — loosened
+  // to plain string rather than PaymentChannel so this UI-only sentinel
+  // doesn't need to leak into the shared payment-channel type. The
+  // BillSummary component resolves ADD_CHANNEL_VALUE to "custom" before
+  // ever calling a server action.
+  onlineChannel: string | null;
+  customOnlineChannelId: string | null;
+  newOnlineChannelLabel: string;
   discount: number;
   notes: string;
 };

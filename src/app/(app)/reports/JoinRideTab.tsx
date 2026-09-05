@@ -11,7 +11,6 @@ import {
 import type { JoinRideData, JoinRideDirection, JoinRideRecord } from "./data";
 import type { StatementLineItem } from "./actions";
 import { useSettlePayment } from "@/components/ui/SettlePaymentDialog";
-import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -232,11 +231,13 @@ export function JoinRideTab({
     id: string,
     status: string,
     paymentMethod?: "cash" | "card" | "online" | null,
-    channel?: PaymentChannel | null,
+    channel?: string | null,
+    customChannelId?: string | null,
+    newChannelLabel?: string | null,
   ) {
     setRowPending(id);
     startTransition(async () => {
-      await updateJoinRideStatus(id, status, paymentMethod, channel);
+      await updateJoinRideStatus(id, status, paymentMethod, channel, customChannelId, newChannelLabel);
       await refresh();
       refreshOverview?.();
       setRowPending(null);
@@ -247,10 +248,10 @@ export function JoinRideTab({
     const label = status === "collected" ? "Collected" : "Paid";
     const result = await settlePayment(
       `Once marked as ${label}, this record can still be edited but can no longer be deleted.`,
-      { title: `Mark as ${label}?`, confirmLabel: `Mark ${label}` },
+      { title: `Mark as ${label}?`, confirmLabel: `Mark ${label}`, customChannels: data.customChannels },
     );
     if (!result) return;
-    changeStatus(id, status, result.method, result.channel);
+    changeStatus(id, status, result.method, result.channel, result.customChannelId, result.newChannelLabel);
   }
 
   function removeRecord(id: string) {
@@ -580,7 +581,7 @@ export function JoinRideTab({
                         {isSettled(r.status) && r.paymentMethod && (
                           <div className="text-xs text-gray-500 mt-1">
                             via {r.paymentMethod === "online" ? "Online" : r.paymentMethod === "card" ? "Card" : "Cash"}
-                            {r.paymentMethod === "online" && r.channel ? ` · ${PAYMENT_CHANNEL_LABELS[r.channel]}` : ""}
+                            {r.paymentMethod === "online" && r.channelLabel ? ` · ${r.channelLabel}` : ""}
                           </div>
                         )}
                       </td>

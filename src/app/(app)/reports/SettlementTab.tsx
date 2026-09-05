@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { getSettlementData } from "./actions";
 import type { SettlementRow, SettlementData } from "./data";
-import { EXCESS_LABEL, PAYMENT_CHANNEL_LABELS } from "@/lib/payments";
+import { EXCESS_LABEL } from "@/lib/payments";
 
 function todayManila(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -63,7 +63,7 @@ function downloadCsv(data: SettlementData) {
       r.card,
       r.isDeposit ? "" : r.cardSurcharge,
       r.online,
-      r.onlineChannel ? PAYMENT_CHANNEL_LABELS[r.onlineChannel] : "",
+      r.onlineChannelLabel ?? "",
       r.isDeposit ? "" : r.onlineSurcharge,
       r.isDeposit ? "" : r.totalCollected,
       r.isDeposit ? "" : r.excessAmount,
@@ -207,7 +207,14 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                     className={`border-b border-gray-100 last:border-0 ${r.isDeposit ? "bg-orange-light" : ""}`}
                   >
                     <td className="px-3 py-3 whitespace-nowrap">{fmtDate(r.date)}</td>
-                    <td className="px-3 py-3 font-semibold text-navy">{r.diverName}</td>
+                    <td className="px-3 py-3 font-semibold text-navy">
+                      {r.diverName}
+                      {r.isDeposit && (
+                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange text-white align-middle">
+                          Deposit
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-3">{r.closedBy}</td>
                     <td className="px-3 py-3 text-right">{fmtPHP(r.cashPHP)}</td>
                     <td className="px-3 py-3 text-gray-500 text-xs">{r.isDeposit ? "—" : r.foreign}</td>
@@ -215,8 +222,8 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                     <td className="px-3 py-3 text-right">{r.isDeposit ? "—" : fmtPHP(r.cardSurcharge)}</td>
                     <td className="px-3 py-3 text-right">
                       {fmtPHP(r.online)}
-                      {r.online > 0 && r.onlineChannel && (
-                        <div className="text-xs text-gray-400 font-normal">{PAYMENT_CHANNEL_LABELS[r.onlineChannel]}</div>
+                      {r.online > 0 && r.onlineChannelLabel && (
+                        <div className="text-xs text-gray-400 font-normal">{r.onlineChannelLabel}</div>
                       )}
                     </td>
                     <td className="px-3 py-3 text-right">{r.isDeposit ? "—" : fmtPHP(r.onlineSurcharge)}</td>
@@ -290,7 +297,10 @@ export function SettlementTab({ data }: { data: SettlementData }) {
               {settlement.rows.map((r, i) => (
                 <tr key={i} className={r.isDeposit ? "bg-orange-light" : ""}>
                   <td className="px-2 py-1.5 border-b border-gray-100">{fmtDate(r.date)}</td>
-                  <td className="px-2 py-1.5 border-b border-gray-100">{r.diverName}</td>
+                  <td className="px-2 py-1.5 border-b border-gray-100">
+                    {r.diverName}
+                    {r.isDeposit && <strong> (Deposit)</strong>}
+                  </td>
                   <td className="px-2 py-1.5 border-b border-gray-100">{r.closedBy}</td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">{fmtPHP(r.cashPHP)}</td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-xs">{r.isDeposit ? "—" : r.foreign}</td>
@@ -300,8 +310,8 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                   </td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">
                     {fmtPHP(r.online)}
-                    {r.online > 0 && r.onlineChannel && (
-                      <div className="text-xs text-gray-500 font-normal">{PAYMENT_CHANNEL_LABELS[r.onlineChannel]}</div>
+                    {r.online > 0 && r.onlineChannelLabel && (
+                      <div className="text-xs text-gray-500 font-normal">{r.onlineChannelLabel}</div>
                     )}
                   </td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">

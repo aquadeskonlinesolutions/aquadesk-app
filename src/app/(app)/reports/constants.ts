@@ -43,3 +43,16 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   card: "Card",
   online: "Online",
 };
+
+// The 12 real, still-selectable base categories — every EXPENSE_CATEGORY_LABELS
+// key except 'uncategorized', which is retired from the dropdown (replaced by
+// "+ Add Category") but kept in the labels map so historical rows still
+// resolve to a real label. Shared between the client dropdown and the
+// server's dedup-match-against-base-categories check, so the two never drift.
+export const BASE_EXPENSE_CATEGORIES = Object.entries(EXPENSE_CATEGORY_LABELS).filter(
+  ([key]) => key !== "uncategorized",
+);
+
+// Sentinel <select> value for "+ Add Category" — never stored, only used
+// client-side to know when to reveal the new-category text input.
+export const ADD_CATEGORY_VALUE = "__add_category__";

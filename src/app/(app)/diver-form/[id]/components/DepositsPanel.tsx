@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { addDeposit } from "../actions";
 import type { Deposit } from "../data";
-import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
+import { BASE_PAYMENT_CHANNELS, ADD_CHANNEL_VALUE } from "@/lib/payments";
+import type { CustomChannelOption } from "@/lib/paymentChannels";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -20,42 +21,74 @@ export function DepositsPanel({
   visitId,
   deposits,
   receivedByDisplay,
+  customChannels,
   onAdded,
 }: {
   diverId: string;
   visitId: string;
   deposits: Deposit[];
   receivedByDisplay: string;
+  customChannels: CustomChannelOption[];
   onAdded: (d: Deposit) => void;
 }) {
   const [amount, setAmount] = useState("0");
   const [method, setMethod] = useState<"cash" | "card" | "online">("cash");
-  const [channel, setChannel] = useState<PaymentChannel | null>(null);
+  // Holds a base channel key, "" (none chosen), `custom:<id>` (an existing
+  // per-dive-center channel), or ADD_CHANNEL_VALUE while composing a new
+  // one via "+ Add Channel".
+  const [channelSelection, setChannelSelection] = useState("");
+  const [newChannelLabel, setNewChannelLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function submit() {
     setError(null);
-    if (method === "online" && !channel) {
+    if (method === "online" && !channelSelection) {
       setError("Select an Online channel.");
       return;
     }
+    if (method === "online" && channelSelection === ADD_CHANNEL_VALUE && !newChannelLabel.trim()) {
+      setError("Enter a channel name.");
+      return;
+    }
+    const channel =
+      method !== "online"
+        ? null
+        : channelSelection === ADD_CHANNEL_VALUE
+          ? "custom"
+          : channelSelection.startsWith("custom:")
+            ? "custom"
+            : channelSelection;
+    const channelId = channelSelection.startsWith("custom:") ? channelSelection.slice(7) : null;
     startTransition(async () => {
       const amt = parseFloat(amount) || 0;
-      const res = await addDeposit(diverId, visitId, amt, method, method === "online" ? channel : null, receivedByDisplay);
+      const res = await addDeposit(
+        diverId,
+        visitId,
+        amt,
+        method,
+        channel,
+        channelId,
+        channelSelection === ADD_CHANNEL_VALUE ? newChannelLabel : null,
+        receivedByDisplay,
+      );
       if (res.error) {
         setError(res.error);
       } else {
+        const label = customChannels.find((c) => c.id === channelId)?.label ?? newChannelLabel;
         onAdded({
           id: crypto.randomUUID(),
           amount: amt,
           method,
-          channel: method === "online" ? channel : null,
+          channel: channel as Deposit["channel"],
+          customChannelId: channelId,
+          channelLabel: method === "online" ? (channel === "custom" ? label : BASE_PAYMENT_CHANNELS.find(([k]) => k === channel)?.[1] || null) : null,
           depositDate: new Date().toISOString().slice(0, 10),
           receivedBy: receivedByDisplay,
         });
         setAmount("0");
-        setChannel(null);
+        setChannelSelection("");
+        setNewChannelLabel("");
       }
     });
   }
@@ -89,7 +122,10 @@ export function DepositsPanel({
               onChange={(e) => {
                 const next = e.target.value as "cash" | "card" | "online";
                 setMethod(next);
-                if (next !== "online") setChannel(null);
+                if (next !== "online") {
+                  setChannelSelection("");
+                  setNewChannelLabel("");
+                }
               }}
               className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
             >
@@ -99,17 +135,34 @@ export function DepositsPanel({
             </select>
             {method === "online" && (
               <select
-                value={channel ?? ""}
-                onChange={(e) => setChannel((e.target.value || null) as PaymentChannel | null)}
+                value={channelSelection}
+                onChange={(e) => {
+                  setChannelSelection(e.target.value);
+                  setNewChannelLabel("");
+                }}
                 className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
               >
                 <option value="">Channel</option>
-                {Object.entries(PAYMENT_CHANNEL_LABELS).map(([value, label]) => (
+                {BASE_PAYMENT_CHANNELS.map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
+                {customChannels.map((c) => (
+                  <option key={c.id} value={`custom:${c.id}`}>
+                    {c.label}
+                  </option>
+                ))}
+                <option value={ADD_CHANNEL_VALUE}>+ Add Channel</option>
               </select>
+            )}
+            {channelSelection === ADD_CHANNEL_VALUE && (
+              <input
+                value={newChannelLabel}
+                onChange={(e) => setNewChannelLabel(e.target.value)}
+                placeholder="New channel name"
+                className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+              />
             )}
           </div>
         </div>
@@ -138,8 +191,7 @@ export function DepositsPanel({
             <div key={d.id} className="px-5 py-3 flex items-center justify-between">
               <div className="text-sm text-gray-700">
                 {fmtDate(d.depositDate)} · {d.method}
-                {d.method === "online" && d.channel ? ` (${PAYMENT_CHANNEL_LABELS[d.channel]})` : ""} ·{" "}
-                {d.receivedBy || "—"}
+                {d.method === "online" && d.channelLabel ? ` (${d.channelLabel})` : ""} · {d.receivedBy || "—"}
               </div>
               <div className="text-sm font-semibold text-navy">{peso(d.amount)}</div>
             </div>

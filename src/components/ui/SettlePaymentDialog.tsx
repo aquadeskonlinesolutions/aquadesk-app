@@ -1,14 +1,30 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
-import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
+import { BASE_PAYMENT_CHANNELS, ADD_CHANNEL_VALUE, type PaymentChannel } from "@/lib/payments";
+import type { CustomChannelOption } from "@/lib/paymentChannels";
 
 type SettlePaymentOptions = {
   title?: string;
   confirmLabel?: string;
+  // This dive center's own previously-added custom channels, so the
+  // dialog's Channel dropdown can offer them alongside the 4 fixed ones
+  // and "+ Add Channel" — passed per-call since each tab (Join Ride,
+  // Rental Gears, Staff Commissions) sources its own list from whatever
+  // it already loaded.
+  customChannels?: CustomChannelOption[];
 };
 
-export type SettlePaymentResult = { method: "cash" | "card" | "online"; channel: PaymentChannel | null };
+export type SettlePaymentResult = {
+  method: "cash" | "card" | "online";
+  // A base PaymentChannel key or "custom" — already resolved from
+  // whichever UI state (existing selection vs. newly typed) produced it,
+  // so the caller's server action only ever needs to handle these two
+  // shapes, never the raw ADD_CHANNEL_VALUE sentinel.
+  channel: PaymentChannel | null;
+  customChannelId: string | null;
+  newChannelLabel: string | null;
+};
 
 type SettlePaymentState = {
   message: string;
@@ -27,13 +43,18 @@ const SettlePaymentContext = createContext<SettlePaymentFn | null>(null);
 export function SettlePaymentProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<SettlePaymentState | null>(null);
   const [method, setMethod] = useState<"cash" | "card" | "online">("cash");
-  const [channel, setChannel] = useState<PaymentChannel | null>(null);
+  // Holds a base channel key, "" (none chosen), `custom:<id>` (an existing
+  // per-dive-center channel), or ADD_CHANNEL_VALUE while composing a new
+  // one via "+ Add Channel".
+  const [channelSelection, setChannelSelection] = useState("");
+  const [newChannelLabel, setNewChannelLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const settlePayment = useCallback<SettlePaymentFn>((message, options = {}) => {
     return new Promise<SettlePaymentResult | null>((resolve) => {
       setMethod("cash");
-      setChannel(null);
+      setChannelSelection("");
+      setNewChannelLabel("");
       setError(null);
       setState({ message, options, resolve });
     });
@@ -45,11 +66,25 @@ export function SettlePaymentProvider({ children }: { children: React.ReactNode 
   }
 
   function confirmClick() {
-    if (method === "online" && !channel) {
-      setError("Select an Online channel.");
-      return;
+    if (method === "online") {
+      if (!channelSelection) {
+        setError("Select an Online channel.");
+        return;
+      }
+      if (channelSelection === ADD_CHANNEL_VALUE && !newChannelLabel.trim()) {
+        setError("Enter a channel name.");
+        return;
+      }
     }
-    settle({ method, channel: method === "online" ? channel : null });
+    if (method !== "online") {
+      settle({ method, channel: null, customChannelId: null, newChannelLabel: null });
+    } else if (channelSelection === ADD_CHANNEL_VALUE) {
+      settle({ method, channel: "custom", customChannelId: null, newChannelLabel });
+    } else if (channelSelection.startsWith("custom:")) {
+      settle({ method, channel: "custom", customChannelId: channelSelection.slice(7), newChannelLabel: null });
+    } else {
+      settle({ method, channel: channelSelection as PaymentChannel, customChannelId: null, newChannelLabel: null });
+    }
   }
 
   return (
@@ -74,7 +109,10 @@ export function SettlePaymentProvider({ children }: { children: React.ReactNode 
                   onChange={(e) => {
                     const next = e.target.value as "cash" | "card" | "online";
                     setMethod(next);
-                    if (next !== "online") setChannel(null);
+                    if (next !== "online") {
+                      setChannelSelection("");
+                      setNewChannelLabel("");
+                    }
                     setError(null);
                   }}
                   className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
@@ -88,20 +126,38 @@ export function SettlePaymentProvider({ children }: { children: React.ReactNode 
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Channel</label>
                   <select
-                    value={channel ?? ""}
+                    value={channelSelection}
                     onChange={(e) => {
-                      setChannel((e.target.value || null) as PaymentChannel | null);
+                      setChannelSelection(e.target.value);
+                      setNewChannelLabel("");
                       setError(null);
                     }}
                     className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
                   >
                     <option value="">Select channel</option>
-                    {Object.entries(PAYMENT_CHANNEL_LABELS).map(([value, label]) => (
+                    {BASE_PAYMENT_CHANNELS.map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
                       </option>
                     ))}
+                    {(state.options.customChannels ?? []).map((c) => (
+                      <option key={c.id} value={`custom:${c.id}`}>
+                        {c.label}
+                      </option>
+                    ))}
+                    <option value={ADD_CHANNEL_VALUE}>+ Add Channel</option>
                   </select>
+                  {channelSelection === ADD_CHANNEL_VALUE && (
+                    <input
+                      value={newChannelLabel}
+                      onChange={(e) => {
+                        setNewChannelLabel(e.target.value);
+                        setError(null);
+                      }}
+                      placeholder="New channel name"
+                      className="mt-1.5 w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+                    />
+                  )}
                 </div>
               )}
             </div>

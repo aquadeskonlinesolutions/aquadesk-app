@@ -162,6 +162,7 @@ export function DiverDetailClient({
             visitId={visit.id}
             deposits={deposits}
             receivedByDisplay={isOwner ? diveCenterName : currentUserName}
+            customChannels={paymentConfig.customChannels}
             onAdded={(d) => setDeposits((prev) => [d, ...prev])}
           />
         </>

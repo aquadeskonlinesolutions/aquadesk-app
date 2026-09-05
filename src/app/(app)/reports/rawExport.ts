@@ -36,7 +36,8 @@ function toCsv(headers: string[], rows: (string | number)[][]): string {
   return [headers.map(csvCell).join(","), ...rows.map((r) => r.map(csvCell).join(","))].join("\r\n");
 }
 
-function expenseCategoryLabel(category: string, customCategory: string | null): string {
+function expenseCategoryLabel(category: string, customCategory: string | null, customCategoryLabel: string | null): string {
+  if (category === "custom") return customCategoryLabel ?? "Custom";
   if (category === "other") {
     const custom = customCategory?.trim();
     return custom ? `Other – ${custom}` : "Other (unspecified)";
@@ -91,7 +92,7 @@ export async function exportRawData(
     ["Date", "Category", "Amount", "Payment Method", "Recorded By", "Notes"],
     expenses.records.map((r) => [
       r.date,
-      expenseCategoryLabel(r.category, r.customCategory),
+      expenseCategoryLabel(r.category, r.customCategory, r.customCategoryLabel),
       r.amount,
       expensePaymentMethodCell(r.paymentMethod, r.channel),
       r.recordedBy,

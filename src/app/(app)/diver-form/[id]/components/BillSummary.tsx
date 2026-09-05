@@ -5,7 +5,7 @@ import { savePaymentOnly, checkoutVisit } from "../actions";
 import { computePaymentBreakdown, type PaymentInput } from "../billing";
 import type { Activity, Deposit, ExistingPayment, PaymentConfig, Visit } from "../data";
 import { useToast } from "@/components/ui/Toast";
-import { EXCESS_LABEL, EXCESS_HINT, PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
+import { EXCESS_LABEL, EXCESS_HINT, BASE_PAYMENT_CHANNELS, ADD_CHANNEL_VALUE } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -20,6 +20,8 @@ function emptyInput(existing: ExistingPayment | null): PaymentInput {
     cardAmount: existing?.cardAmount ?? 0,
     onlineAmount: existing?.onlineAmount ?? 0,
     onlineChannel: existing?.onlineChannel ?? null,
+    customOnlineChannelId: existing?.customOnlineChannelId ?? null,
+    newOnlineChannelLabel: "",
     discount: existing?.discount ?? 0,
     notes: existing?.notes ?? "",
   };
@@ -69,15 +71,32 @@ export function BillSummary({
   // channel before saving. Matches the server's own check in actions.ts.
   const onlineAmountChanged = input.onlineAmount !== (existingPayment?.onlineAmount ?? 0);
 
+  // Validates the channel requirement and translates the transient
+  // ADD_CHANNEL_VALUE sentinel to "custom" before it ever reaches a server
+  // action — the server only needs to know "resolve a custom channel",
+  // not which UI state produced it.
+  function resolveSubmitInput(): { error: string } | { input: PaymentInput } {
+    if (input.onlineAmount > 0 && onlineAmountChanged) {
+      if (!input.onlineChannel) return { error: "Select an Online channel." };
+      if (input.onlineChannel === ADD_CHANNEL_VALUE && !input.newOnlineChannelLabel.trim()) {
+        return { error: "Enter a channel name." };
+      }
+    }
+    return {
+      input: input.onlineChannel === ADD_CHANNEL_VALUE ? { ...input, onlineChannel: "custom" } : input,
+    };
+  }
+
   function save() {
     setError(null);
     setMessage(null);
-    if (input.onlineAmount > 0 && !input.onlineChannel && onlineAmountChanged) {
-      setError("Select an Online channel before saving.");
+    const resolved = resolveSubmitInput();
+    if ("error" in resolved) {
+      setError(resolved.error);
       return;
     }
     startTransition(async () => {
-      const res = await savePaymentOnly(diverId, visit.id, visit.updatedAt, grandTotal, depositsTotal, input);
+      const res = await savePaymentOnly(diverId, visit.id, visit.updatedAt, grandTotal, depositsTotal, resolved.input);
       if (res.error) {
         setError(res.error);
         if (res.conflict) {
@@ -93,12 +112,13 @@ export function BillSummary({
   function checkout() {
     setError(null);
     setMessage(null);
-    if (input.onlineAmount > 0 && !input.onlineChannel && onlineAmountChanged) {
-      setError("Select an Online channel before checking out.");
+    const resolved = resolveSubmitInput();
+    if ("error" in resolved) {
+      setError(resolved.error);
       return;
     }
     startTransition(async () => {
-      const res = await checkoutVisit(diverId, visit.id, visit.updatedAt, input);
+      const res = await checkoutVisit(diverId, visit.id, visit.updatedAt, resolved.input);
       if (res.error) {
         setError(res.error);
         if (res.conflict) {
@@ -175,18 +195,41 @@ export function BillSummary({
             <div className="flex gap-1.5">
               {num(input.onlineAmount, (v) => update({ onlineAmount: v }), "w-full")}
               <select
-                value={input.onlineChannel ?? ""}
-                onChange={(e) => update({ onlineChannel: (e.target.value || null) as PaymentChannel | null })}
+                value={input.onlineChannel === "custom" && input.customOnlineChannelId ? `custom:${input.customOnlineChannelId}` : (input.onlineChannel ?? "")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === ADD_CHANNEL_VALUE) {
+                    update({ onlineChannel: ADD_CHANNEL_VALUE, customOnlineChannelId: null, newOnlineChannelLabel: "" });
+                  } else if (v.startsWith("custom:")) {
+                    update({ onlineChannel: "custom", customOnlineChannelId: v.slice(7), newOnlineChannelLabel: "" });
+                  } else {
+                    update({ onlineChannel: v || null, customOnlineChannelId: null, newOnlineChannelLabel: "" });
+                  }
+                }}
                 className="border border-gray-300 rounded-md px-1.5 py-1.5 text-sm"
               >
                 <option value="">Channel</option>
-                {Object.entries(PAYMENT_CHANNEL_LABELS).map(([value, label]) => (
+                {BASE_PAYMENT_CHANNELS.map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
+                {paymentConfig.customChannels.map((c) => (
+                  <option key={c.id} value={`custom:${c.id}`}>
+                    {c.label}
+                  </option>
+                ))}
+                <option value={ADD_CHANNEL_VALUE}>+ Add Channel</option>
               </select>
             </div>
+            {input.onlineChannel === ADD_CHANNEL_VALUE && (
+              <input
+                value={input.newOnlineChannelLabel}
+                onChange={(e) => update({ newOnlineChannelLabel: e.target.value })}
+                placeholder="New channel name"
+                className="mt-1.5 w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+              />
+            )}
             {breakdown.onlineSurchargeAmount > 0 && (
               <div className="text-xs text-gray-400 mt-0.5">+ {peso(breakdown.onlineSurchargeAmount)} surcharge</div>
             )}

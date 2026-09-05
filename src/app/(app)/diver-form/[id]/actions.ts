@@ -16,9 +16,21 @@ import {
 } from "./pricing";
 import { computePaymentBreakdown, type PaymentInput } from "./billing";
 import type { PaymentChannel } from "@/lib/payments";
+import { resolveOnlineChannel } from "@/lib/paymentChannels";
 import { loadPaymentConfig, loadInvoiceForVisit } from "./data";
 import { buildInvoiceEmailHtml } from "./invoiceEmailHtml";
 import { getResendClient, RESEND_FROM_EMAIL } from "@/lib/email/resend";
+
+// Same +8h-shift-then-read-UTC-fields trick already used in reports/data.ts,
+// dashboard/data.ts, and office.ts — a plain `new Date().toISOString()`
+// slice reads the *server's* UTC calendar date, which for a Manila-run
+// business is the wrong day for roughly a third of every 24 hours (any
+// deposit entered between 12:00am–7:59am Manila time would otherwise get
+// filed under the previous calendar day, making it look missing from that
+// day's Settlement report).
+function manilaTodayStr(): string {
+  return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 export type ProfileFormFields = {
   firstName: string;
@@ -915,6 +927,22 @@ export async function savePaymentOnly(
   const breakdown = computePaymentBreakdown(input, config.cardSurchargeRate, config.onlineSurchargeRate, amountOwed);
   const balance = Math.max(0, amountOwed - breakdown.totalCollected);
 
+  let finalOnlineChannel: PaymentChannel | null = null;
+  let finalCustomOnlineChannelId: string | null = null;
+  if (breakdown.onlineAmount > 0 && input.onlineChannel) {
+    if (input.onlineChannel === "custom") {
+      const resolved = await resolveOnlineChannel(supabase, user.diveCenterId, {
+        channelId: input.customOnlineChannelId,
+        newChannelLabel: input.newOnlineChannelLabel,
+      });
+      if ("error" in resolved) return { error: resolved.error };
+      finalOnlineChannel = resolved.channel;
+      finalCustomOnlineChannelId = resolved.customChannelId;
+    } else {
+      finalOnlineChannel = input.onlineChannel as PaymentChannel;
+    }
+  }
+
   const { error } = await supabase.from("payments").upsert(
     {
       dive_center_id: user.diveCenterId,
@@ -926,7 +954,8 @@ export async function savePaymentOnly(
       cash_exchange_rate: breakdown.cashExchangeRate || null,
       card_amount: breakdown.cardAmount,
       online_amount: breakdown.onlineAmount,
-      online_channel: breakdown.onlineAmount > 0 ? breakdown.onlineChannel : null,
+      online_channel: finalOnlineChannel,
+      custom_online_channel_id: finalCustomOnlineChannelId,
       total_paid: breakdown.totalCollected,
       balance,
       discount: input.discount,
@@ -954,7 +983,12 @@ export async function addDeposit(
   visitId: string,
   amount: number,
   method: "cash" | "card" | "online",
-  channel: PaymentChannel | null,
+  // "custom" (an existing per-dive-center channel, identified by
+  // channelId) or the ADD_CHANNEL_VALUE sentinel resolved to "custom" by
+  // the client, or a base PaymentChannel key directly.
+  channel: string | null,
+  channelId: string | null,
+  newChannelLabel: string | null,
   receivedBy: string,
 ): Promise<{ error?: string }> {
   if (!(amount > 0)) return { error: "Deposit amount must be greater than 0." };
@@ -963,14 +997,28 @@ export async function addDeposit(
   const user = await getCurrentUser();
   const supabase = await createClient();
 
+  let finalChannel: PaymentChannel | null = null;
+  let finalCustomChannelId: string | null = null;
+  if (method === "online" && channel) {
+    if (channel === "custom") {
+      const resolved = await resolveOnlineChannel(supabase, user.diveCenterId, { channelId, newChannelLabel });
+      if ("error" in resolved) return { error: resolved.error };
+      finalChannel = resolved.channel;
+      finalCustomChannelId = resolved.customChannelId;
+    } else {
+      finalChannel = channel as PaymentChannel;
+    }
+  }
+
   const { error } = await supabase.from("deposits").insert({
     dive_center_id: user.diveCenterId,
     diver_id: diverId,
     visit_id: visitId,
     amount,
     method,
-    channel: method === "online" ? channel : null,
-    deposit_date: new Date().toISOString().slice(0, 10),
+    channel: finalChannel,
+    custom_channel_id: finalCustomChannelId,
+    deposit_date: manilaTodayStr(),
     received_by: receivedBy.trim() || null,
     recorded_by_user_id: user.id,
   });
@@ -1073,6 +1121,22 @@ export async function checkoutVisit(
     };
   }
 
+  let finalOnlineChannel: PaymentChannel | null = null;
+  let finalCustomOnlineChannelId: string | null = null;
+  if (breakdown.onlineAmount > 0 && input.onlineChannel) {
+    if (input.onlineChannel === "custom") {
+      const resolved = await resolveOnlineChannel(supabase, user.diveCenterId, {
+        channelId: input.customOnlineChannelId,
+        newChannelLabel: input.newOnlineChannelLabel,
+      });
+      if ("error" in resolved) return { error: resolved.error };
+      finalOnlineChannel = resolved.channel;
+      finalCustomOnlineChannelId = resolved.customChannelId;
+    } else {
+      finalOnlineChannel = input.onlineChannel as PaymentChannel;
+    }
+  }
+
   const { error: paymentError } = await supabase.from("payments").upsert(
     {
       dive_center_id: user.diveCenterId,
@@ -1084,7 +1148,8 @@ export async function checkoutVisit(
       cash_exchange_rate: breakdown.cashExchangeRate || null,
       card_amount: breakdown.cardAmount,
       online_amount: breakdown.onlineAmount,
-      online_channel: breakdown.onlineAmount > 0 ? breakdown.onlineChannel : null,
+      online_channel: finalOnlineChannel,
+      custom_online_channel_id: finalCustomOnlineChannelId,
       total_paid: breakdown.totalCollected,
       balance: Math.max(0, balance),
       discount: input.discount,
@@ -1143,7 +1208,7 @@ export async function checkoutVisit(
       cash_exchange_rate: breakdown.cashExchangeRate,
       card_amount: breakdown.cardAmount,
       online_amount: breakdown.onlineAmount,
-      online_channel: breakdown.onlineAmount > 0 ? breakdown.onlineChannel : null,
+      online_channel: finalOnlineChannel,
       card_surcharge_rate: breakdown.cardSurchargeRate,
       online_surcharge_rate: breakdown.onlineSurchargeRate,
       card_surcharge_amount: breakdown.cardSurchargeAmount,

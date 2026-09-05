@@ -5,15 +5,29 @@
 // across every place that records a payment method (bill payment,
 // deposits, expenses, join ride settlement, rental gear settlement, staff
 // commission payout). Matches the public.payment_channel Postgres enum
-// exactly (database/043_online_payment_channel.sql).
-export type PaymentChannel = "e_wallet" | "paypal" | "wise" | "bank";
+// exactly (database/043_online_payment_channel.sql, plus 'custom' added
+// by 046_custom_payment_channels.sql for per-dive-center custom channels
+// — see lib/paymentChannels.ts's resolveOnlineChannel).
+export type BasePaymentChannel = "e_wallet" | "paypal" | "wise" | "bank";
+export type PaymentChannel = BasePaymentChannel | "custom";
 
-export const PAYMENT_CHANNEL_LABELS: Record<PaymentChannel, string> = {
+export const PAYMENT_CHANNEL_LABELS: Record<BasePaymentChannel, string> = {
   e_wallet: "E-Wallet",
   paypal: "PayPal",
   wise: "Wise",
   bank: "Bank",
 };
+
+// The 4 fixed, still-selectable base channels — shared between every
+// client dropdown and the server's dedup-match check in
+// lib/paymentChannels.ts, so the two never drift. Lives here (not in
+// paymentChannels.ts, which is server-only) since client components need
+// it too. Mirrors BASE_EXPENSE_CATEGORIES's role for categories.
+export const BASE_PAYMENT_CHANNELS = Object.entries(PAYMENT_CHANNEL_LABELS) as [BasePaymentChannel, string][];
+
+// Sentinel <select> value for "+ Add Channel" — never stored, only used
+// client-side to know when to reveal the new-channel text input.
+export const ADD_CHANNEL_VALUE = "__add_channel__";
 
 // Shared verbatim across Dashboard, Diver Form (BillSummary/InvoicePanel),
 // Settlement, and Reports Overview — one label/hint pair so the same figure

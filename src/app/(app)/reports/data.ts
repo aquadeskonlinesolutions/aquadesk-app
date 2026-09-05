@@ -1,7 +1,22 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { safeNum, getPaidAmount, PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
+import { loadCustomChannels, type CustomChannelOption } from "@/lib/paymentChannels";
 import { EXPENSE_CATEGORY_LABELS } from "./constants";
+
+// Resolves a channel enum value + (for "custom") its per-dive-center row
+// id into one final display string — works uniformly for the 4 fixed
+// channels and any custom one, so callers never need to know which kind
+// they're looking at. Same helper as diver-form/[id]/data.ts's own.
+function resolveChannelLabel(
+  channel: PaymentChannel | null,
+  customChannelId: string | null,
+  customChannelLabelMap: Map<string, string>,
+): string | null {
+  if (!channel) return null;
+  if (channel === "custom") return customChannelId ? (customChannelLabelMap.get(customChannelId) ?? "Custom") : "Custom";
+  return PAYMENT_CHANNEL_LABELS[channel];
+}
 
 // Same helper as dashboard/data.ts's own manilaDayBoundsUtcIso (duplicated
 // per this codebase's established per-page small-helper precedent) — the
@@ -57,7 +72,10 @@ function trailingMonths(n: number): string[] {
   return months;
 }
 
-function expenseGroupLabel(category: string, customCategory: string | null): string {
+function expenseGroupLabel(category: string, customCategory: string | null, customCategoryLabel?: string | null): string {
+  if (category === "custom") {
+    return customCategoryLabel ?? "Custom";
+  }
   if (category === "other") {
     const custom = customCategory?.trim();
     return custom ? `Other – ${custom}` : "Other (unspecified)";
@@ -537,6 +555,8 @@ export type LeaderCommissionRow = {
   status: "unpaid" | "paid";
   paymentMethod: "cash" | "card" | "online" | null;
   channel: PaymentChannel | null;
+  customChannelId: string | null;
+  channelLabel: string | null;
   // True once a matching row exists in staff_commission_records — false
   // means this row is only a live computation from schedule/activity data
   // (Round 7 Fix 3: gives the UI a way to flag rows that vanish/reset on
@@ -558,6 +578,8 @@ export type EducatorCommissionRow = {
   status: "unpaid" | "paid";
   paymentMethod: "cash" | "card" | "online" | null;
   channel: PaymentChannel | null;
+  customChannelId: string | null;
+  channelLabel: string | null;
   isSaved: boolean;
 };
 
@@ -567,6 +589,7 @@ export type StaffActivityData = {
   ratioBonusExtraRate: number;
   leaderRows: LeaderCommissionRow[];
   educatorRows: EducatorCommissionRow[];
+  customChannels: CustomChannelOption[];
 };
 
 function splitSiteEntries(site: string | null): string[] {
@@ -584,7 +607,7 @@ export async function loadStaffActivityData(
 ): Promise<StaffActivityData> {
   const supabase = await createClient();
 
-  const [{ data: dc }, { data: activitiesInRange }, { data: commissionRecords }, { data: schedulesInRange }] =
+  const [{ data: dc }, { data: activitiesInRange }, { data: commissionRecords }, { data: schedulesInRange }, customChannels] =
     await Promise.all([
       supabase
         .from("dive_centers")
@@ -600,7 +623,7 @@ export async function loadStaffActivityData(
       supabase
         .from("staff_commission_records")
         .select(
-          "staff_name, commission_group, title, activity_date, diver_id, bonus_amount, commission_amount, status, payment_method, channel",
+          "staff_name, commission_group, title, activity_date, diver_id, bonus_amount, commission_amount, status, payment_method, channel, custom_channel_id",
         )
         .eq("dive_center_id", diveCenterId)
         .gte("activity_date", dateFrom)
@@ -612,11 +635,13 @@ export async function loadStaffActivityData(
         .eq("cancelled", false)
         .gte("schedule_date", dateFrom)
         .lte("schedule_date", dateTo),
+      loadCustomChannels(supabase, diveCenterId),
     ]);
 
   const divemasterRatePerDive = Number(dc?.divemaster_rate_per_dive ?? 0);
   const ratioBonusEnabled = !!dc?.ratio_bonus_enabled;
   const ratioBonusExtraRate = Number(dc?.ratio_bonus_extra_rate ?? 0);
+  const customChannelLabelMap = new Map(customChannels.map((c) => [c.id, c.label]));
 
   const commissions = commissionRecords ?? [];
   function findExisting(
@@ -780,6 +805,8 @@ export async function loadStaffActivityData(
         status: (existing?.status as "unpaid" | "paid") ?? "unpaid",
         paymentMethod: existing?.payment_method ?? null,
         channel: existing?.channel ?? null,
+        customChannelId: existing?.custom_channel_id ?? null,
+        channelLabel: resolveChannelLabel(existing?.channel ?? null, existing?.custom_channel_id ?? null, customChannelLabelMap),
         isSaved: !!existing,
       };
     })
@@ -822,6 +849,8 @@ export async function loadStaffActivityData(
         status: (existing?.status as "unpaid" | "paid") ?? "unpaid",
         paymentMethod: existing?.payment_method ?? null,
         channel: existing?.channel ?? null,
+        customChannelId: existing?.custom_channel_id ?? null,
+        channelLabel: resolveChannelLabel(existing?.channel ?? null, existing?.custom_channel_id ?? null, customChannelLabelMap),
         isSaved: !!existing,
       };
     })
@@ -833,6 +862,7 @@ export async function loadStaffActivityData(
     ratioBonusExtraRate,
     leaderRows,
     educatorRows,
+    customChannels,
   };
 }
 
@@ -862,18 +892,21 @@ export type JoinRideRecord = {
   remarks: string | null;
   paymentMethod: "cash" | "card" | "online" | null;
   channel: PaymentChannel | null;
+  customChannelId: string | null;
+  channelLabel: string | null;
 };
 
 export type JoinRideData = {
   diveCenterName: string;
   joinRideRatePerDiverPerDive: number;
   records: JoinRideRecord[];
+  customChannels: CustomChannelOption[];
 };
 
 export async function loadJoinRideData(diveCenterId: string): Promise<JoinRideData> {
   const supabase = await createClient();
 
-  const [{ data: dc }, { data: records }] = await Promise.all([
+  const [{ data: dc }, { data: records }, customChannels] = await Promise.all([
     supabase
       .from("dive_centers")
       .select("name, join_ride_rate_per_diver_per_dive")
@@ -882,11 +915,14 @@ export async function loadJoinRideData(diveCenterId: string): Promise<JoinRideDa
     supabase
       .from("join_ride_records")
       .select(
-        "id, direction, date, company, number_of_divers, number_of_dives, dive_sites, total_amount, status, balance, remarks, payment_method, channel",
+        "id, direction, date, company, number_of_divers, number_of_dives, dive_sites, total_amount, status, balance, remarks, payment_method, channel, custom_channel_id",
       )
       .eq("dive_center_id", diveCenterId)
       .order("date", { ascending: false }),
+    loadCustomChannels(supabase, diveCenterId),
   ]);
+
+  const customChannelLabelMap = new Map(customChannels.map((c) => [c.id, c.label]));
 
   return {
     diveCenterName: dc?.name ?? "Dive Center",
@@ -905,7 +941,10 @@ export async function loadJoinRideData(diveCenterId: string): Promise<JoinRideDa
       remarks: r.remarks,
       paymentMethod: r.payment_method,
       channel: r.channel,
+      customChannelId: r.custom_channel_id,
+      channelLabel: resolveChannelLabel(r.channel, r.custom_channel_id, customChannelLabelMap),
     })),
+    customChannels,
   };
 }
 
@@ -929,20 +968,30 @@ export type RentalGearRecord = {
   remarks: string | null;
   paymentMethod: "cash" | "card" | "online" | null;
   channel: PaymentChannel | null;
+  customChannelId: string | null;
+  channelLabel: string | null;
 };
 
 export type RentalGearsData = {
   records: RentalGearRecord[];
+  customChannels: CustomChannelOption[];
 };
 
 export async function loadRentalGearsData(diveCenterId: string): Promise<RentalGearsData> {
   const supabase = await createClient();
 
-  const { data: records } = await supabase
-    .from("rental_gear_records")
-    .select("id, date, equipment, company, quantity, rate, total_amount, status, balance, remarks, payment_method, channel")
-    .eq("dive_center_id", diveCenterId)
-    .order("date", { ascending: false });
+  const [{ data: records }, customChannels] = await Promise.all([
+    supabase
+      .from("rental_gear_records")
+      .select(
+        "id, date, equipment, company, quantity, rate, total_amount, status, balance, remarks, payment_method, channel, custom_channel_id",
+      )
+      .eq("dive_center_id", diveCenterId)
+      .order("date", { ascending: false }),
+    loadCustomChannels(supabase, diveCenterId),
+  ]);
+
+  const customChannelLabelMap = new Map(customChannels.map((c) => [c.id, c.label]));
 
   return {
     records: (records ?? []).map((r) => ({
@@ -958,7 +1007,10 @@ export async function loadRentalGearsData(diveCenterId: string): Promise<RentalG
       remarks: r.remarks,
       paymentMethod: r.payment_method,
       channel: r.channel,
+      customChannelId: r.custom_channel_id,
+      channelLabel: resolveChannelLabel(r.channel, r.custom_channel_id, customChannelLabelMap),
     })),
+    customChannels,
   };
 }
 
@@ -976,18 +1028,30 @@ export type ExpenseRecord = {
   date: string;
   category: string;
   customCategory: string | null;
+  customCategoryId: string | null;
+  customCategoryLabel: string | null;
   amount: number;
   paymentMethod: string | null;
   channel: PaymentChannel | null;
+  customChannelId: string | null;
+  channelLabel: string | null;
   recordedBy: string;
   notes: string | null;
 };
+
+export type ExpenseCategoryOption = { id: string; label: string };
 
 export type ExpensesData = {
   records: ExpenseRecord[];
   categoryTotals: { name: string; amount: number }[];
   totalAmount: number;
   uncategorizedAmount: number;
+  // This dive center's own previously-added custom categories — sourced
+  // from expense_categories, populates the "+ Add Category" dropdown's
+  // reusable options going forward. Scoped per dive center by RLS.
+  customCategories: ExpenseCategoryOption[];
+  // Same idea for payment channels — sourced from payment_channels.
+  customChannels: CustomChannelOption[];
 };
 
 // ── Settlement ───────────────────────────────────────────────────────────
@@ -1010,6 +1074,7 @@ export type SettlementRow = {
   cardSurcharge: number;
   online: number;
   onlineChannel: PaymentChannel | null;
+  onlineChannelLabel: string | null;
   onlineSurcharge: number;
   totalCollected: number;
   excessAmount: number;
@@ -1031,7 +1096,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
     supabase
       .from("payments")
       .select(
-        "paid_at, created_at, diver_id, visit_id, cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_channel, online_surcharge_amount, total_collected, excess_amount",
+        "paid_at, created_at, diver_id, visit_id, cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_channel, custom_online_channel_id, online_surcharge_amount, total_collected, excess_amount",
       )
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", dayStart)
@@ -1039,7 +1104,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
       .order("paid_at", { ascending: true }),
     supabase
       .from("deposits")
-      .select("deposit_date, diver_id, amount, method, channel, received_by")
+      .select("deposit_date, diver_id, amount, method, channel, custom_channel_id, received_by")
       .eq("dive_center_id", diveCenterId)
       .eq("deposit_date", date)
       .order("created_at", { ascending: true }),
@@ -1050,8 +1115,15 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
 
   const diverIds = [...new Set([...payments.map((p) => p.diver_id), ...deposits.map((d) => d.diver_id)].filter(Boolean))];
   const visitIds = [...new Set(payments.map((p) => p.visit_id).filter(Boolean))];
+  const customChannelIds = [
+    ...new Set(
+      [...payments.map((p) => p.custom_online_channel_id), ...deposits.map((d) => d.custom_channel_id)].filter(
+        (id): id is string => !!id,
+      ),
+    ),
+  ];
 
-  const [{ data: diversData }, { data: invoiceEmails }] = await Promise.all([
+  const [{ data: diversData }, { data: invoiceEmails }, { data: customChannelsData }] = await Promise.all([
     diverIds.length
       ? supabase.from("divers").select("id, first_name, last_name").in("id", diverIds)
       : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string }[] }),
@@ -1062,11 +1134,15 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
           .in("visit_id", visitIds)
           .order("sent_at", { ascending: false })
       : Promise.resolve({ data: [] as { visit_id: string; sent_by: string | null }[] }),
+    customChannelIds.length
+      ? supabase.from("payment_channels").select("id, label").in("id", customChannelIds)
+      : Promise.resolve({ data: [] as { id: string; label: string }[] }),
   ]);
 
   const diverMap = new Map(
     (diversData ?? []).map((d) => [d.id, `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim() || "—"]),
   );
+  const customChannelLabelMap = new Map((customChannelsData ?? []).map((c) => [c.id, c.label]));
 
   const senderIds = [...new Set((invoiceEmails ?? []).map((ie) => ie.sent_by).filter((id): id is string => !!id))];
   const { data: usersData } = senderIds.length
@@ -1110,6 +1186,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
       cardSurcharge: safeNum(p.card_surcharge_amount),
       online: safeNum(p.online_amount),
       onlineChannel: p.online_channel,
+      onlineChannelLabel: resolveChannelLabel(p.online_channel, p.custom_online_channel_id, customChannelLabelMap),
       onlineSurcharge: safeNum(p.online_surcharge_amount),
       totalCollected: safeNum(p.total_collected),
       excessAmount: safeNum(p.excess_amount),
@@ -1129,6 +1206,8 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
     cardSurcharge: 0,
     online: d.method === "online" ? safeNum(d.amount) : 0,
     onlineChannel: d.method === "online" ? d.channel : null,
+    onlineChannelLabel:
+      d.method === "online" ? resolveChannelLabel(d.channel, d.custom_channel_id, customChannelLabelMap) : null,
     onlineSurcharge: 0,
     totalCollected: 0,
     excessAmount: 0,
@@ -1177,14 +1256,14 @@ export async function loadDiverPaymentsExport(
   const [{ data: paymentsRaw }, { data: depositsRaw }] = await Promise.all([
     supabase
       .from("payments")
-      .select("paid_at, diver_id, cash_amount, card_amount, online_amount, online_channel, notes")
+      .select("paid_at, diver_id, cash_amount, card_amount, online_amount, online_channel, custom_online_channel_id, notes")
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", startIso)
       .lte("paid_at", endIso)
       .order("paid_at", { ascending: true }),
     supabase
       .from("deposits")
-      .select("deposit_date, diver_id, amount, method, channel")
+      .select("deposit_date, diver_id, amount, method, channel, custom_channel_id")
       .eq("dive_center_id", diveCenterId)
       .gte("deposit_date", dateFrom)
       .lte("deposit_date", dateTo)
@@ -1203,10 +1282,22 @@ export async function loadDiverPaymentsExport(
   );
   const traceMap = new Map((diversData ?? []).map((d) => [d.id, d.trace_number ?? ""]));
 
-  function channelLabel(method: "cash" | "card" | "online", channel: PaymentChannel | null): string {
+  const customChannelIds = [
+    ...new Set(
+      [...payments.map((p) => p.custom_online_channel_id), ...deposits.map((d) => d.custom_channel_id)].filter(
+        (id): id is string => !!id,
+      ),
+    ),
+  ];
+  const { data: customChannelsData } = customChannelIds.length
+    ? await supabase.from("payment_channels").select("id, label").in("id", customChannelIds)
+    : { data: [] as { id: string; label: string }[] };
+  const customChannelLabelMap = new Map((customChannelsData ?? []).map((c) => [c.id, c.label]));
+
+  function channelLabel(method: "cash" | "card" | "online", channel: PaymentChannel | null, customChannelId: string | null): string {
     if (method === "cash") return "Cash";
     if (method === "card") return "Card";
-    return channel ? PAYMENT_CHANNEL_LABELS[channel] : "Online";
+    return resolveChannelLabel(channel, customChannelId, customChannelLabelMap) ?? "Online";
   }
 
   const rows: DiverPaymentExportRow[] = [];
@@ -1229,7 +1320,7 @@ export async function loadDiverPaymentsExport(
         diverName,
         amount: safeNum(p.online_amount),
         paymentMethod: "Online",
-        paymentChannel: channelLabel("online", p.online_channel),
+        paymentChannel: channelLabel("online", p.online_channel, p.custom_online_channel_id),
         notes,
       });
     }
@@ -1243,7 +1334,7 @@ export async function loadDiverPaymentsExport(
       diverName: diverMap.get(d.diver_id) ?? "Unknown Diver",
       amount: safeNum(d.amount),
       paymentMethod: method === "cash" ? "Cash" : method === "card" ? "Card" : "Online",
-      paymentChannel: channelLabel(method, d.channel),
+      paymentChannel: channelLabel(method, d.channel, d.custom_channel_id),
       notes: "",
     });
   });
@@ -1258,13 +1349,23 @@ export async function loadExpensesData(
 ): Promise<ExpensesData> {
   const supabase = await createClient();
 
-  const { data: rows } = await supabase
-    .from("expenses")
-    .select("id, date, category, custom_category, amount, payment_method, channel, notes, created_by")
-    .eq("dive_center_id", diveCenterId)
-    .gte("date", dateFrom)
-    .lte("date", dateTo)
-    .order("date", { ascending: false });
+  const [{ data: rows }, { data: categoriesRaw }, customChannels] = await Promise.all([
+    supabase
+      .from("expenses")
+      .select(
+        "id, date, category, custom_category, custom_category_id, amount, payment_method, channel, custom_channel_id, notes, created_by",
+      )
+      .eq("dive_center_id", diveCenterId)
+      .gte("date", dateFrom)
+      .lte("date", dateTo)
+      .order("date", { ascending: false }),
+    supabase
+      .from("expense_categories")
+      .select("id, label")
+      .eq("dive_center_id", diveCenterId)
+      .order("label", { ascending: true }),
+    loadCustomChannels(supabase, diveCenterId),
+  ]);
 
   // "Recorded By" — same batch-join-to-a-Map pattern as diver notes /
   // Settlement's "Closed By", not a Supabase embedded-relationship select
@@ -1275,14 +1376,22 @@ export async function loadExpensesData(
     : { data: [] as { id: string; full_name: string }[] };
   const userMap = new Map((usersData ?? []).map((u) => [u.id, u.full_name]));
 
+  const customCategories: ExpenseCategoryOption[] = (categoriesRaw ?? []).map((c) => ({ id: c.id, label: c.label }));
+  const customCategoryLabelMap = new Map(customCategories.map((c) => [c.id, c.label]));
+  const customChannelLabelMap = new Map(customChannels.map((c) => [c.id, c.label]));
+
   const records: ExpenseRecord[] = (rows ?? []).map((r) => ({
     id: r.id,
     date: r.date,
     category: r.category,
     customCategory: r.custom_category,
+    customCategoryId: r.custom_category_id,
+    customCategoryLabel: r.custom_category_id ? (customCategoryLabelMap.get(r.custom_category_id) ?? null) : null,
     amount: safeNum(r.amount),
     paymentMethod: r.payment_method,
     channel: r.channel,
+    customChannelId: r.custom_channel_id,
+    channelLabel: resolveChannelLabel(r.channel, r.custom_channel_id, customChannelLabelMap),
     recordedBy: (r.created_by && userMap.get(r.created_by)) || "—",
     notes: r.notes,
   }));
@@ -1290,7 +1399,7 @@ export async function loadExpensesData(
   const categoryMap = new Map<string, number>();
   let uncategorizedAmount = 0;
   records.forEach((r) => {
-    const label = expenseGroupLabel(r.category, r.customCategory);
+    const label = expenseGroupLabel(r.category, r.customCategory, r.customCategoryLabel);
     categoryMap.set(label, (categoryMap.get(label) ?? 0) + r.amount);
     if (label === "Uncategorized" || label === "Other (unspecified)") {
       uncategorizedAmount += r.amount;
@@ -1305,6 +1414,8 @@ export async function loadExpensesData(
     categoryTotals,
     totalAmount: records.reduce((s, r) => s + r.amount, 0),
     uncategorizedAmount,
+    customCategories,
+    customChannels,
   };
 }
 

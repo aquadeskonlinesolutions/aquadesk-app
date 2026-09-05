@@ -1,6 +1,21 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { PaymentChannel } from "@/lib/payments";
+import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
+import { loadCustomChannels, type CustomChannelOption } from "@/lib/paymentChannels";
+
+// Resolves a channel enum value + (for "custom") its per-dive-center row
+// id into one final display string — works uniformly for the 4 fixed
+// channels and any custom one, so callers never need to know which kind
+// they're looking at.
+function resolveChannelLabel(
+  channel: PaymentChannel | null,
+  customChannelId: string | null,
+  customChannelLabelMap: Map<string, string>,
+): string | null {
+  if (!channel) return null;
+  if (channel === "custom") return customChannelId ? (customChannelLabelMap.get(customChannelId) ?? "Custom") : "Custom";
+  return PAYMENT_CHANNEL_LABELS[channel];
+}
 
 export type DiverDetail = {
   id: string;
@@ -176,6 +191,8 @@ export type Deposit = {
   amount: number;
   method: "cash" | "card" | "online";
   channel: PaymentChannel | null;
+  customChannelId: string | null;
+  channelLabel: string | null;
   depositDate: string;
   receivedBy: string | null;
 };
@@ -184,15 +201,24 @@ export async function loadDeposits(visitId: string): Promise<Deposit[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("deposits")
-    .select("id, amount, method, channel, deposit_date, received_by")
+    .select("id, amount, method, channel, custom_channel_id, deposit_date, received_by")
     .eq("visit_id", visitId)
     .order("created_at", { ascending: false });
 
-  return (data ?? []).map((d) => ({
+  const rows = data ?? [];
+  const customChannelIds = [...new Set(rows.map((d) => d.custom_channel_id).filter((id): id is string => !!id))];
+  const { data: customChannelsData } = customChannelIds.length
+    ? await supabase.from("payment_channels").select("id, label").in("id", customChannelIds)
+    : { data: [] as { id: string; label: string }[] };
+  const customChannelLabelMap = new Map((customChannelsData ?? []).map((c) => [c.id, c.label]));
+
+  return rows.map((d) => ({
     id: d.id,
     amount: Number(d.amount) || 0,
     method: d.method,
     channel: d.channel,
+    customChannelId: d.custom_channel_id,
+    channelLabel: resolveChannelLabel(d.channel, d.custom_channel_id, customChannelLabelMap),
     depositDate: d.deposit_date,
     receivedBy: d.received_by,
   }));
@@ -206,6 +232,7 @@ export type ExistingPayment = {
   cardAmount: number;
   onlineAmount: number;
   onlineChannel: PaymentChannel | null;
+  customOnlineChannelId: string | null;
   discount: number;
   notes: string;
 };
@@ -219,7 +246,7 @@ export async function loadExistingPayment(visitId: string): Promise<ExistingPaym
   const { data } = await supabase
     .from("payments")
     .select(
-      "cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, online_amount, online_channel, discount, notes",
+      "cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, online_amount, online_channel, custom_online_channel_id, discount, notes",
     )
     .eq("visit_id", visitId)
     .maybeSingle();
@@ -233,6 +260,7 @@ export async function loadExistingPayment(visitId: string): Promise<ExistingPaym
     cardAmount: Number(data.card_amount) || 0,
     onlineAmount: Number(data.online_amount) || 0,
     onlineChannel: data.online_channel,
+    customOnlineChannelId: data.custom_online_channel_id,
     discount: Number(data.discount) || 0,
     notes: data.notes ?? "",
   };
@@ -242,11 +270,12 @@ export type PaymentConfig = {
   cardSurchargeRate: number;
   onlineSurchargeRate: number;
   currencies: { code: string; rateToPhp: number }[];
+  customChannels: CustomChannelOption[];
 };
 
 export async function loadPaymentConfig(diveCenterId: string): Promise<PaymentConfig> {
   const supabase = await createClient();
-  const [{ data: surcharges }, { data: currencies }] = await Promise.all([
+  const [{ data: surcharges }, { data: currencies }, customChannels] = await Promise.all([
     supabase.from("payment_surcharges").select("surcharge_type, rate").eq("dive_center_id", diveCenterId),
     supabase
       .from("exchange_rates")
@@ -254,6 +283,7 @@ export async function loadPaymentConfig(diveCenterId: string): Promise<PaymentCo
       .eq("dive_center_id", diveCenterId)
       .eq("is_active", true)
       .order("currency_code"),
+    loadCustomChannels(supabase, diveCenterId),
   ]);
 
   const card = (surcharges ?? []).find((s) => s.surcharge_type === "card");
@@ -263,6 +293,7 @@ export async function loadPaymentConfig(diveCenterId: string): Promise<PaymentCo
     cardSurchargeRate: Number(card?.rate) || 0,
     onlineSurchargeRate: Number(online?.rate) || 0,
     currencies: (currencies ?? []).map((c) => ({ code: c.currency_code, rateToPhp: Number(c.rate_to_php) || 0 })),
+    customChannels,
   };
 }
 

@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { getExpensesData, saveExpenseRecord, deleteExpenseRecord } from "./actions";
-import { EXPENSE_CATEGORY_LABELS, PAYMENT_METHOD_LABELS } from "./constants";
-import type { ExpenseRecord, ExpensesData } from "./data";
-import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
+import { ADD_CATEGORY_VALUE, BASE_EXPENSE_CATEGORIES, PAYMENT_METHOD_LABELS } from "./constants";
+import type { ExpenseCategoryOption, ExpenseRecord, ExpensesData } from "./data";
+import { BASE_PAYMENT_CHANNELS, ADD_CHANNEL_VALUE } from "@/lib/payments";
+import type { CustomChannelOption } from "@/lib/paymentChannels";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -16,12 +17,23 @@ function fmtDate(dateStr: string): string {
   return d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function categoryLabel(category: string, customCategory: string | null): string {
+const BASE_CATEGORY_LABEL_MAP = Object.fromEntries(BASE_EXPENSE_CATEGORIES);
+
+function categoryLabel(category: string, customCategory: string | null, customCategoryLabel: string | null): string {
+  if (category === "custom") return customCategoryLabel ?? "Custom";
   if (category === "other") {
     const custom = customCategory?.trim();
     return custom ? `Other – ${custom}` : "Other (unspecified)";
   }
-  return EXPENSE_CATEGORY_LABELS[category] ?? "Uncategorized";
+  return BASE_CATEGORY_LABEL_MAP[category] ?? "Uncategorized";
+}
+
+// Distinguishes individual custom categories from one another for the
+// filter dropdown — every "custom" row shares the same raw `category`
+// value, so filtering/grouping by that alone would collapse all custom
+// categories into one bucket.
+function categoryKey(r: ExpenseRecord): string {
+  return r.category === "custom" ? `custom:${r.customCategoryId}` : r.category;
 }
 
 function StatCard({
@@ -71,12 +83,24 @@ function BarList({ items }: { items: { name: string; amount: number }[] }) {
 
 type FormState = {
   id: string | null;
-  date: string;
+  // Holds a base category key (e.g. "fuel"), "custom" (an existing
+  // per-dive-center category, identified by customCategoryId), or
+  // ADD_CATEGORY_VALUE while composing a brand-new one (identified by
+  // newCategoryLabel) — exactly one of customCategoryId/newCategoryLabel
+  // is ever populated at a time.
   category: string;
   customCategory: string;
+  customCategoryId: string | null;
+  newCategoryLabel: string;
+  date: string;
   amount: string;
   paymentMethod: string;
-  channel: PaymentChannel | null;
+  // Holds a base channel key, "custom" (an existing per-dive-center
+  // channel, identified by customChannelId), or ADD_CHANNEL_VALUE while
+  // composing a brand-new one (identified by newChannelLabel).
+  channel: string | null;
+  customChannelId: string | null;
+  newChannelLabel: string;
   notes: string;
 };
 
@@ -86,9 +110,13 @@ function emptyForm(): FormState {
     date: new Date().toISOString().slice(0, 10),
     category: "fuel",
     customCategory: "",
+    customCategoryId: null,
+    newCategoryLabel: "",
     amount: "0",
     paymentMethod: "cash",
     channel: null,
+    customChannelId: null,
+    newChannelLabel: "",
     notes: "",
   };
 }
@@ -106,6 +134,8 @@ export function ExpensesTab({
   const [categoryTotals, setCategoryTotals] = useState(data.categoryTotals);
   const [totalAmount, setTotalAmount] = useState(data.totalAmount);
   const [uncategorizedAmount, setUncategorizedAmount] = useState(data.uncategorizedAmount);
+  const [customCategories, setCustomCategories] = useState<ExpenseCategoryOption[]>(data.customCategories);
+  const [customChannels, setCustomChannels] = useState<CustomChannelOption[]>(data.customChannels);
   const [form, setForm] = useState<FormState | null>(null);
   const [editingOriginal, setEditingOriginal] = useState<ExpenseRecord | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -120,20 +150,26 @@ export function ExpensesTab({
     setCategoryTotals(fresh.categoryTotals);
     setTotalAmount(fresh.totalAmount);
     setUncategorizedAmount(fresh.uncategorizedAmount);
+    setCustomCategories(fresh.customCategories);
+    setCustomChannels(fresh.customChannels);
   }
 
   // The cards/category bars above are already date-range scoped server-side
   // (getExpensesData(appliedFrom, appliedTo)) — these filters only narrow
   // which of that already-scoped set of rows the table itself shows.
-  const categoryOptions = [...new Set(records.map((r) => r.category))].sort((a, b) =>
-    categoryLabel(a, null).localeCompare(categoryLabel(b, null)),
+  const categoryKeyLabelMap = new Map<string, string>();
+  records.forEach((r) => {
+    categoryKeyLabelMap.set(categoryKey(r), categoryLabel(r.category, r.customCategory, r.customCategoryLabel));
+  });
+  const categoryOptions = [...categoryKeyLabelMap.keys()].sort((a, b) =>
+    (categoryKeyLabelMap.get(a) ?? "").localeCompare(categoryKeyLabelMap.get(b) ?? ""),
   );
   const paymentMethodOptions = [...new Set(records.map((r) => r.paymentMethod).filter((m): m is string => !!m))].sort(
     (a, b) => a.localeCompare(b),
   );
   const recordedByOptions = [...new Set(records.map((r) => r.recordedBy))].sort((a, b) => a.localeCompare(b));
   const tableRows = records
-    .filter((r) => !categoryFilter || r.category === categoryFilter)
+    .filter((r) => !categoryFilter || categoryKey(r) === categoryFilter)
     .filter((r) => !paymentMethodFilter || r.paymentMethod === paymentMethodFilter)
     .filter((r) => !recordedByFilter || r.recordedBy === recordedByFilter);
 
@@ -150,9 +186,13 @@ export function ExpensesTab({
       date: r.date,
       category: r.category,
       customCategory: r.customCategory ?? "",
+      customCategoryId: r.customCategoryId,
+      newCategoryLabel: "",
       amount: String(r.amount),
       paymentMethod: r.paymentMethod ?? "cash",
       channel: r.channel,
+      customChannelId: r.customChannelId,
+      newChannelLabel: "",
       notes: r.notes ?? "",
     });
     setEditingOriginal(r);
@@ -173,16 +213,30 @@ export function ExpensesTab({
       setFormError("Select an Online channel.");
       return;
     }
+    if (form.paymentMethod === "online" && form.channel === ADD_CHANNEL_VALUE && !form.newChannelLabel.trim()) {
+      setFormError("Enter a channel name.");
+      return;
+    }
+    if (form.category === ADD_CATEGORY_VALUE && !form.newCategoryLabel.trim()) {
+      setFormError("Enter a category name.");
+      return;
+    }
+    const isNewCategory = form.category === ADD_CATEGORY_VALUE;
+    const isNewChannel = form.channel === ADD_CHANNEL_VALUE;
     startTransition(async () => {
       const res = await saveExpenseRecord(
         form.id,
         form.date,
-        form.category,
+        isNewCategory ? "custom" : form.category,
         form.customCategory,
         parseFloat(form.amount) || 0,
         form.paymentMethod,
-        form.paymentMethod === "online" ? form.channel : null,
+        form.paymentMethod === "online" ? (isNewChannel ? "custom" : form.channel) : null,
         form.notes,
+        isNewCategory ? null : form.customCategoryId,
+        isNewCategory ? form.newCategoryLabel : null,
+        isNewChannel ? null : form.customChannelId,
+        isNewChannel ? form.newChannelLabel : null,
       );
       if (res.error) {
         setFormError(res.error);
@@ -213,8 +267,8 @@ export function ExpensesTab({
     <div className="grid gap-5">
       <div className="text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
         Log dive center expenses outside of diver fees — fuel, maintenance, supplies, and more. Pick a category
-        so spending stays easy to analyze; use &quot;Uncategorized&quot; if you&apos;re not sure yet, it still
-        counts toward your totals.
+        so spending stays easy to analyze, or use &quot;+ Add Category&quot; to create a new one for this dive
+        center — it&apos;ll be available to pick again next time.
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -273,7 +327,7 @@ export function ExpensesTab({
             <option value="">All categories</option>
             {categoryOptions.map((c) => (
               <option key={c} value={c}>
-                {categoryLabel(c, null)}
+                {categoryKeyLabelMap.get(c)}
               </option>
             ))}
           </select>
@@ -331,15 +385,30 @@ export function ExpensesTab({
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
                 <select
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  value={form.category === "custom" && form.customCategoryId ? `custom:${form.customCategoryId}` : form.category}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === ADD_CATEGORY_VALUE) {
+                      setForm({ ...form, category: ADD_CATEGORY_VALUE, customCategoryId: null, newCategoryLabel: "" });
+                    } else if (v.startsWith("custom:")) {
+                      setForm({ ...form, category: "custom", customCategoryId: v.slice(7), newCategoryLabel: "" });
+                    } else {
+                      setForm({ ...form, category: v, customCategoryId: null, newCategoryLabel: "" });
+                    }
+                  }}
                   className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
                 >
-                  {Object.entries(EXPENSE_CATEGORY_LABELS).map(([value, label]) => (
+                  {BASE_EXPENSE_CATEGORIES.map(([value, label]) => (
                     <option key={value} value={value}>
                       {label}
                     </option>
                   ))}
+                  {customCategories.map((c) => (
+                    <option key={c.id} value={`custom:${c.id}`}>
+                      {c.label}
+                    </option>
+                  ))}
+                  <option value={ADD_CATEGORY_VALUE}>+ Add Category</option>
                 </select>
               </div>
               {form.category === "other" && (
@@ -349,6 +418,17 @@ export function ExpensesTab({
                     value={form.customCategory}
                     onChange={(e) => setForm({ ...form, customCategory: e.target.value })}
                     placeholder="e.g. Boat repaint"
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+              )}
+              {form.category === ADD_CATEGORY_VALUE && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">New Category Name</label>
+                  <input
+                    value={form.newCategoryLabel}
+                    onChange={(e) => setForm({ ...form, newCategoryLabel: e.target.value })}
+                    placeholder="e.g. Ice"
                     className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
                   />
                 </div>
@@ -384,19 +464,42 @@ export function ExpensesTab({
                   </select>
                   {form.paymentMethod === "online" && (
                     <select
-                      value={form.channel ?? ""}
-                      onChange={(e) => setForm({ ...form, channel: (e.target.value || null) as PaymentChannel | null })}
+                      value={form.channel === "custom" && form.customChannelId ? `custom:${form.customChannelId}` : (form.channel ?? "")}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === ADD_CHANNEL_VALUE) {
+                          setForm({ ...form, channel: ADD_CHANNEL_VALUE, customChannelId: null, newChannelLabel: "" });
+                        } else if (v.startsWith("custom:")) {
+                          setForm({ ...form, channel: "custom", customChannelId: v.slice(7), newChannelLabel: "" });
+                        } else {
+                          setForm({ ...form, channel: v || null, customChannelId: null, newChannelLabel: "" });
+                        }
+                      }}
                       className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
                     >
                       <option value="">Channel</option>
-                      {Object.entries(PAYMENT_CHANNEL_LABELS).map(([value, label]) => (
+                      {BASE_PAYMENT_CHANNELS.map(([value, label]) => (
                         <option key={value} value={value}>
                           {label}
                         </option>
                       ))}
+                      {customChannels.map((c) => (
+                        <option key={c.id} value={`custom:${c.id}`}>
+                          {c.label}
+                        </option>
+                      ))}
+                      <option value={ADD_CHANNEL_VALUE}>+ Add Channel</option>
                     </select>
                   )}
                 </div>
+                {form.channel === ADD_CHANNEL_VALUE && (
+                  <input
+                    value={form.newChannelLabel}
+                    onChange={(e) => setForm({ ...form, newChannelLabel: e.target.value })}
+                    placeholder="New channel name"
+                    className="mt-1.5 w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+                  />
+                )}
               </div>
             </div>
             <div className="mb-4">
@@ -465,13 +568,13 @@ export function ExpensesTab({
                   <tr key={r.id} className="border-b border-gray-100 last:border-0">
                     <td className="px-4 py-3 whitespace-nowrap">{fmtDate(r.date)}</td>
                     <td className="px-4 py-3 font-semibold text-navy">
-                      {categoryLabel(r.category, r.customCategory)}
+                      {categoryLabel(r.category, r.customCategory, r.customCategoryLabel)}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-navy">{peso(r.amount)}</td>
                     <td className="px-4 py-3">
                       {r.paymentMethod ? PAYMENT_METHOD_LABELS[r.paymentMethod] ?? r.paymentMethod : "—"}
-                      {r.paymentMethod === "online" && r.channel && (
-                        <div className="text-xs text-gray-400">{PAYMENT_CHANNEL_LABELS[r.channel]}</div>
+                      {r.paymentMethod === "online" && r.channelLabel && (
+                        <div className="text-xs text-gray-400">{r.channelLabel}</div>
                       )}
                     </td>
                     <td className="px-4 py-3">{r.recordedBy}</td>

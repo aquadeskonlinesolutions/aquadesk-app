@@ -4,10 +4,29 @@ import { useState, useTransition } from "react";
 import { saveDiveLeaderCommission, saveInstructorCommission } from "./actions";
 import type { EducatorCommissionRow, LeaderCommissionRow, StaffActivityData } from "./data";
 import { useSettlePayment } from "@/components/ui/SettlePaymentDialog";
+import type { CustomChannelOption } from "@/lib/paymentChannels";
 import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
+}
+
+// Best-effort label for the optimistic local row patch right after a
+// settle action — a brand-new custom channel isn't in `customChannels`
+// yet (that list was loaded at page-load time), so this falls back to
+// the raw typed text in that one case rather than round-tripping to
+// refetch just to get the exact stored casing.
+function resolveDisplayChannelLabel(
+  channel: PaymentChannel | null | undefined,
+  customChannelId: string | null | undefined,
+  newChannelLabel: string | null | undefined,
+  customChannels: CustomChannelOption[],
+): string | null {
+  if (!channel) return null;
+  if (channel === "custom") {
+    return (customChannelId && customChannels.find((c) => c.id === customChannelId)?.label) || newChannelLabel || "Custom";
+  }
+  return PAYMENT_CHANNEL_LABELS[channel];
 }
 
 function fmtDate(dateStr: string): string {
@@ -107,10 +126,12 @@ function LeaderTable({
   allRows,
   setRows,
   refreshOverview,
+  customChannels,
 }: {
   allRows: EditableLeaderRow[];
   setRows: (updater: (prev: EditableLeaderRow[]) => EditableLeaderRow[]) => void;
   refreshOverview?: () => void;
+  customChannels: CustomChannelOption[];
 }) {
   const settlePayment = useSettlePayment();
   const staffOptions = [...new Set(allRows.map((r) => r.staffName))].sort((a, b) => a.localeCompare(b));
@@ -137,7 +158,9 @@ function LeaderTable({
     row: EditableLeaderRow,
     markPaid: boolean,
     paymentMethod?: "cash" | "card" | "online" | null,
-    channel?: PaymentChannel | null,
+    channel?: string | null,
+    customChannelId?: string | null,
+    newChannelLabel?: string | null,
   ) {
     setPendingKey(row.key);
     setErrorKey(null);
@@ -153,6 +176,8 @@ function LeaderTable({
         markPaid,
         paymentMethod,
         channel,
+        customChannelId,
+        newChannelLabel,
       );
       if (res.error) {
         setErrorKey(row.key);
@@ -168,6 +193,10 @@ function LeaderTable({
                   total: res.total!,
                   paymentMethod: res.paymentMethod ?? r.paymentMethod,
                   channel: res.channel ?? r.channel,
+                  customChannelId: res.customChannelId ?? r.customChannelId,
+                  channelLabel: res.channel
+                    ? resolveDisplayChannelLabel(res.channel, res.customChannelId, newChannelLabel, customChannels)
+                    : r.channelLabel,
                   justSaved: true,
                   isSaved: true,
                 }
@@ -183,10 +212,10 @@ function LeaderTable({
   async function markPaid(row: EditableLeaderRow) {
     const result = await settlePayment(
       "Once marked as Paid, this record can still be edited but can no longer be deleted.",
-      { title: "Mark as Paid?", confirmLabel: "Mark Paid" },
+      { title: "Mark as Paid?", confirmLabel: "Mark Paid", customChannels },
     );
     if (!result) return;
-    persist(row, true, result.method, result.channel);
+    persist(row, true, result.method, result.channel, result.customChannelId, result.newChannelLabel);
   }
 
   async function markAllOwed() {
@@ -194,7 +223,7 @@ function LeaderTable({
     if (owed.length === 0) return;
     const result = await settlePayment(
       `Mark all ${owed.length} owed row${owed.length !== 1 ? "s" : ""} for ${selectedStaff} as Paid? Once marked as Paid, a record can still be edited but can no longer be deleted.`,
-      { title: "Mark all as Paid?", confirmLabel: "Mark All Paid" },
+      { title: "Mark all as Paid?", confirmLabel: "Mark All Paid", customChannels },
     );
     if (!result) return;
     setBulkPending(true);
@@ -211,6 +240,8 @@ function LeaderTable({
           true,
           result.method,
           result.channel,
+          result.customChannelId,
+          result.newChannelLabel,
         );
         if (!res.error) {
           setRows((prev) =>
@@ -224,6 +255,10 @@ function LeaderTable({
                     total: res.total!,
                     paymentMethod: res.paymentMethod ?? r.paymentMethod,
                     channel: res.channel ?? r.channel,
+                    customChannelId: res.customChannelId ?? r.customChannelId,
+                    channelLabel: res.channel
+                      ? resolveDisplayChannelLabel(res.channel, res.customChannelId, result.newChannelLabel, customChannels)
+                      : r.channelLabel,
                     justSaved: false,
                     isSaved: true,
                   }
@@ -314,7 +349,7 @@ function LeaderTable({
                         {r.status === "paid" && r.paymentMethod && (
                           <div className="text-xs text-gray-500 mt-1">
                             via {r.paymentMethod === "online" ? "Online" : r.paymentMethod === "card" ? "Card" : "Cash"}
-                            {r.paymentMethod === "online" && r.channel ? ` · ${PAYMENT_CHANNEL_LABELS[r.channel]}` : ""}
+                            {r.paymentMethod === "online" && r.channelLabel ? ` · ${r.channelLabel}` : ""}
                           </div>
                         )}
                         {!r.isSaved && <UnsavedBadge />}
@@ -371,10 +406,12 @@ function EducatorTable({
   allRows,
   setRows,
   refreshOverview,
+  customChannels,
 }: {
   allRows: EditableEducatorRow[];
   setRows: (updater: (prev: EditableEducatorRow[]) => EditableEducatorRow[]) => void;
   refreshOverview?: () => void;
+  customChannels: CustomChannelOption[];
 }) {
   const settlePayment = useSettlePayment();
   const staffOptions = [...new Set(allRows.map((r) => r.staffName))].sort((a, b) => a.localeCompare(b));
@@ -401,7 +438,9 @@ function EducatorTable({
     row: EditableEducatorRow,
     markPaid: boolean,
     paymentMethod?: "cash" | "card" | "online" | null,
-    channel?: PaymentChannel | null,
+    channel?: string | null,
+    customChannelId?: string | null,
+    newChannelLabel?: string | null,
   ) {
     setPendingKey(row.key);
     setErrorKey(null);
@@ -416,6 +455,8 @@ function EducatorTable({
         markPaid,
         paymentMethod,
         channel,
+        customChannelId,
+        newChannelLabel,
       );
       if (res.error) {
         setErrorKey(row.key);
@@ -431,6 +472,10 @@ function EducatorTable({
                   total: res.total!,
                   paymentMethod: res.paymentMethod ?? r.paymentMethod,
                   channel: res.channel ?? r.channel,
+                  customChannelId: res.customChannelId ?? r.customChannelId,
+                  channelLabel: res.channel
+                    ? resolveDisplayChannelLabel(res.channel, res.customChannelId, newChannelLabel, customChannels)
+                    : r.channelLabel,
                   justSaved: true,
                   isSaved: true,
                 }
@@ -446,10 +491,10 @@ function EducatorTable({
   async function markPaid(row: EditableEducatorRow) {
     const result = await settlePayment(
       "Once marked as Paid, this record can still be edited but can no longer be deleted.",
-      { title: "Mark as Paid?", confirmLabel: "Mark Paid" },
+      { title: "Mark as Paid?", confirmLabel: "Mark Paid", customChannels },
     );
     if (!result) return;
-    persist(row, true, result.method, result.channel);
+    persist(row, true, result.method, result.channel, result.customChannelId, result.newChannelLabel);
   }
 
   async function markAllOwed() {
@@ -457,7 +502,7 @@ function EducatorTable({
     if (owed.length === 0) return;
     const result = await settlePayment(
       `Mark all ${owed.length} owed row${owed.length !== 1 ? "s" : ""} for ${selectedStaff} as Paid? Once marked as Paid, a record can still be edited but can no longer be deleted.`,
-      { title: "Mark all as Paid?", confirmLabel: "Mark All Paid" },
+      { title: "Mark all as Paid?", confirmLabel: "Mark All Paid", customChannels },
     );
     if (!result) return;
     setBulkPending(true);
@@ -473,6 +518,8 @@ function EducatorTable({
           true,
           result.method,
           result.channel,
+          result.customChannelId,
+          result.newChannelLabel,
         );
         if (!res.error) {
           setRows((prev) =>
@@ -486,6 +533,10 @@ function EducatorTable({
                     total: res.total!,
                     paymentMethod: res.paymentMethod ?? r.paymentMethod,
                     channel: res.channel ?? r.channel,
+                    customChannelId: res.customChannelId ?? r.customChannelId,
+                    channelLabel: res.channel
+                      ? resolveDisplayChannelLabel(res.channel, res.customChannelId, result.newChannelLabel, customChannels)
+                      : r.channelLabel,
                     justSaved: false,
                     isSaved: true,
                   }
@@ -575,7 +626,7 @@ function EducatorTable({
                         {r.status === "paid" && r.paymentMethod && (
                           <div className="text-xs text-gray-500 mt-1">
                             via {r.paymentMethod === "online" ? "Online" : r.paymentMethod === "card" ? "Card" : "Cash"}
-                            {r.paymentMethod === "online" && r.channel ? ` · ${PAYMENT_CHANNEL_LABELS[r.channel]}` : ""}
+                            {r.paymentMethod === "online" && r.channelLabel ? ` · ${r.channelLabel}` : ""}
                           </div>
                         )}
                         {!r.isSaved && <UnsavedBadge />}
@@ -655,7 +706,12 @@ export function StaffTab({ data, refreshOverview }: { data: StaffActivityData; r
             range — including trips already assigned in Scheduling, not yet Boat Returned.
           </div>
         </div>
-        <LeaderTable allRows={leaderRows} setRows={setLeaderRows} refreshOverview={refreshOverview} />
+        <LeaderTable
+          allRows={leaderRows}
+          setRows={setLeaderRows}
+          refreshOverview={refreshOverview}
+          customChannels={data.customChannels}
+        />
       </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
@@ -666,7 +722,12 @@ export function StaffTab({ data, refreshOverview }: { data: StaffActivityData; r
             Leading Our Dives if they guided a fun dive during this period.
           </div>
         </div>
-        <EducatorTable allRows={educatorRows} setRows={setEducatorRows} refreshOverview={refreshOverview} />
+        <EducatorTable
+          allRows={educatorRows}
+          setRows={setEducatorRows}
+          refreshOverview={refreshOverview}
+          customChannels={data.customChannels}
+        />
       </div>
     </div>
   );
