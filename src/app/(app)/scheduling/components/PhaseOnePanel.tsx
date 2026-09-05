@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import type { StaffOption, Clip, ClipMember, DiverPickResult, PhaseOneData } from "../data";
 import {
@@ -14,7 +13,6 @@ import {
   updateClipStaff,
   excludeDiverForDay,
   includeDiverForDay,
-  reopenVisitForDiver,
 } from "../actions";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
@@ -353,10 +351,10 @@ function ClipCard({
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
   const showToast = useToast();
-  // Excluded members (manual or auto-detected — see data.ts's ClipMember.
-  // exclusionReason) move down into PhaseOnePanel's Excluded Divers section
-  // instead of rendering here, so a clip card only ever shows who's
-  // actually still schedulable.
+  // A manually excluded member moves down into PhaseOnePanel's Excluded
+  // Divers section instead of rendering here. A diver whose bill is closed
+  // is never even in clip.members at all (see fetchClipsRaw) — dropped
+  // from Scheduling entirely, not merely hidden from the active list.
   const activeMembers = clip.members.filter((m) => !m.excluded);
   const activeCount = activeMembers.length;
   // Same mixed-cert-level check Phase 2's WarningsBanner does per team —
@@ -462,63 +460,42 @@ function ClipCard({
   );
 }
 
-// Reason labels/pill colors shared by both loose divers and clip members —
-// "manual" covers both excludeDiverForDay (loose) and excludeDiverFromClip
-// (clip member), which is why it's the only reason that keeps the exact
-// pre-existing Include behavior. "bill_closed"/"departed" are computed
-// fresh every load (see data.ts's fetchClipsRaw/buildDiverPickResults) —
-// nothing here is ever "un-excluded" by writing a flag, since there's
-// nothing to write: the diver just needs an open visit again (bill_closed)
-// or a corrected departure date (departed).
-function reasonLabel(reason: "manual" | "bill_closed" | "departed"): string {
-  if (reason === "bill_closed") return "Bill closed";
-  if (reason === "departed") return "Departed";
-  return "Excluded";
-}
-
 function ExcludedDiverRow({
-  id,
   name,
-  reason,
   context,
-  action,
+  onInclude,
+  readOnly,
 }: {
-  id: string;
   name: string;
-  reason: "manual" | "bill_closed" | "departed";
   context?: string;
-  action: React.ReactNode;
+  onInclude: () => void;
+  readOnly: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
-      <div className="min-w-0">
-        <div className="text-gray-600 truncate">
-          {name}
-          {context && <span className="text-gray-400"> — {context}</span>}
-        </div>
-        <span className="text-xs text-gray-400">{reasonLabel(reason)}</span>
+      <div className="min-w-0 text-gray-600 truncate">
+        {name}
+        {context && <span className="text-gray-400"> — {context}</span>}
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {action}
-        <Link
-          href={`/diver-form/${id}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-gray-400 hover:underline"
+      {!readOnly && (
+        <button
+          onClick={onInclude}
+          className="shrink-0 px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
         >
-          Open Form
-        </Link>
-      </div>
+          Include
+        </button>
+      )}
     </div>
   );
 }
 
 // Third Phase 1 section, below Suggested Clips — collapsed by default since
-// this is meant to stay out of the way for the common 50+-diver case (see
-// the clutter complaint this replaced "Not Diving Today" and clip-inline
-// excluded rows to fix). Combines every reason a diver isn't currently
-// being suggested: a manual day/clip exclusion (Include still works exactly
-// as before) or the new automatic bill_closed/departed detection.
+// this is meant to stay out of the way for the common 50+-diver case. Only
+// ever holds a diver a staff member explicitly excluded for the day (loose)
+// or from a specific clip — a closed bill drops a diver from Scheduling
+// entirely instead (see data.ts's fetchClipsRaw/loadReadyPool), with no
+// resting place here at all; they only come back via a fresh open visit
+// (Divers page push-to-schedule, or a new visit started from Diver Form).
 function ExcludedDiversSection({
   data,
   readOnly,
@@ -549,61 +526,27 @@ function ExcludedDiversSection({
           {data.excludedDivers.map((d) => (
             <ExcludedDiverRow
               key={`loose-${d.id}`}
-              id={d.id}
               name={`${d.firstName} ${d.lastName}`}
-              reason={d.exclusionReason}
-              action={
-                !readOnly && d.exclusionReason === "manual" ? (
-                  <button
-                    onClick={() =>
-                      startTransition(async () => {
-                        await includeDiverForDay(d.id, scheduleDate);
-                        refresh();
-                      })
-                    }
-                    className="px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
-                  >
-                    Include
-                  </button>
-                ) : null
+              readOnly={readOnly}
+              onInclude={() =>
+                startTransition(async () => {
+                  await includeDiverForDay(d.id, scheduleDate);
+                  refresh();
+                })
               }
             />
           ))}
           {data.excludedClipMembers.map((m) => (
             <ExcludedDiverRow
               key={`clip-${m.clipId}-${m.diverId}`}
-              id={m.diverId}
               name={`${m.firstName} ${m.lastName}`}
-              reason={m.exclusionReason ?? "manual"}
               context={`${m.clipStaffName}'s clip`}
-              action={
-                !readOnly ? (
-                  m.exclusionReason === "manual" ? (
-                    <button
-                      onClick={() =>
-                        startTransition(async () => {
-                          await includeDiverInClip(m.clipId, m.diverId);
-                          refresh();
-                        })
-                      }
-                      className="px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
-                    >
-                      Include
-                    </button>
-                  ) : m.exclusionReason === "bill_closed" ? (
-                    <button
-                      onClick={() =>
-                        startTransition(async () => {
-                          await reopenVisitForDiver(m.diverId);
-                          refresh();
-                        })
-                      }
-                      className="px-2 py-1 text-xs font-medium text-teal border border-teal/30 rounded-md hover:bg-teal-light"
-                    >
-                      Put back on schedule
-                    </button>
-                  ) : null
-                ) : null
+              readOnly={readOnly}
+              onInclude={() =>
+                startTransition(async () => {
+                  await includeDiverInClip(m.clipId, m.diverId);
+                  refresh();
+                })
               }
             />
           ))}
