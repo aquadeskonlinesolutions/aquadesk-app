@@ -891,8 +891,9 @@ export type JoinRideRecord = {
   balance: number;
   remarks: string | null;
   paymentMethod: "cash" | "card" | "online" | null;
-  channel: PaymentChannel | null;
-  customChannelId: string | null;
+  // The raw channel/customChannelId aren't exposed here — nothing reads
+  // them (Join Ride has no edit flow for payment info, only the separate
+  // settle dialog, which is a one-way write) — just the resolved label.
   channelLabel: string | null;
 };
 
@@ -940,8 +941,6 @@ export async function loadJoinRideData(diveCenterId: string): Promise<JoinRideDa
       balance: safeNum(r.balance),
       remarks: r.remarks,
       paymentMethod: r.payment_method,
-      channel: r.channel,
-      customChannelId: r.custom_channel_id,
       channelLabel: resolveChannelLabel(r.channel, r.custom_channel_id, customChannelLabelMap),
     })),
     customChannels,
@@ -967,8 +966,8 @@ export type RentalGearRecord = {
   balance: number;
   remarks: string | null;
   paymentMethod: "cash" | "card" | "online" | null;
-  channel: PaymentChannel | null;
-  customChannelId: string | null;
+  // Same as JoinRideRecord — no edit flow reads the raw channel, only the
+  // resolved label.
   channelLabel: string | null;
 };
 
@@ -1006,8 +1005,6 @@ export async function loadRentalGearsData(diveCenterId: string): Promise<RentalG
       balance: safeNum(r.balance),
       remarks: r.remarks,
       paymentMethod: r.payment_method,
-      channel: r.channel,
-      customChannelId: r.custom_channel_id,
       channelLabel: resolveChannelLabel(r.channel, r.custom_channel_id, customChannelLabelMap),
     })),
     customChannels,

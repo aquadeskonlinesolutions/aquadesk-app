@@ -17,7 +17,6 @@
 import { Buffer } from "node:buffer";
 import { zipSync, strToU8 } from "fflate";
 import { requireRevenueAccess } from "@/lib/dal";
-import { PAYMENT_CHANNEL_LABELS } from "@/lib/payments";
 import { EXPENSE_CATEGORY_LABELS, PAYMENT_METHOD_LABELS } from "./constants";
 import {
   loadDiverPaymentsExport,
@@ -48,12 +47,15 @@ function expenseCategoryLabel(category: string, customCategory: string | null, c
 // Folds the channel into the same cell as the method (e.g. "Online
 // (PayPal)") rather than adding a new column — Expenses' on-screen table
 // already shows the channel this way (as a sub-line under Payment
-// Method), so the CSV mirrors that same single-column shape.
-function expensePaymentMethodCell(paymentMethod: string | null, channel: string | null): string {
+// Method), so the CSV mirrors that same single-column shape. Takes the
+// already-resolved channelLabel (works for both the 4 fixed channels and
+// any custom one) rather than re-deriving it from the raw channel enum —
+// that raw value alone can't distinguish one custom channel from another.
+function expensePaymentMethodCell(paymentMethod: string | null, channelLabel: string | null): string {
   if (!paymentMethod) return "";
   const label = PAYMENT_METHOD_LABELS[paymentMethod] ?? paymentMethod;
-  if (paymentMethod === "online" && channel) {
-    return `${label} (${PAYMENT_CHANNEL_LABELS[channel as keyof typeof PAYMENT_CHANNEL_LABELS] ?? channel})`;
+  if (paymentMethod === "online" && channelLabel) {
+    return `${label} (${channelLabel})`;
   }
   return label;
 }
@@ -94,7 +96,7 @@ export async function exportRawData(
       r.date,
       expenseCategoryLabel(r.category, r.customCategory, r.customCategoryLabel),
       r.amount,
-      expensePaymentMethodCell(r.paymentMethod, r.channel),
+      expensePaymentMethodCell(r.paymentMethod, r.channelLabel),
       r.recordedBy,
       r.notes ?? "",
     ]),

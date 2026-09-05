@@ -190,8 +190,9 @@ export type Deposit = {
   id: string;
   amount: number;
   method: "cash" | "card" | "online";
-  channel: PaymentChannel | null;
-  customChannelId: string | null;
+  // The raw channel/customChannelId aren't exposed here — deposits have
+  // no edit flow (insert-only), so nothing ever reads them back; only
+  // the resolved label is displayed.
   channelLabel: string | null;
   depositDate: string;
   receivedBy: string | null;
@@ -216,8 +217,6 @@ export async function loadDeposits(visitId: string): Promise<Deposit[]> {
     id: d.id,
     amount: Number(d.amount) || 0,
     method: d.method,
-    channel: d.channel,
-    customChannelId: d.custom_channel_id,
     channelLabel: resolveChannelLabel(d.channel, d.custom_channel_id, customChannelLabelMap),
     depositDate: d.deposit_date,
     receivedBy: d.received_by,

@@ -80,8 +80,6 @@ export function DepositsPanel({
           id: crypto.randomUUID(),
           amount: amt,
           method,
-          channel: channel as Deposit["channel"],
-          customChannelId: channelId,
           channelLabel: method === "online" ? (channel === "custom" ? label : BASE_PAYMENT_CHANNELS.find(([k]) => k === channel)?.[1] || null) : null,
           depositDate: new Date().toISOString().slice(0, 10),
           receivedBy: receivedByDisplay,
