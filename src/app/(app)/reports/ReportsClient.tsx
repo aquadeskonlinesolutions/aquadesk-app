@@ -12,6 +12,7 @@ import {
   getGovtFeesData,
   getBillingAuditData,
 } from "./actions";
+import { exportRawData } from "./rawExport";
 import { OverviewTab } from "./OverviewTab";
 import { StaffTab } from "./StaffTab";
 import { JoinRideTab } from "./JoinRideTab";
@@ -142,6 +143,29 @@ export function ReportsClient({
   const [auditLoading, setAuditLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [exporting, setExporting] = useState(false);
+
+  async function exportRaw() {
+    setError(null);
+    setExporting(true);
+    try {
+      const res = await exportRawData(appliedFrom, appliedTo);
+      if (res.error || !res.base64) {
+        setError(res.error ?? "Could not build the export.");
+        return;
+      }
+      const bytes = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.filename ?? "aquadesk-raw-export.zip";
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function applyDateRange() {
     if (!dateFrom || !dateTo) {
@@ -313,6 +337,8 @@ export function ReportsClient({
           monthlyFinancials={monthlyFinancials}
           monthlyFunVsCourse={monthlyFunVsCourse}
           nationalitiesYTD={nationalitiesYTD}
+          onExportRaw={exportRaw}
+          exporting={exporting}
         />
       </div>
 

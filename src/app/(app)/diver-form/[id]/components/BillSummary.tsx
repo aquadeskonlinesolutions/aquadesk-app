@@ -5,7 +5,7 @@ import { savePaymentOnly, checkoutVisit } from "../actions";
 import { computePaymentBreakdown, type PaymentInput } from "../billing";
 import type { Activity, Deposit, ExistingPayment, PaymentConfig, Visit } from "../data";
 import { useToast } from "@/components/ui/Toast";
-import { EXCESS_LABEL, EXCESS_HINT } from "@/lib/payments";
+import { EXCESS_LABEL, EXCESS_HINT, PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -19,6 +19,7 @@ function emptyInput(existing: ExistingPayment | null): PaymentInput {
     cashExchangeRate: existing?.cashExchangeRate ?? 0,
     cardAmount: existing?.cardAmount ?? 0,
     onlineAmount: existing?.onlineAmount ?? 0,
+    onlineChannel: existing?.onlineChannel ?? null,
     discount: existing?.discount ?? 0,
   };
 }
@@ -62,9 +63,18 @@ export function BillSummary({
     setInput((prev) => ({ ...prev, ...patch }));
   }
 
+  // A pre-existing online amount (recorded before the channel field
+  // existed) is grandfathered — only a new/changed online amount needs a
+  // channel before saving. Matches the server's own check in actions.ts.
+  const onlineAmountChanged = input.onlineAmount !== (existingPayment?.onlineAmount ?? 0);
+
   function save() {
     setError(null);
     setMessage(null);
+    if (input.onlineAmount > 0 && !input.onlineChannel && onlineAmountChanged) {
+      setError("Select an Online channel before saving.");
+      return;
+    }
     startTransition(async () => {
       const res = await savePaymentOnly(diverId, visit.id, visit.updatedAt, grandTotal, depositsTotal, input);
       if (res.error) {
@@ -82,6 +92,10 @@ export function BillSummary({
   function checkout() {
     setError(null);
     setMessage(null);
+    if (input.onlineAmount > 0 && !input.onlineChannel && onlineAmountChanged) {
+      setError("Select an Online channel before checking out.");
+      return;
+    }
     startTransition(async () => {
       const res = await checkoutVisit(diverId, visit.id, visit.updatedAt, input);
       if (res.error) {
@@ -157,7 +171,21 @@ export function BillSummary({
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Online</label>
-            {num(input.onlineAmount, (v) => update({ onlineAmount: v }), "w-full")}
+            <div className="flex gap-1.5">
+              {num(input.onlineAmount, (v) => update({ onlineAmount: v }), "w-full")}
+              <select
+                value={input.onlineChannel ?? ""}
+                onChange={(e) => update({ onlineChannel: (e.target.value || null) as PaymentChannel | null })}
+                className="border border-gray-300 rounded-md px-1.5 py-1.5 text-sm"
+              >
+                <option value="">Channel</option>
+                {Object.entries(PAYMENT_CHANNEL_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {breakdown.onlineSurchargeAmount > 0 && (
               <div className="text-xs text-gray-400 mt-0.5">+ {peso(breakdown.onlineSurchargeAmount)} surcharge</div>
             )}

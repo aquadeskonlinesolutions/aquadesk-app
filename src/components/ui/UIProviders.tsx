@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { ConfirmProvider } from "./ConfirmDialog";
+import { SettlePaymentProvider } from "./SettlePaymentDialog";
 import { ToastProvider } from "./Toast";
 
 // A focused <input type="number"> changes value on mouse-wheel scroll —
@@ -26,7 +27,9 @@ export function UIProviders({ children }: { children: React.ReactNode }) {
   useDisableNumberInputScroll();
   return (
     <ToastProvider>
-      <ConfirmProvider>{children}</ConfirmProvider>
+      <ConfirmProvider>
+        <SettlePaymentProvider>{children}</SettlePaymentProvider>
+      </ConfirmProvider>
     </ToastProvider>
   );
 }

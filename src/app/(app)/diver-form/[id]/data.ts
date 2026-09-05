@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import type { PaymentChannel } from "@/lib/payments";
 
 export type DiverDetail = {
   id: string;
@@ -174,6 +175,7 @@ export type Deposit = {
   id: string;
   amount: number;
   method: "cash" | "card" | "online";
+  channel: PaymentChannel | null;
   depositDate: string;
   receivedBy: string | null;
 };
@@ -182,7 +184,7 @@ export async function loadDeposits(visitId: string): Promise<Deposit[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("deposits")
-    .select("id, amount, method, deposit_date, received_by")
+    .select("id, amount, method, channel, deposit_date, received_by")
     .eq("visit_id", visitId)
     .order("created_at", { ascending: false });
 
@@ -190,6 +192,7 @@ export async function loadDeposits(visitId: string): Promise<Deposit[]> {
     id: d.id,
     amount: Number(d.amount) || 0,
     method: d.method,
+    channel: d.channel,
     depositDate: d.deposit_date,
     receivedBy: d.received_by,
   }));
@@ -202,6 +205,7 @@ export type ExistingPayment = {
   cashExchangeRate: number;
   cardAmount: number;
   onlineAmount: number;
+  onlineChannel: PaymentChannel | null;
   discount: number;
 };
 
@@ -213,7 +217,9 @@ export async function loadExistingPayment(visitId: string): Promise<ExistingPaym
   const supabase = await createClient();
   const { data } = await supabase
     .from("payments")
-    .select("cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, online_amount, discount")
+    .select(
+      "cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, online_amount, online_channel, discount",
+    )
     .eq("visit_id", visitId)
     .maybeSingle();
 
@@ -225,6 +231,7 @@ export async function loadExistingPayment(visitId: string): Promise<ExistingPaym
     cashExchangeRate: Number(data.cash_exchange_rate) || 0,
     cardAmount: Number(data.card_amount) || 0,
     onlineAmount: Number(data.online_amount) || 0,
+    onlineChannel: data.online_channel,
     discount: Number(data.discount) || 0,
   };
 }

@@ -5,6 +5,8 @@
 // (matches this project's existing precedent of duplicating small pure
 // helpers like peso() across files rather than over-centralizing).
 
+import type { PaymentChannel } from "@/lib/payments";
+
 export type PaymentInput = {
   cashAmount: number;
   cashAmountForeign: number;
@@ -12,6 +14,7 @@ export type PaymentInput = {
   cashExchangeRate: number;
   cardAmount: number;
   onlineAmount: number;
+  onlineChannel: PaymentChannel | null;
   discount: number;
 };
 

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRevenueAccess } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
-import { safeNum } from "@/lib/payments";
+import { safeNum, type PaymentChannel } from "@/lib/payments";
 import {
   loadOverviewData,
   loadMonthlyFinancials,
@@ -59,7 +59,7 @@ async function findExistingCommission(
   const supabase = await createClient();
   let query = supabase
     .from("staff_commission_records")
-    .select("id, status, paid_at, remarks")
+    .select("id, status, paid_at, remarks, payment_method, channel")
     .eq("dive_center_id", diveCenterId)
     .eq("commission_group", group)
     .eq("staff_name", staffName)
@@ -83,7 +83,22 @@ export async function saveDiveLeaderCommission(
   commissionAmount: number,
   additionalRate: number,
   markPaid: boolean,
-): Promise<{ error?: string; status?: "unpaid" | "paid"; commissionAmount?: number; additionalRate?: number; total?: number }> {
+  paymentMethod?: "cash" | "card" | "online" | null,
+  channel?: PaymentChannel | null,
+): Promise<{
+  error?: string;
+  status?: "unpaid" | "paid";
+  commissionAmount?: number;
+  additionalRate?: number;
+  total?: number;
+  paymentMethod?: "cash" | "card" | "online" | null;
+  channel?: PaymentChannel | null;
+}> {
+  if (markPaid) {
+    if (!paymentMethod) return { error: "Select a payment method." };
+    if (paymentMethod === "online" && !channel) return { error: "Select an Online channel." };
+  }
+
   const user = await requireRevenueAccess();
   const supabase = await createClient();
 
@@ -102,6 +117,8 @@ export async function saveDiveLeaderCommission(
     commission_amount: commissionAmount,
     status,
     paid_at: markPaid ? new Date().toISOString() : (existing?.paid_at ?? null),
+    payment_method: markPaid ? paymentMethod : (existing?.payment_method ?? null),
+    channel: markPaid ? (paymentMethod === "online" ? channel : null) : (existing?.channel ?? null),
     remarks: existing?.remarks ?? null,
     updated_at: new Date().toISOString(),
   };
@@ -113,7 +130,14 @@ export async function saveDiveLeaderCommission(
   if (error) return { error: error.message };
 
   revalidatePath("/reports");
-  return { status, commissionAmount, additionalRate, total: commissionAmount + additionalRate };
+  return {
+    status,
+    commissionAmount,
+    additionalRate,
+    total: commissionAmount + additionalRate,
+    paymentMethod: payload.payment_method,
+    channel: payload.channel,
+  };
 }
 
 // Same shape as saveDiveLeaderCommission but per-student (diverId) — course
@@ -128,7 +152,22 @@ export async function saveInstructorCommission(
   commissionAmount: number,
   additionalRate: number,
   markPaid: boolean,
-): Promise<{ error?: string; status?: "unpaid" | "paid"; commissionAmount?: number; additionalRate?: number; total?: number }> {
+  paymentMethod?: "cash" | "card" | "online" | null,
+  channel?: PaymentChannel | null,
+): Promise<{
+  error?: string;
+  status?: "unpaid" | "paid";
+  commissionAmount?: number;
+  additionalRate?: number;
+  total?: number;
+  paymentMethod?: "cash" | "card" | "online" | null;
+  channel?: PaymentChannel | null;
+}> {
+  if (markPaid) {
+    if (!paymentMethod) return { error: "Select a payment method." };
+    if (paymentMethod === "online" && !channel) return { error: "Select an Online channel." };
+  }
+
   const user = await requireRevenueAccess();
   const supabase = await createClient();
 
@@ -155,6 +194,8 @@ export async function saveInstructorCommission(
     commission_amount: commissionAmount,
     status,
     paid_at: markPaid ? new Date().toISOString() : (existing?.paid_at ?? null),
+    payment_method: markPaid ? paymentMethod : (existing?.payment_method ?? null),
+    channel: markPaid ? (paymentMethod === "online" ? channel : null) : (existing?.channel ?? null),
     remarks: existing?.remarks ?? null,
     updated_at: new Date().toISOString(),
   };
@@ -166,7 +207,14 @@ export async function saveInstructorCommission(
   if (error) return { error: error.message };
 
   revalidatePath("/reports");
-  return { status, commissionAmount, additionalRate, total: commissionAmount + additionalRate };
+  return {
+    status,
+    commissionAmount,
+    additionalRate,
+    total: commissionAmount + additionalRate,
+    paymentMethod: payload.payment_method,
+    channel: payload.channel,
+  };
 }
 
 // ── Join Ride ────────────────────────────────────────────────────────────
@@ -239,7 +287,17 @@ export async function saveJoinRideRecord(
   return {};
 }
 
-export async function updateJoinRideStatus(id: string, status: string): Promise<{ error?: string }> {
+export async function updateJoinRideStatus(
+  id: string,
+  status: string,
+  paymentMethod?: "cash" | "card" | "online" | null,
+  channel?: PaymentChannel | null,
+): Promise<{ error?: string }> {
+  if (isSettledStatus(status)) {
+    if (!paymentMethod) return { error: "Select a payment method." };
+    if (paymentMethod === "online" && !channel) return { error: "Select an Online channel." };
+  }
+
   const user = await requireRevenueAccess();
   const supabase = await createClient();
 
@@ -255,6 +313,8 @@ export async function updateJoinRideStatus(id: string, status: string): Promise<
     .update({
       status,
       balance: isSettledStatus(status) ? 0 : safeNum(existing?.total_amount),
+      payment_method: isSettledStatus(status) ? paymentMethod : null,
+      channel: isSettledStatus(status) && paymentMethod === "online" ? channel : null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
@@ -431,7 +491,17 @@ export async function saveRentalGearRecord(
   return {};
 }
 
-export async function updateRentalGearStatus(id: string, status: string): Promise<{ error?: string }> {
+export async function updateRentalGearStatus(
+  id: string,
+  status: string,
+  paymentMethod?: "cash" | "card" | "online" | null,
+  channel?: PaymentChannel | null,
+): Promise<{ error?: string }> {
+  if (isSettledStatus(status)) {
+    if (!paymentMethod) return { error: "Select a payment method." };
+    if (paymentMethod === "online" && !channel) return { error: "Select an Online channel." };
+  }
+
   const user = await requireRevenueAccess();
   const supabase = await createClient();
 
@@ -447,6 +517,8 @@ export async function updateRentalGearStatus(id: string, status: string): Promis
     .update({
       status,
       balance: isSettledStatus(status) ? 0 : safeNum(existing?.total_amount),
+      payment_method: isSettledStatus(status) ? paymentMethod : null,
+      channel: isSettledStatus(status) && paymentMethod === "online" ? channel : null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
@@ -498,6 +570,7 @@ export async function saveExpenseRecord(
   customCategory: string,
   amount: number,
   paymentMethod: string,
+  channel: PaymentChannel | null,
   notes: string,
 ): Promise<{ error?: string }> {
   if (!date) return { error: "Date is required." };
@@ -506,6 +579,26 @@ export async function saveExpenseRecord(
   const user = await requireRevenueAccess();
   const supabase = await createClient();
 
+  if (paymentMethod === "online" && !channel) {
+    // Grandfathers a pre-existing online expense recorded before the
+    // channel field existed — resaving it unchanged doesn't need a
+    // channel; changing the amount or re-picking Online as the method
+    // does. Matches the same grandfathering on the bill-payment side.
+    const existing = id
+      ? await supabase
+          .from("expenses")
+          .select("amount, payment_method")
+          .eq("id", id)
+          .eq("dive_center_id", user.diveCenterId)
+          .maybeSingle()
+      : { data: null };
+    const unchanged =
+      existing.data && existing.data.payment_method === "online" && Number(existing.data.amount) === amount;
+    if (!unchanged) {
+      return { error: "Select an Online channel." };
+    }
+  }
+
   const payload = {
     dive_center_id: user.diveCenterId,
     date,
@@ -513,6 +606,7 @@ export async function saveExpenseRecord(
     custom_category: category === "other" ? customCategory.trim() || null : null,
     amount,
     payment_method: paymentMethod || null,
+    channel: paymentMethod === "online" ? channel : null,
     notes: notes.trim() || null,
   };
 

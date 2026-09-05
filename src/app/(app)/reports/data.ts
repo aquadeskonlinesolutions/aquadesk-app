@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { safeNum, getPaidAmount } from "@/lib/payments";
+import { safeNum, getPaidAmount, PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 import { EXPENSE_CATEGORY_LABELS } from "./constants";
 
 // Same helper as dashboard/data.ts's own manilaDayBoundsUtcIso (duplicated
@@ -34,6 +34,10 @@ function manilaTodayStr(): string {
 
 function manilaMonthFromIso(iso: string): string {
   return new Date(Date.parse(iso) + 8 * 60 * 60 * 1000).toISOString().slice(0, 7);
+}
+
+function manilaDateFromIso(iso: string): string {
+  return new Date(Date.parse(iso) + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 // Trailing N calendar months (Manila-anchored), oldest first, ending with
@@ -531,6 +535,8 @@ export type LeaderCommissionRow = {
   additionalRate: number;
   total: number;
   status: "unpaid" | "paid";
+  paymentMethod: "cash" | "card" | "online" | null;
+  channel: PaymentChannel | null;
   // True once a matching row exists in staff_commission_records — false
   // means this row is only a live computation from schedule/activity data
   // (Round 7 Fix 3: gives the UI a way to flag rows that vanish/reset on
@@ -550,6 +556,8 @@ export type EducatorCommissionRow = {
   additionalRate: number;
   total: number;
   status: "unpaid" | "paid";
+  paymentMethod: "cash" | "card" | "online" | null;
+  channel: PaymentChannel | null;
   isSaved: boolean;
 };
 
@@ -592,7 +600,7 @@ export async function loadStaffActivityData(
       supabase
         .from("staff_commission_records")
         .select(
-          "staff_name, commission_group, title, activity_date, diver_id, bonus_amount, commission_amount, status",
+          "staff_name, commission_group, title, activity_date, diver_id, bonus_amount, commission_amount, status, payment_method, channel",
         )
         .eq("dive_center_id", diveCenterId)
         .gte("activity_date", dateFrom)
@@ -770,6 +778,8 @@ export async function loadStaffActivityData(
         additionalRate,
         total: commissionAmount + additionalRate,
         status: (existing?.status as "unpaid" | "paid") ?? "unpaid",
+        paymentMethod: existing?.payment_method ?? null,
+        channel: existing?.channel ?? null,
         isSaved: !!existing,
       };
     })
@@ -810,6 +820,8 @@ export async function loadStaffActivityData(
         additionalRate,
         total: commissionAmount + additionalRate,
         status: (existing?.status as "unpaid" | "paid") ?? "unpaid",
+        paymentMethod: existing?.payment_method ?? null,
+        channel: existing?.channel ?? null,
         isSaved: !!existing,
       };
     })
@@ -848,6 +860,8 @@ export type JoinRideRecord = {
   status: string;
   balance: number;
   remarks: string | null;
+  paymentMethod: "cash" | "card" | "online" | null;
+  channel: PaymentChannel | null;
 };
 
 export type JoinRideData = {
@@ -868,7 +882,7 @@ export async function loadJoinRideData(diveCenterId: string): Promise<JoinRideDa
     supabase
       .from("join_ride_records")
       .select(
-        "id, direction, date, company, number_of_divers, number_of_dives, dive_sites, total_amount, status, balance, remarks",
+        "id, direction, date, company, number_of_divers, number_of_dives, dive_sites, total_amount, status, balance, remarks, payment_method, channel",
       )
       .eq("dive_center_id", diveCenterId)
       .order("date", { ascending: false }),
@@ -889,6 +903,8 @@ export async function loadJoinRideData(diveCenterId: string): Promise<JoinRideDa
       status: r.status,
       balance: safeNum(r.balance),
       remarks: r.remarks,
+      paymentMethod: r.payment_method,
+      channel: r.channel,
     })),
   };
 }
@@ -911,6 +927,8 @@ export type RentalGearRecord = {
   status: string;
   balance: number;
   remarks: string | null;
+  paymentMethod: "cash" | "card" | "online" | null;
+  channel: PaymentChannel | null;
 };
 
 export type RentalGearsData = {
@@ -922,7 +940,7 @@ export async function loadRentalGearsData(diveCenterId: string): Promise<RentalG
 
   const { data: records } = await supabase
     .from("rental_gear_records")
-    .select("id, date, equipment, company, quantity, rate, total_amount, status, balance, remarks")
+    .select("id, date, equipment, company, quantity, rate, total_amount, status, balance, remarks, payment_method, channel")
     .eq("dive_center_id", diveCenterId)
     .order("date", { ascending: false });
 
@@ -938,6 +956,8 @@ export async function loadRentalGearsData(diveCenterId: string): Promise<RentalG
       status: r.status,
       balance: safeNum(r.balance),
       remarks: r.remarks,
+      paymentMethod: r.payment_method,
+      channel: r.channel,
     })),
   };
 }
@@ -958,6 +978,7 @@ export type ExpenseRecord = {
   customCategory: string | null;
   amount: number;
   paymentMethod: string | null;
+  channel: PaymentChannel | null;
   recordedBy: string;
   notes: string | null;
 };
@@ -988,6 +1009,7 @@ export type SettlementRow = {
   card: number;
   cardSurcharge: number;
   online: number;
+  onlineChannel: PaymentChannel | null;
   onlineSurcharge: number;
   totalCollected: number;
   excessAmount: number;
@@ -1009,7 +1031,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
     supabase
       .from("payments")
       .select(
-        "paid_at, created_at, diver_id, visit_id, cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_surcharge_amount, total_collected, excess_amount",
+        "paid_at, created_at, diver_id, visit_id, cash_amount, cash_amount_foreign, cash_currency_code, cash_exchange_rate, card_amount, card_surcharge_amount, online_amount, online_channel, online_surcharge_amount, total_collected, excess_amount",
       )
       .eq("dive_center_id", diveCenterId)
       .gte("paid_at", dayStart)
@@ -1017,7 +1039,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
       .order("paid_at", { ascending: true }),
     supabase
       .from("deposits")
-      .select("deposit_date, diver_id, amount, method, received_by")
+      .select("deposit_date, diver_id, amount, method, channel, received_by")
       .eq("dive_center_id", diveCenterId)
       .eq("deposit_date", date)
       .order("created_at", { ascending: true }),
@@ -1087,6 +1109,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
       card: safeNum(p.card_amount),
       cardSurcharge: safeNum(p.card_surcharge_amount),
       online: safeNum(p.online_amount),
+      onlineChannel: p.online_channel,
       onlineSurcharge: safeNum(p.online_surcharge_amount),
       totalCollected: safeNum(p.total_collected),
       excessAmount: safeNum(p.excess_amount),
@@ -1105,6 +1128,7 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
     card: d.method === "card" ? safeNum(d.amount) : 0,
     cardSurcharge: 0,
     online: d.method === "online" ? safeNum(d.amount) : 0,
+    onlineChannel: d.method === "online" ? d.channel : null,
     onlineSurcharge: 0,
     totalCollected: 0,
     excessAmount: 0,
@@ -1120,6 +1144,104 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
   };
 }
 
+// ── Raw Data Export: Divers (one row per payment) ───────────────────────
+//
+// Only used by the Reports > Export Raw Data action — not shown anywhere
+// on-screen. Unlike Settlement (one calendar day), this covers the
+// Reports page's whole selected date range. A `payments` row can carry
+// cash, card, and online amounts all at once (a split-paid bill), so each
+// nonzero method on a row becomes its own output row — "one row per
+// payment" means one row per amount actually collected, not one row per
+// bill. Payment Channel is populated for every row (a literal "Cash"/
+// "Card" for those methods, the real channel for Online) so the column
+// reads on its own without cross-referencing Payment Method.
+
+export type DiverPaymentExportRow = {
+  date: string;
+  diverName: string;
+  amount: number;
+  paymentMethod: "Cash" | "Card" | "Online";
+  paymentChannel: string;
+};
+
+export async function loadDiverPaymentsExport(
+  diveCenterId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<DiverPaymentExportRow[]> {
+  const supabase = await createClient();
+  const { startIso, endIso } = { startIso: manilaDayBoundsUtcIso(dateFrom).startIso, endIso: manilaDayBoundsUtcIso(dateTo).endIso };
+
+  const [{ data: paymentsRaw }, { data: depositsRaw }] = await Promise.all([
+    supabase
+      .from("payments")
+      .select("paid_at, diver_id, cash_amount, card_amount, online_amount, online_channel")
+      .eq("dive_center_id", diveCenterId)
+      .gte("paid_at", startIso)
+      .lte("paid_at", endIso)
+      .order("paid_at", { ascending: true }),
+    supabase
+      .from("deposits")
+      .select("deposit_date, diver_id, amount, method, channel")
+      .eq("dive_center_id", diveCenterId)
+      .gte("deposit_date", dateFrom)
+      .lte("deposit_date", dateTo)
+      .order("deposit_date", { ascending: true }),
+  ]);
+
+  const payments = paymentsRaw ?? [];
+  const deposits = depositsRaw ?? [];
+
+  const diverIds = [...new Set([...payments.map((p) => p.diver_id), ...deposits.map((d) => d.diver_id)].filter(Boolean))];
+  const { data: diversData } = diverIds.length
+    ? await supabase.from("divers").select("id, first_name, last_name").in("id", diverIds)
+    : { data: [] as { id: string; first_name: string; last_name: string }[] };
+  const diverMap = new Map(
+    (diversData ?? []).map((d) => [d.id, `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim() || "Unknown Diver"]),
+  );
+
+  function channelLabel(method: "cash" | "card" | "online", channel: PaymentChannel | null): string {
+    if (method === "cash") return "Cash";
+    if (method === "card") return "Card";
+    return channel ? PAYMENT_CHANNEL_LABELS[channel] : "Online";
+  }
+
+  const rows: DiverPaymentExportRow[] = [];
+
+  payments.forEach((p) => {
+    const date = manilaDateFromIso(p.paid_at);
+    const diverName = diverMap.get(p.diver_id) ?? "Unknown Diver";
+    if (safeNum(p.cash_amount) > 0) {
+      rows.push({ date, diverName, amount: safeNum(p.cash_amount), paymentMethod: "Cash", paymentChannel: "Cash" });
+    }
+    if (safeNum(p.card_amount) > 0) {
+      rows.push({ date, diverName, amount: safeNum(p.card_amount), paymentMethod: "Card", paymentChannel: "Card" });
+    }
+    if (safeNum(p.online_amount) > 0) {
+      rows.push({
+        date,
+        diverName,
+        amount: safeNum(p.online_amount),
+        paymentMethod: "Online",
+        paymentChannel: channelLabel("online", p.online_channel),
+      });
+    }
+  });
+
+  deposits.forEach((d) => {
+    const method = d.method as "cash" | "card" | "online";
+    rows.push({
+      date: String(d.deposit_date),
+      diverName: diverMap.get(d.diver_id) ?? "Unknown Diver",
+      amount: safeNum(d.amount),
+      paymentMethod: method === "cash" ? "Cash" : method === "card" ? "Card" : "Online",
+      paymentChannel: channelLabel(method, d.channel),
+    });
+  });
+
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export async function loadExpensesData(
   diveCenterId: string,
   dateFrom: string,
@@ -1129,7 +1251,7 @@ export async function loadExpensesData(
 
   const { data: rows } = await supabase
     .from("expenses")
-    .select("id, date, category, custom_category, amount, payment_method, notes, created_by")
+    .select("id, date, category, custom_category, amount, payment_method, channel, notes, created_by")
     .eq("dive_center_id", diveCenterId)
     .gte("date", dateFrom)
     .lte("date", dateTo)
@@ -1151,6 +1273,7 @@ export async function loadExpensesData(
     customCategory: r.custom_category,
     amount: safeNum(r.amount),
     paymentMethod: r.payment_method,
+    channel: r.channel,
     recordedBy: (r.created_by && userMap.get(r.created_by)) || "—",
     notes: r.notes,
   }));

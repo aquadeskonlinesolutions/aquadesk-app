@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { saveDiveLeaderCommission, saveInstructorCommission } from "./actions";
 import type { EducatorCommissionRow, LeaderCommissionRow, StaffActivityData } from "./data";
-import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useSettlePayment } from "@/components/ui/SettlePaymentDialog";
+import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -111,7 +112,7 @@ function LeaderTable({
   setRows: (updater: (prev: EditableLeaderRow[]) => EditableLeaderRow[]) => void;
   refreshOverview?: () => void;
 }) {
-  const confirm = useConfirm();
+  const settlePayment = useSettlePayment();
   const staffOptions = [...new Set(allRows.map((r) => r.staffName))].sort((a, b) => a.localeCompare(b));
   const [selectedStaff, setSelectedStaff] = useState(staffOptions[0] ?? "");
   const rows = allRows.filter((r) => r.staffName === selectedStaff);
@@ -132,7 +133,12 @@ function LeaderTable({
     );
   }
 
-  function persist(row: EditableLeaderRow, markPaid: boolean) {
+  function persist(
+    row: EditableLeaderRow,
+    markPaid: boolean,
+    paymentMethod?: "cash" | "card" | "online" | null,
+    channel?: PaymentChannel | null,
+  ) {
     setPendingKey(row.key);
     setErrorKey(null);
     startTransition(async () => {
@@ -145,6 +151,8 @@ function LeaderTable({
         row.commissionAmount,
         row.additionalRate,
         markPaid,
+        paymentMethod,
+        channel,
       );
       if (res.error) {
         setErrorKey(row.key);
@@ -158,6 +166,8 @@ function LeaderTable({
                   commissionAmount: res.commissionAmount!,
                   additionalRate: res.additionalRate!,
                   total: res.total!,
+                  paymentMethod: res.paymentMethod ?? r.paymentMethod,
+                  channel: res.channel ?? r.channel,
                   justSaved: true,
                   isSaved: true,
                 }
@@ -171,22 +181,22 @@ function LeaderTable({
   }
 
   async function markPaid(row: EditableLeaderRow) {
-    const ok = await confirm(
+    const result = await settlePayment(
       "Once marked as Paid, this record can still be edited but can no longer be deleted.",
       { title: "Mark as Paid?", confirmLabel: "Mark Paid" },
     );
-    if (!ok) return;
-    persist(row, true);
+    if (!result) return;
+    persist(row, true, result.method, result.channel);
   }
 
   async function markAllOwed() {
     const owed = rows.filter((r) => r.status === "unpaid");
     if (owed.length === 0) return;
-    const ok = await confirm(
+    const result = await settlePayment(
       `Mark all ${owed.length} owed row${owed.length !== 1 ? "s" : ""} for ${selectedStaff} as Paid? Once marked as Paid, a record can still be edited but can no longer be deleted.`,
       { title: "Mark all as Paid?", confirmLabel: "Mark All Paid" },
     );
-    if (!ok) return;
+    if (!result) return;
     setBulkPending(true);
     await Promise.all(
       owed.map(async (row) => {
@@ -199,6 +209,8 @@ function LeaderTable({
           row.commissionAmount,
           row.additionalRate,
           true,
+          result.method,
+          result.channel,
         );
         if (!res.error) {
           setRows((prev) =>
@@ -210,6 +222,8 @@ function LeaderTable({
                     commissionAmount: res.commissionAmount!,
                     additionalRate: res.additionalRate!,
                     total: res.total!,
+                    paymentMethod: res.paymentMethod ?? r.paymentMethod,
+                    channel: res.channel ?? r.channel,
                     justSaved: false,
                     isSaved: true,
                   }
@@ -297,6 +311,12 @@ function LeaderTable({
                       <td className="px-4 py-3 text-right font-semibold text-navy">{peso(r.total)}</td>
                       <td className="px-4 py-3">
                         <StatusPill status={r.status} />
+                        {r.status === "paid" && r.paymentMethod && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            via {r.paymentMethod === "online" ? "Online" : r.paymentMethod === "card" ? "Card" : "Cash"}
+                            {r.paymentMethod === "online" && r.channel ? ` · ${PAYMENT_CHANNEL_LABELS[r.channel]}` : ""}
+                          </div>
+                        )}
                         {!r.isSaved && <UnsavedBadge />}
                         {r.justSaved && <div className="text-xs text-green mt-1">Saved.</div>}
                         {errorKey === r.key && <div className="text-xs text-red mt-1">Could not save.</div>}
@@ -356,7 +376,7 @@ function EducatorTable({
   setRows: (updater: (prev: EditableEducatorRow[]) => EditableEducatorRow[]) => void;
   refreshOverview?: () => void;
 }) {
-  const confirm = useConfirm();
+  const settlePayment = useSettlePayment();
   const staffOptions = [...new Set(allRows.map((r) => r.staffName))].sort((a, b) => a.localeCompare(b));
   const [selectedStaff, setSelectedStaff] = useState(staffOptions[0] ?? "");
   const rows = allRows.filter((r) => r.staffName === selectedStaff);
@@ -377,7 +397,12 @@ function EducatorTable({
     );
   }
 
-  function persist(row: EditableEducatorRow, markPaid: boolean) {
+  function persist(
+    row: EditableEducatorRow,
+    markPaid: boolean,
+    paymentMethod?: "cash" | "card" | "online" | null,
+    channel?: PaymentChannel | null,
+  ) {
     setPendingKey(row.key);
     setErrorKey(null);
     startTransition(async () => {
@@ -389,6 +414,8 @@ function EducatorTable({
         row.commissionAmount,
         row.additionalRate,
         markPaid,
+        paymentMethod,
+        channel,
       );
       if (res.error) {
         setErrorKey(row.key);
@@ -402,6 +429,8 @@ function EducatorTable({
                   commissionAmount: res.commissionAmount!,
                   additionalRate: res.additionalRate!,
                   total: res.total!,
+                  paymentMethod: res.paymentMethod ?? r.paymentMethod,
+                  channel: res.channel ?? r.channel,
                   justSaved: true,
                   isSaved: true,
                 }
@@ -415,22 +444,22 @@ function EducatorTable({
   }
 
   async function markPaid(row: EditableEducatorRow) {
-    const ok = await confirm(
+    const result = await settlePayment(
       "Once marked as Paid, this record can still be edited but can no longer be deleted.",
       { title: "Mark as Paid?", confirmLabel: "Mark Paid" },
     );
-    if (!ok) return;
-    persist(row, true);
+    if (!result) return;
+    persist(row, true, result.method, result.channel);
   }
 
   async function markAllOwed() {
     const owed = rows.filter((r) => r.status === "unpaid");
     if (owed.length === 0) return;
-    const ok = await confirm(
+    const result = await settlePayment(
       `Mark all ${owed.length} owed row${owed.length !== 1 ? "s" : ""} for ${selectedStaff} as Paid? Once marked as Paid, a record can still be edited but can no longer be deleted.`,
       { title: "Mark all as Paid?", confirmLabel: "Mark All Paid" },
     );
-    if (!ok) return;
+    if (!result) return;
     setBulkPending(true);
     await Promise.all(
       owed.map(async (row) => {
@@ -442,6 +471,8 @@ function EducatorTable({
           row.commissionAmount,
           row.additionalRate,
           true,
+          result.method,
+          result.channel,
         );
         if (!res.error) {
           setRows((prev) =>
@@ -453,6 +484,8 @@ function EducatorTable({
                     commissionAmount: res.commissionAmount!,
                     additionalRate: res.additionalRate!,
                     total: res.total!,
+                    paymentMethod: res.paymentMethod ?? r.paymentMethod,
+                    channel: res.channel ?? r.channel,
                     justSaved: false,
                     isSaved: true,
                   }
@@ -539,6 +572,12 @@ function EducatorTable({
                       <td className="px-4 py-3 text-right font-semibold text-navy">{peso(r.total)}</td>
                       <td className="px-4 py-3">
                         <StatusPill status={r.status} />
+                        {r.status === "paid" && r.paymentMethod && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            via {r.paymentMethod === "online" ? "Online" : r.paymentMethod === "card" ? "Card" : "Cash"}
+                            {r.paymentMethod === "online" && r.channel ? ` · ${PAYMENT_CHANNEL_LABELS[r.channel]}` : ""}
+                          </div>
+                        )}
                         {!r.isSaved && <UnsavedBadge />}
                         {r.justSaved && <div className="text-xs text-green mt-1">Saved.</div>}
                         {errorKey === r.key && <div className="text-xs text-red mt-1">Could not save.</div>}

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { getSettlementData } from "./actions";
 import type { SettlementRow, SettlementData } from "./data";
-import { EXCESS_LABEL } from "@/lib/payments";
+import { EXCESS_LABEL, PAYMENT_CHANNEL_LABELS } from "@/lib/payments";
 
 function todayManila(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -48,6 +48,7 @@ function downloadCsv(data: SettlementData) {
     "Card",
     "Card Surcharge",
     "Online",
+    "Online Channel",
     "Online Surcharge",
     "Total Collected",
     EXCESS_LABEL,
@@ -62,6 +63,7 @@ function downloadCsv(data: SettlementData) {
       r.card,
       r.isDeposit ? "" : r.cardSurcharge,
       r.online,
+      r.onlineChannel ? PAYMENT_CHANNEL_LABELS[r.onlineChannel] : "",
       r.isDeposit ? "" : r.onlineSurcharge,
       r.isDeposit ? "" : r.totalCollected,
       r.isDeposit ? "" : r.excessAmount,
@@ -80,6 +82,7 @@ function downloadCsv(data: SettlementData) {
       tot.card,
       tot.cardSurcharge,
       tot.online,
+      `""`,
       tot.onlineSurcharge,
       tot.totalCollected,
       tot.excessAmount,
@@ -210,7 +213,12 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                     <td className="px-3 py-3 text-gray-500 text-xs">{r.isDeposit ? "—" : r.foreign}</td>
                     <td className="px-3 py-3 text-right">{fmtPHP(r.card)}</td>
                     <td className="px-3 py-3 text-right">{r.isDeposit ? "—" : fmtPHP(r.cardSurcharge)}</td>
-                    <td className="px-3 py-3 text-right">{fmtPHP(r.online)}</td>
+                    <td className="px-3 py-3 text-right">
+                      {fmtPHP(r.online)}
+                      {r.online > 0 && r.onlineChannel && (
+                        <div className="text-xs text-gray-400 font-normal">{PAYMENT_CHANNEL_LABELS[r.onlineChannel]}</div>
+                      )}
+                    </td>
                     <td className="px-3 py-3 text-right">{r.isDeposit ? "—" : fmtPHP(r.onlineSurcharge)}</td>
                     <td className="px-3 py-3 text-right font-semibold text-navy">
                       {r.isDeposit ? "—" : fmtPHP(r.totalCollected)}
@@ -290,7 +298,12 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">
                     {r.isDeposit ? "—" : fmtPHP(r.cardSurcharge)}
                   </td>
-                  <td className="px-2 py-1.5 border-b border-gray-100 text-right">{fmtPHP(r.online)}</td>
+                  <td className="px-2 py-1.5 border-b border-gray-100 text-right">
+                    {fmtPHP(r.online)}
+                    {r.online > 0 && r.onlineChannel && (
+                      <div className="text-xs text-gray-500 font-normal">{PAYMENT_CHANNEL_LABELS[r.onlineChannel]}</div>
+                    )}
+                  </td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">
                     {r.isDeposit ? "—" : fmtPHP(r.onlineSurcharge)}
                   </td>

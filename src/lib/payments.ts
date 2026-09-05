@@ -1,6 +1,20 @@
 // Shared between Dashboard and Reports — both need "how much has actually
 // been collected against this bill so far" from a payments row.
 
+// The required sub-choice whenever a payment method is "online" — shared
+// across every place that records a payment method (bill payment,
+// deposits, expenses, join ride settlement, rental gear settlement, staff
+// commission payout). Matches the public.payment_channel Postgres enum
+// exactly (database/043_online_payment_channel.sql).
+export type PaymentChannel = "e_wallet" | "paypal" | "wise" | "bank";
+
+export const PAYMENT_CHANNEL_LABELS: Record<PaymentChannel, string> = {
+  e_wallet: "E-Wallet",
+  paypal: "PayPal",
+  wise: "Wise",
+  bank: "Bank",
+};
+
 // Shared verbatim across Dashboard, Diver Form (BillSummary/InvoicePanel),
 // Settlement, and Reports Overview — one label/hint pair so the same figure
 // reads identically everywhere it's shown, instead of four independently

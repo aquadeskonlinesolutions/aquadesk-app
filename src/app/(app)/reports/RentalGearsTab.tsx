@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { getRentalGearsData, saveRentalGearRecord, updateRentalGearStatus, deleteRentalGearRecord } from "./actions";
 import { EQUIPMENT_SUGGESTIONS } from "./constants";
 import type { RentalGearRecord, RentalGearsData } from "./data";
-import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useSettlePayment } from "@/components/ui/SettlePaymentDialog";
+import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -97,7 +98,7 @@ export function RentalGearsTab({
   appliedTo: string;
   refreshOverview?: () => void;
 }) {
-  const confirm = useConfirm();
+  const settlePayment = useSettlePayment();
   const [records, setRecords] = useState<RentalGearRecord[]>(data.records);
   const [form, setForm] = useState<FormState | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -175,10 +176,15 @@ export function RentalGearsTab({
     });
   }
 
-  function changeStatus(id: string, status: string) {
+  function changeStatus(
+    id: string,
+    status: string,
+    paymentMethod?: "cash" | "card" | "online" | null,
+    channel?: PaymentChannel | null,
+  ) {
     setRowPending(id);
     startTransition(async () => {
-      await updateRentalGearStatus(id, status);
+      await updateRentalGearStatus(id, status, paymentMethod, channel);
       await refresh();
       refreshOverview?.();
       setRowPending(null);
@@ -187,12 +193,12 @@ export function RentalGearsTab({
 
   async function settleRecord(id: string, status: "collected" | "paid") {
     const label = status === "collected" ? "Collected" : "Paid";
-    const ok = await confirm(`Once marked as ${label}, this record can still be edited but can no longer be deleted.`, {
-      title: `Mark as ${label}?`,
-      confirmLabel: `Mark ${label}`,
-    });
-    if (!ok) return;
-    changeStatus(id, status);
+    const result = await settlePayment(
+      `Once marked as ${label}, this record can still be edited but can no longer be deleted.`,
+      { title: `Mark as ${label}?`, confirmLabel: `Mark ${label}` },
+    );
+    if (!result) return;
+    changeStatus(id, status, result.method, result.channel);
   }
 
   function removeRecord(id: string) {
@@ -448,6 +454,12 @@ export function RentalGearsTab({
                     <td className="px-4 py-3 text-right">{peso(r.rate)}</td>
                     <td className="px-4 py-3">
                       <StatusPill status={r.status} />
+                      {isSettled(r.status) && r.paymentMethod && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          via {r.paymentMethod === "online" ? "Online" : r.paymentMethod === "card" ? "Card" : "Cash"}
+                          {r.paymentMethod === "online" && r.channel ? ` · ${PAYMENT_CHANNEL_LABELS[r.channel]}` : ""}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-navy">{peso(r.balance)}</td>
                     <td className="px-4 py-3 text-gray-500">{r.remarks || ""}</td>

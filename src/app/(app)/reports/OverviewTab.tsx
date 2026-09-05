@@ -74,6 +74,8 @@ export function OverviewTab({
   monthlyFinancials,
   monthlyFunVsCourse,
   nationalitiesYTD,
+  onExportRaw,
+  exporting,
 }: {
   data: OverviewData;
   dateFromLabel: string;
@@ -81,6 +83,8 @@ export function OverviewTab({
   monthlyFinancials: MonthlyFinancials[];
   monthlyFunVsCourse: MonthlyFunVsCourseRevenue[];
   nationalitiesYTD: NationalityCount[];
+  onExportRaw: () => void;
+  exporting: boolean;
 }) {
   const { summary } = data;
 
@@ -99,13 +103,20 @@ export function OverviewTab({
         <div className="font-display text-3xl leading-tight tracking-tight mb-2">
           {data.diveCenterName} — {dateFromLabel} to {dateToLabel}
         </div>
-        <p className="text-sm leading-relaxed text-white/80 max-w-2xl">
+        <p className="text-sm leading-relaxed text-white/80 max-w-2xl mb-4">
           You served <strong className="text-white">{data.divesServed}</strong> diver
           {data.divesServed !== 1 ? "s" : ""} across{" "}
           <strong className="text-white">{data.daysServed}</strong> day
           {data.daysServed !== 1 ? "s" : ""}, and made{" "}
           <strong className="text-white">{peso(summary.netProfit)}</strong> net profit this period.
         </p>
+        <button
+          onClick={onExportRaw}
+          disabled={exporting}
+          className="print:hidden px-4 py-2 bg-white/10 border border-white/25 text-white text-sm font-medium rounded-lg hover:bg-white/20 transition-colors disabled:opacity-60"
+        >
+          {exporting ? "Exporting…" : "⬇ Export Raw Data"}
+        </button>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm mb-5">

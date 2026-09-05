@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { getExpensesData, saveExpenseRecord, deleteExpenseRecord } from "./actions";
 import { EXPENSE_CATEGORY_LABELS, PAYMENT_METHOD_LABELS } from "./constants";
 import type { ExpenseRecord, ExpensesData } from "./data";
+import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -75,6 +76,7 @@ type FormState = {
   customCategory: string;
   amount: string;
   paymentMethod: string;
+  channel: PaymentChannel | null;
   notes: string;
 };
 
@@ -86,6 +88,7 @@ function emptyForm(): FormState {
     customCategory: "",
     amount: "0",
     paymentMethod: "cash",
+    channel: null,
     notes: "",
   };
 }
@@ -104,6 +107,7 @@ export function ExpensesTab({
   const [totalAmount, setTotalAmount] = useState(data.totalAmount);
   const [uncategorizedAmount, setUncategorizedAmount] = useState(data.uncategorizedAmount);
   const [form, setForm] = useState<FormState | null>(null);
+  const [editingOriginal, setEditingOriginal] = useState<ExpenseRecord | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [rowPending, setRowPending] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -137,6 +141,7 @@ export function ExpensesTab({
 
   function startAdd() {
     setForm(emptyForm());
+    setEditingOriginal(null);
     setFormError(null);
   }
   function startEdit(r: ExpenseRecord) {
@@ -147,13 +152,27 @@ export function ExpensesTab({
       customCategory: r.customCategory ?? "",
       amount: String(r.amount),
       paymentMethod: r.paymentMethod ?? "cash",
+      channel: r.channel,
       notes: r.notes ?? "",
     });
+    setEditingOriginal(r);
     setFormError(null);
   }
 
+  // A pre-existing online expense (recorded before the channel field
+  // existed) is grandfathered — only a new/changed online amount needs a
+  // channel before saving. Matches the server's own check in actions.ts.
+  const onlineAmountUnchanged =
+    !!editingOriginal &&
+    editingOriginal.paymentMethod === "online" &&
+    String(editingOriginal.amount) === form?.amount;
+
   function saveForm() {
     if (!form) return;
+    if (form.paymentMethod === "online" && !form.channel && !onlineAmountUnchanged) {
+      setFormError("Select an Online channel.");
+      return;
+    }
     startTransition(async () => {
       const res = await saveExpenseRecord(
         form.id,
@@ -162,12 +181,14 @@ export function ExpensesTab({
         form.customCategory,
         parseFloat(form.amount) || 0,
         form.paymentMethod,
+        form.paymentMethod === "online" ? form.channel : null,
         form.notes,
       );
       if (res.error) {
         setFormError(res.error);
       } else {
         setForm(null);
+        setEditingOriginal(null);
         setFormError(null);
         // Refetching the full computed set (records + category bars + cards)
         // is simpler and less error-prone than patching all four locally,
@@ -346,17 +367,36 @@ export function ExpensesTab({
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Payment Method</label>
-                <select
-                  value={form.paymentMethod}
-                  onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
-                >
-                  {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex gap-1.5">
+                  <select
+                    value={form.paymentMethod}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setForm({ ...form, paymentMethod: next, channel: next === "online" ? form.channel : null });
+                    }}
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+                  >
+                    {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  {form.paymentMethod === "online" && (
+                    <select
+                      value={form.channel ?? ""}
+                      onChange={(e) => setForm({ ...form, channel: (e.target.value || null) as PaymentChannel | null })}
+                      className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+                    >
+                      <option value="">Channel</option>
+                      {Object.entries(PAYMENT_CHANNEL_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </div>
             </div>
             <div className="mb-4">
@@ -377,7 +417,13 @@ export function ExpensesTab({
               >
                 Save Expense
               </button>
-              <button onClick={() => setForm(null)} className="px-4 py-2 text-sm text-gray-600">
+              <button
+                onClick={() => {
+                  setForm(null);
+                  setEditingOriginal(null);
+                }}
+                className="px-4 py-2 text-sm text-gray-600"
+              >
                 Cancel
               </button>
             </div>
@@ -424,6 +470,9 @@ export function ExpensesTab({
                     <td className="px-4 py-3 text-right font-semibold text-navy">{peso(r.amount)}</td>
                     <td className="px-4 py-3">
                       {r.paymentMethod ? PAYMENT_METHOD_LABELS[r.paymentMethod] ?? r.paymentMethod : "—"}
+                      {r.paymentMethod === "online" && r.channel && (
+                        <div className="text-xs text-gray-400">{PAYMENT_CHANNEL_LABELS[r.channel]}</div>
+                      )}
                     </td>
                     <td className="px-4 py-3">{r.recordedBy}</td>
                     <td className="px-4 py-3 text-gray-500">{r.notes || ""}</td>

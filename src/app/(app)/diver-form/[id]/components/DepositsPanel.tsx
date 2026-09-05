@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { addDeposit } from "../actions";
 import type { Deposit } from "../data";
+import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -29,14 +30,19 @@ export function DepositsPanel({
 }) {
   const [amount, setAmount] = useState("0");
   const [method, setMethod] = useState<"cash" | "card" | "online">("cash");
+  const [channel, setChannel] = useState<PaymentChannel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function submit() {
     setError(null);
+    if (method === "online" && !channel) {
+      setError("Select an Online channel.");
+      return;
+    }
     startTransition(async () => {
       const amt = parseFloat(amount) || 0;
-      const res = await addDeposit(diverId, visitId, amt, method, receivedByDisplay);
+      const res = await addDeposit(diverId, visitId, amt, method, method === "online" ? channel : null, receivedByDisplay);
       if (res.error) {
         setError(res.error);
       } else {
@@ -44,10 +50,12 @@ export function DepositsPanel({
           id: crypto.randomUUID(),
           amount: amt,
           method,
+          channel: method === "online" ? channel : null,
           depositDate: new Date().toISOString().slice(0, 10),
           receivedBy: receivedByDisplay,
         });
         setAmount("0");
+        setChannel(null);
       }
     });
   }
@@ -75,15 +83,35 @@ export function DepositsPanel({
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Method</label>
-          <select
-            value={method}
-            onChange={(e) => setMethod(e.target.value as "cash" | "card" | "online")}
-            className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
-          >
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-            <option value="online">Online</option>
-          </select>
+          <div className="flex gap-1.5">
+            <select
+              value={method}
+              onChange={(e) => {
+                const next = e.target.value as "cash" | "card" | "online";
+                setMethod(next);
+                if (next !== "online") setChannel(null);
+              }}
+              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+            >
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="online">Online</option>
+            </select>
+            {method === "online" && (
+              <select
+                value={channel ?? ""}
+                onChange={(e) => setChannel((e.target.value || null) as PaymentChannel | null)}
+                className="border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+              >
+                <option value="">Channel</option>
+                {Object.entries(PAYMENT_CHANNEL_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Received By</label>
@@ -109,7 +137,9 @@ export function DepositsPanel({
           deposits.map((d) => (
             <div key={d.id} className="px-5 py-3 flex items-center justify-between">
               <div className="text-sm text-gray-700">
-                {fmtDate(d.depositDate)} · {d.method} · {d.receivedBy || "—"}
+                {fmtDate(d.depositDate)} · {d.method}
+                {d.method === "online" && d.channel ? ` (${PAYMENT_CHANNEL_LABELS[d.channel]})` : ""} ·{" "}
+                {d.receivedBy || "—"}
               </div>
               <div className="text-sm font-semibold text-navy">{peso(d.amount)}</div>
             </div>

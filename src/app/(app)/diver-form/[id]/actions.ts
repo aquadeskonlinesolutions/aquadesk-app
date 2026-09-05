@@ -15,6 +15,7 @@ import {
   resolveEquipmentCharge,
 } from "./pricing";
 import { computePaymentBreakdown, type PaymentInput } from "./billing";
+import type { PaymentChannel } from "@/lib/payments";
 import { loadPaymentConfig, loadInvoiceForVisit } from "./data";
 import { buildInvoiceEmailHtml } from "./invoiceEmailHtml";
 import { getResendClient, RESEND_FROM_EMAIL } from "@/lib/email/resend";
@@ -862,6 +863,22 @@ export async function savePaymentOnly(
   const user = await getCurrentUser();
   const supabase = await createClient();
 
+  if (input.onlineAmount > 0 && !input.onlineChannel) {
+    // Grandfathers pre-existing online amounts recorded before this field
+    // existed — an old online payment stays valid with a blank channel
+    // forever unless someone actually changes the online amount, at which
+    // point a channel becomes required same as any new online entry.
+    const { data: existingForChannelCheck } = await supabase
+      .from("payments")
+      .select("online_amount")
+      .eq("visit_id", visitId)
+      .maybeSingle();
+    const unchanged = existingForChannelCheck && Number(existingForChannelCheck.online_amount) === input.onlineAmount;
+    if (!unchanged) {
+      return { error: "Select an Online channel before saving." };
+    }
+  }
+
   // This action only ever writes to `payments`, not `visits` — so unlike
   // checkoutVisit (which already has a real visits.update to piggyback the
   // check on), the optimistic-concurrency gate needs its own self-
@@ -909,6 +926,7 @@ export async function savePaymentOnly(
       cash_exchange_rate: breakdown.cashExchangeRate || null,
       card_amount: breakdown.cardAmount,
       online_amount: breakdown.onlineAmount,
+      online_channel: breakdown.onlineAmount > 0 ? breakdown.onlineChannel : null,
       total_paid: breakdown.totalCollected,
       balance,
       discount: input.discount,
@@ -935,9 +953,11 @@ export async function addDeposit(
   visitId: string,
   amount: number,
   method: "cash" | "card" | "online",
+  channel: PaymentChannel | null,
   receivedBy: string,
 ): Promise<{ error?: string }> {
   if (!(amount > 0)) return { error: "Deposit amount must be greater than 0." };
+  if (method === "online" && !channel) return { error: "Select an Online channel." };
 
   const user = await getCurrentUser();
   const supabase = await createClient();
@@ -948,6 +968,7 @@ export async function addDeposit(
     visit_id: visitId,
     amount,
     method,
+    channel: method === "online" ? channel : null,
     deposit_date: new Date().toISOString().slice(0, 10),
     received_by: receivedBy.trim() || null,
     recorded_by_user_id: user.id,
@@ -974,6 +995,20 @@ export async function checkoutVisit(
 ): Promise<{ error?: string; invoiceId?: string; conflict?: boolean }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
+
+  if (input.onlineAmount > 0 && !input.onlineChannel) {
+    // Same grandfathering as savePaymentOnly — an unchanged pre-existing
+    // online amount doesn't need a channel; only a new/changed one does.
+    const { data: existingForChannelCheck } = await supabase
+      .from("payments")
+      .select("online_amount")
+      .eq("visit_id", visitId)
+      .maybeSingle();
+    const unchanged = existingForChannelCheck && Number(existingForChannelCheck.online_amount) === input.onlineAmount;
+    if (!unchanged) {
+      return { error: "Select an Online channel before checking out." };
+    }
+  }
 
   const [{ data: diver }, { data: activitiesRaw }, { data: depositsRaw }] = await Promise.all([
     supabase.from("divers").select("first_name, last_name, nationality").eq("id", diverId).single(),
@@ -1048,6 +1083,7 @@ export async function checkoutVisit(
       cash_exchange_rate: breakdown.cashExchangeRate || null,
       card_amount: breakdown.cardAmount,
       online_amount: breakdown.onlineAmount,
+      online_channel: breakdown.onlineAmount > 0 ? breakdown.onlineChannel : null,
       total_paid: breakdown.totalCollected,
       balance: Math.max(0, balance),
       discount: input.discount,
@@ -1105,6 +1141,7 @@ export async function checkoutVisit(
       cash_exchange_rate: breakdown.cashExchangeRate,
       card_amount: breakdown.cardAmount,
       online_amount: breakdown.onlineAmount,
+      online_channel: breakdown.onlineAmount > 0 ? breakdown.onlineChannel : null,
       card_surcharge_rate: breakdown.cardSurchargeRate,
       online_surcharge_rate: breakdown.onlineSurchargeRate,
       card_surcharge_amount: breakdown.cardSurchargeAmount,
