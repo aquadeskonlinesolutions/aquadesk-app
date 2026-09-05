@@ -68,7 +68,7 @@ export function DiversListClient({
             type="text"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Search by name, email, phone, WhatsApp, or accommodation…"
+            placeholder="Search by name, trace number, email, phone, WhatsApp, or accommodation…"
             className="w-full px-4 py-2.5 text-sm border-2 border-gray-200 rounded-lg outline-none focus:border-teal transition-colors"
           />
           {!searching && (
@@ -111,7 +111,8 @@ export function DiversListClient({
                   <tr key={d.id} className="border-b border-gray-100 last:border-0 hover:bg-off-white">
                     <td className="px-4 py-3">
                       <div className="font-semibold text-navy">
-                        {d.firstName} {d.lastName}
+                        {d.firstName} {d.lastName}{" "}
+                        <span className="text-sm font-normal text-gray-600">{d.traceNumber}</span>
                       </div>
                       <div className="text-xs text-gray-400">
                         {CERT_LEVEL_LABELS[d.certificationLevel] ?? d.certificationLevel}

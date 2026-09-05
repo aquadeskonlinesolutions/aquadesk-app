@@ -10,6 +10,7 @@ export type DiverListItem = {
   whatsapp: string | null;
   accommodation: string | null;
   certificationLevel: string;
+  traceNumber: string;
   latestArrivalDate: string | null;
   latestDepartureDate: string | null;
 };
@@ -29,6 +30,7 @@ async function attachLatestArrival(
     whatsapp: string | null;
     accommodation: string | null;
     certification_level: string;
+    trace_number: string;
   }[],
 ): Promise<DiverListItem[]> {
   const supabase = await createClient();
@@ -61,6 +63,7 @@ async function attachLatestArrival(
     whatsapp: r.whatsapp,
     accommodation: r.accommodation,
     certificationLevel: r.certification_level,
+    traceNumber: r.trace_number,
     latestArrivalDate: arrivalMap.get(r.id) ?? null,
     latestDepartureDate: departureMap.get(r.id) ?? null,
   }));
@@ -71,7 +74,7 @@ export async function loadRecentDivers(diveCenterId: string): Promise<DiverListI
 
   const { data: rows } = await supabase
     .from("divers")
-    .select("id, first_name, last_name, email, phone, whatsapp, accommodation, certification_level")
+    .select("id, first_name, last_name, email, phone, whatsapp, accommodation, certification_level, trace_number")
     .eq("dive_center_id", diveCenterId)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -85,10 +88,10 @@ export async function searchDivers(diveCenterId: string, query: string): Promise
 
   const { data: rows } = await supabase
     .from("divers")
-    .select("id, first_name, last_name, email, phone, whatsapp, accommodation, certification_level")
+    .select("id, first_name, last_name, email, phone, whatsapp, accommodation, certification_level, trace_number")
     .eq("dive_center_id", diveCenterId)
     .or(
-      `first_name.ilike.${q},last_name.ilike.${q},email.ilike.${q},whatsapp.ilike.${q},phone.ilike.${q},accommodation.ilike.${q}`,
+      `first_name.ilike.${q},last_name.ilike.${q},email.ilike.${q},whatsapp.ilike.${q},phone.ilike.${q},accommodation.ilike.${q},trace_number.ilike.${q}`,
     )
     .limit(10);
 
