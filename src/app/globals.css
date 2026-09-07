@@ -68,13 +68,6 @@
   --radius-card-lg: var(--radius-lg);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: var(--navy-dark);
-    --foreground: var(--off-white);
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
