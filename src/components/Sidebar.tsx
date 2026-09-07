@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "@/lib/nav";
 import type { CurrentUser } from "@/lib/dal";
+import { signOut } from "@/lib/actions/auth";
 
 // Matches the live app's dashboard.html sidebar: an icon-only 64px rail
 // that expands to full width on hover (desktop). Unlike the live app —
@@ -100,6 +101,14 @@ export function Sidebar({ user }: { user: CurrentUser }) {
         >
           <div className="font-medium">{user.fullName}</div>
           <div className="text-white/60 capitalize">{user.role}</div>
+          <form action={signOut} className="mt-2">
+            <button
+              type="submit"
+              className="text-white/70 hover:text-white transition-colors"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
     </>
