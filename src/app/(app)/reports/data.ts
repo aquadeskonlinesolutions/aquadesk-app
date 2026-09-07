@@ -1559,16 +1559,46 @@ export type BillingAuditData = {
   unlocks: AuditUnlockLog[];
 };
 
-export async function loadBillingAuditData(diveCenterId: string): Promise<BillingAuditData> {
+export async function loadBillingAuditData(
+  diveCenterId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<BillingAuditData> {
   const supabase = await createClient();
 
-  const [{ data: dc }, { data: visitsRaw }, { data: invoiceEmailsRaw }, { data: unlockLogsRaw }] = await Promise.all([
+  // sent_at is a timestamptz (it's the bill-closed instant — see the
+  // migration 008 comment on this table), so bound it with the same
+  // Manila-day-to-UTC-instant helper used everywhere else in this file
+  // rather than a raw date-string gte/lte, which would clip anything
+  // closed after midnight UTC on the To date.
+  const { startIso } = manilaDayBoundsUtcIso(dateFrom);
+  const { endIso } = manilaDayBoundsUtcIso(dateTo);
+
+  const [
+    { data: dc },
+    { data: visitsRaw },
+    { data: invoiceEmailsRaw },
+    { data: allInvoiceEmailsRaw },
+    { data: unlockLogsRaw },
+  ] = await Promise.all([
     supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
     supabase
       .from("visits")
       .select("id, diver_id, invoice_count")
       .eq("dive_center_id", diveCenterId)
       .gt("invoice_count", 0),
+    // Invoice History table — scoped to the applied date range.
+    supabase
+      .from("invoice_emails")
+      .select("id, visit_id, diver_id, sent_at, sent_by, invoice_snapshot")
+      .eq("dive_center_id", diveCenterId)
+      .gte("sent_at", startIso)
+      .lte("sent_at", endIso)
+      .order("sent_at", { ascending: false }),
+    // Flagged-visit expansion always needs FULL closure history for that
+    // visit, regardless of the applied date range — an audit trail that
+    // hides an older duplicate closure defeats the point of the feature.
+    // Deliberately unfiltered; do not add a date bound to this one.
     supabase
       .from("invoice_emails")
       .select("id, visit_id, diver_id, sent_at, sent_by, invoice_snapshot")
@@ -1584,14 +1614,23 @@ export async function loadBillingAuditData(diveCenterId: string): Promise<Billin
 
   const visits = visitsRaw ?? [];
   const invoiceEmails = invoiceEmailsRaw ?? [];
+  const allInvoiceEmails = allInvoiceEmailsRaw ?? [];
   const unlockLogs = unlockLogsRaw ?? [];
 
-  const diverIds = [...new Set([...visits.map((v) => v.diver_id), ...invoiceEmails.map((i) => i.diver_id)].filter(Boolean))];
+  const diverIds = [
+    ...new Set(
+      [...visits.map((v) => v.diver_id), ...invoiceEmails.map((i) => i.diver_id), ...allInvoiceEmails.map((i) => i.diver_id)].filter(
+        Boolean,
+      ),
+    ),
+  ];
   const userIds = [
     ...new Set(
-      [...invoiceEmails.map((i) => i.sent_by), ...unlockLogs.map((l) => l.performed_by)].filter(
-        (id): id is string => !!id,
-      ),
+      [
+        ...invoiceEmails.map((i) => i.sent_by),
+        ...allInvoiceEmails.map((i) => i.sent_by),
+        ...unlockLogs.map((l) => l.performed_by),
+      ].filter((id): id is string => !!id),
     ),
   ];
 
@@ -1615,9 +1654,8 @@ export async function loadBillingAuditData(diveCenterId: string): Promise<Billin
     return diverMap.get(id)?.email || "—";
   }
 
-  const invoices: AuditInvoiceRow[] = invoiceEmails.map((inv) => {
+  function toInvoiceRow(inv: (typeof invoiceEmails)[number]): AuditInvoiceRow {
     const snap = (inv.invoice_snapshot ?? {}) as Record<string, unknown>;
-    const total = safeNum(snap.grand_total);
     return {
       id: inv.id,
       visitId: inv.visit_id,
@@ -1627,13 +1665,18 @@ export async function loadBillingAuditData(diveCenterId: string): Promise<Billin
       diverNationality: diverMap.get(inv.diver_id)?.nationality ?? null,
       sentAt: inv.sent_at,
       closedBy: (inv.sent_by && userMap.get(inv.sent_by)) || "—",
-      totalBilled: total,
+      totalBilled: safeNum(snap.grand_total),
       snapshot: snap,
     };
-  });
+  }
 
+  // Main "Invoice History" table — date-scoped.
+  const invoices: AuditInvoiceRow[] = invoiceEmails.map(toInvoiceRow);
+
+  // Flagged-visit expansion — built from the unfiltered set, so it always
+  // shows a flagged visit's complete closure history.
   const invoicesByVisit = new Map<string, AuditInvoiceRow[]>();
-  invoices.forEach((inv) => {
+  allInvoiceEmails.map(toInvoiceRow).forEach((inv) => {
     const list = invoicesByVisit.get(inv.visitId) ?? [];
     list.push(inv);
     invoicesByVisit.set(inv.visitId, list);

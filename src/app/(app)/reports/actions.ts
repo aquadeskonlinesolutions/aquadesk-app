@@ -842,7 +842,7 @@ export async function deleteGovtFeeRecord(id: string): Promise<{ error?: string 
 
 // ── Billing Audit ────────────────────────────────────────────────────────
 
-export async function getBillingAuditData() {
+export async function getBillingAuditData(dateFrom: string, dateTo: string) {
   const user = await requireRevenueAccess();
-  return loadBillingAuditData(user.diveCenterId);
+  return loadBillingAuditData(user.diveCenterId, dateFrom, dateTo);
 }

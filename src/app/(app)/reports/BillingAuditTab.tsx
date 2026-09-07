@@ -81,7 +81,7 @@ function InvoicePreview({
     <div className="grid gap-3">
       <div className="print:hidden flex items-center justify-between bg-white border border-gray-200 rounded-2xl shadow-sm px-5 py-3">
         <div className="text-sm text-gray-600">
-          Previewing invoice for <strong className="text-navy">{invoice.diverName}</strong>, sent{" "}
+          Previewing invoice for <strong className="text-navy">{invoice.diverName}</strong>, closed{" "}
           {fmtDateTime(invoice.sentAt)}.
         </div>
         <div className="flex gap-2">
@@ -104,7 +104,7 @@ function InvoicePreview({
             <div className="text-sm text-gray-500 mt-1">Invoice</div>
           </div>
           <div className="text-right">
-            <div className="text-xs font-extrabold uppercase tracking-wide text-gray-500">Sent</div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-gray-500">Closed</div>
             <div className="text-lg font-bold text-teal">{fmtDateOnly(invoice.sentAt)}</div>
           </div>
         </div>
@@ -250,7 +250,7 @@ export function BillingAuditTab({ data }: { data: BillingAuditData }) {
         <div className="px-5 py-4 border-b border-gray-200">
           <div className="text-sm font-extrabold text-navy">🔴 Flagged Bills</div>
           <div className="text-xs text-gray-500 mt-0.5">
-            Divers whose bill was closed more than once. Click a flagged row to see all invoices sent.
+            Divers whose bill was closed more than once. Click a flagged row to see every closure.
           </div>
         </div>
         {data.flagged.length === 0 ? (
@@ -263,7 +263,7 @@ export function BillingAuditTab({ data }: { data: BillingAuditData }) {
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Diver</th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Email</th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400 text-right">
-                    Invoices Sent
+                    Times Closed
                   </th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Flag</th>
                 </tr>
@@ -289,7 +289,7 @@ export function BillingAuditTab({ data }: { data: BillingAuditData }) {
           <div>
             <div className="text-sm font-extrabold text-navy">Invoice History</div>
             <div className="text-xs text-gray-500 mt-0.5">
-              Every invoice ever sent. Search by diver name or email.
+              Every invoice ever closed. Search by diver name or email.
             </div>
           </div>
           <input
@@ -308,7 +308,7 @@ export function BillingAuditTab({ data }: { data: BillingAuditData }) {
                 <tr className="bg-gray-100 text-left">
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Diver</th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Email</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Sent At</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Closed On</th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Closed By</th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400 text-right">
                     Total Billed
@@ -417,7 +417,7 @@ function FlaggedVisitRows({
                 <thead>
                   <tr className="text-left">
                     <th className="px-2 py-1.5 text-xs font-semibold uppercase text-gray-400">#</th>
-                    <th className="px-2 py-1.5 text-xs font-semibold uppercase text-gray-400">Sent At</th>
+                    <th className="px-2 py-1.5 text-xs font-semibold uppercase text-gray-400">Closed On</th>
                     <th className="px-2 py-1.5 text-xs font-semibold uppercase text-gray-400">Closed By</th>
                     <th className="px-2 py-1.5 text-xs font-semibold uppercase text-gray-400 text-right">
                       Total Billed

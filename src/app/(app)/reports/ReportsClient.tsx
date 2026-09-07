@@ -186,16 +186,18 @@ export function ReportsClient({
       // grab whatever those still held (stale, since the fresh fetch
       // hadn't resolved yet) and the later state update would land on an
       // already-initialized instance's ignored initial value.
-      const [overviewResult, staffResult, expensesResult, govtFeesResult] = await Promise.all([
+      const [overviewResult, staffResult, expensesResult, govtFeesResult, auditResult] = await Promise.all([
         getOverviewData(dateFrom, dateTo),
         staffData ? getStaffActivityData(dateFrom, dateTo) : Promise.resolve(null),
         expensesData ? getExpensesData(dateFrom, dateTo) : Promise.resolve(null),
         govtFeesData ? getGovtFeesData(dateFrom, dateTo) : Promise.resolve(null),
+        auditData ? getBillingAuditData(dateFrom, dateTo) : Promise.resolve(null),
       ]);
       setOverview(overviewResult);
       if (staffResult) setStaffData(staffResult);
       if (expensesResult) setExpensesData(expensesResult);
       if (govtFeesResult) setGovtFeesData(govtFeesResult);
+      if (auditResult) setAuditData(auditResult);
       setAppliedFrom(dateFrom);
       setAppliedTo(dateTo);
     });
@@ -257,7 +259,7 @@ export function ReportsClient({
     }
     if (key === "audit" && !auditData && !auditLoading) {
       setAuditLoading(true);
-      getBillingAuditData()
+      getBillingAuditData(appliedFrom, appliedTo)
         .then(setAuditData)
         .finally(() => setAuditLoading(false));
     }
@@ -272,29 +274,33 @@ export function ReportsClient({
             Your dive center story, staff activity, government fees, join rides, and rentals.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <label className="text-xs font-extrabold uppercase tracking-wide text-gray-500">
-            From
-          </label>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
-          />
-          <label className="text-xs font-extrabold uppercase tracking-wide text-gray-500">
-            To
-          </label>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
-          />
+        <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:items-center sm:flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-extrabold uppercase tracking-wide text-gray-500 shrink-0">
+              From
+            </label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm w-full min-w-[140px] sm:w-auto"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-extrabold uppercase tracking-wide text-gray-500 shrink-0">
+              To
+            </label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm w-full min-w-[140px] sm:w-auto"
+            />
+          </div>
           <button
             onClick={applyDateRange}
             disabled={pending}
-            className="px-4 py-2 bg-navy text-white text-sm font-medium rounded-lg hover:bg-navy-dark transition-colors disabled:opacity-60"
+            className="px-4 py-2 bg-navy text-white text-sm font-medium rounded-lg hover:bg-navy-dark transition-colors disabled:opacity-60 w-full sm:w-auto"
           >
             {pending ? "Loading…" : "Apply"}
           </button>
