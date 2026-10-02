@@ -151,6 +151,7 @@ function tripPreviewText(
       `Joining us: ${detail.guestDiversCount} diver(s) from ${detail.guestDiveCenterName ?? "another dive center"}`,
     );
   }
+  if (detail.guestNotes) lines.push(`Other Divers Joining Notes: ${detail.guestNotes}`);
   if (detail.notes) lines.push(`Notes: ${detail.notes}`);
 
   return lines.join("\n");
@@ -307,6 +308,16 @@ function TripSummaryCard({
             </span>
           )}
         </div>
+        {/* Phase 2 notes — matches scheduling.html's confirmTripHTML()
+            .confirm-notes line under the site chips. */}
+        {detail.notes && (
+          <div className="text-sm text-white/90 mt-2 whitespace-pre-wrap">Notes: {detail.notes}</div>
+        )}
+        {detail.guestNotes && (
+          <div className="text-sm text-white/90 mt-1 whitespace-pre-wrap">
+            Other Divers Joining Notes: {detail.guestNotes}
+          </div>
+        )}
       </div>
 
       <div className="p-4 grid gap-3">

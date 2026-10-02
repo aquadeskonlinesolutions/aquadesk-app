@@ -191,18 +191,24 @@ export function GroupManagementTab({
               onChange={(e) => setLinkForm({ ...linkForm, leaderName: e.target.value })}
               className="border border-gray-300 rounded-md px-2 py-1 text-xs"
             />
-            <input
-              type="date"
-              value={linkForm.arrivalDate}
-              onChange={(e) => setLinkForm({ ...linkForm, arrivalDate: e.target.value })}
-              className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-            />
-            <input
-              type="date"
-              value={linkForm.departureDate}
-              onChange={(e) => setLinkForm({ ...linkForm, departureDate: e.target.value })}
-              className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-            />
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-gray-600">Arrival Date</span>
+              <input
+                type="date"
+                value={linkForm.arrivalDate}
+                onChange={(e) => setLinkForm({ ...linkForm, arrivalDate: e.target.value })}
+                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-gray-600">Departure Date</span>
+              <input
+                type="date"
+                value={linkForm.departureDate}
+                onChange={(e) => setLinkForm({ ...linkForm, departureDate: e.target.value })}
+                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+              />
+            </label>
             <input
               type="number"
               onFocus={(e) => e.currentTarget.select()}
