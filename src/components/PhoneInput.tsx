@@ -2,8 +2,11 @@
 
 import { COUNTRY_CODES } from "@/lib/countryCodes";
 
+// Fixed width so the number field keeps its room on phones — a long country
+// name gets truncated in the closed box, but the dial code (shown first)
+// stays visible.
 const selectClass =
-  "rounded-card border border-gray-300 pl-2 pr-1 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal bg-white";
+  "w-36 shrink-0 rounded-card border border-gray-300 pl-2 pr-1 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal bg-white";
 const numberInputClass =
   "flex-1 rounded-card border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal";
 
@@ -27,9 +30,12 @@ export function PhoneInput({
         value={dialCode}
         onChange={(e) => onDialCodeChange(e.target.value)}
       >
+        <option value="" disabled>
+          Country code
+        </option>
         {COUNTRY_CODES.map((c) => (
           <option key={c.iso2} value={c.dialCode}>
-            {c.flag} {c.dialCode}
+            {c.flag} {c.dialCode} {c.name}
           </option>
         ))}
       </select>

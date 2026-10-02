@@ -18,4 +18,4 @@ export const EMPLOYMENT_STATUS_OPTIONS = Object.entries(EMPLOYMENT_STATUS_LABELS
 // Same list as divers/[id]/constants.ts and the old staff/constants.ts —
 // deliberately duplicated, not shared, matching this codebase's established
 // small-helper duplication precedent.
-export const RELATIONSHIP_OPTIONS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Other"];
+export const RELATIONSHIP_OPTIONS = ["Spouse", "Partner", "Parent", "Sibling", "Child", "Friend", "Other"];

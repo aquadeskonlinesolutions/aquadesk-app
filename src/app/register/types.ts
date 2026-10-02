@@ -39,6 +39,7 @@ export const TRAINING_AGENCIES = ["PADI", "SSI", "NAUI", "CMAS", "Other"] as con
 
 export const RELATIONSHIPS = [
   "Spouse",
+  "Partner",
   "Parent",
   "Sibling",
   "Child",

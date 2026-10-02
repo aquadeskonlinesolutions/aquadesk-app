@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { sanitizeWaiverHtml } from "@/lib/sanitizeWaiverHtml";
 import { SignaturePad } from "@/components/SignaturePad";
 import { PhoneInput } from "@/components/PhoneInput";
-import { COUNTRY_CODES, DEFAULT_COUNTRY_DIAL_CODE } from "@/lib/countryCodes";
+import { COUNTRY_CODES } from "@/lib/countryCodes";
 import {
   RegistrationConfig,
   CERTIFICATION_LEVELS,
@@ -29,7 +29,7 @@ function splitStoredPhone(stored: string): { dialCode: string; number: string } 
   if (match) {
     return { dialCode: match.dialCode, number: stored.slice(match.dialCode.length) };
   }
-  return { dialCode: DEFAULT_COUNTRY_DIAL_CODE, number: stored };
+  return { dialCode: "", number: stored };
 }
 
 function isWeightsItem(itemKey: string): boolean {
@@ -99,14 +99,14 @@ const initialForm: FormState = {
   departureDate: "",
   accommodation: "",
   email: "",
-  phoneDialCode: DEFAULT_COUNTRY_DIAL_CODE,
+  phoneDialCode: "",
   phoneNumber: "",
-  whatsappDialCode: DEFAULT_COUNTRY_DIAL_CODE,
+  whatsappDialCode: "",
   whatsappNumber: "",
   ecName: "",
-  ecPhoneDialCode: DEFAULT_COUNTRY_DIAL_CODE,
+  ecPhoneDialCode: "",
   ecPhoneNumber: "",
-  ecWhatsappDialCode: DEFAULT_COUNTRY_DIAL_CODE,
+  ecWhatsappDialCode: "",
   ecWhatsappNumber: "",
   ecEmail: "",
   ecRelationship: "",
@@ -327,12 +327,16 @@ export function RegistrationWizard({
       if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
         e.push("A valid email address is required.");
       }
+      if (form.phoneNumber.trim() && !form.phoneDialCode) e.push("Please select a country code for your phone number.");
       if (!form.whatsappNumber.trim()) e.push("A WhatsApp number is required.");
+      else if (!form.whatsappDialCode) e.push("Please select a country code for your WhatsApp number.");
     }
     if (n === 4) {
       if (!form.ecName.trim()) e.push("Emergency contact name is required.");
       if (!form.ecPhoneNumber.trim()) e.push("Emergency contact phone is required.");
+      else if (!form.ecPhoneDialCode) e.push("Please select a country code for the emergency contact phone.");
       if (!form.ecWhatsappNumber.trim()) e.push("Emergency contact WhatsApp is required.");
+      else if (!form.ecWhatsappDialCode) e.push("Please select a country code for the emergency contact WhatsApp.");
       if (!form.ecRelationship) e.push("Emergency contact relationship is required.");
     }
     if (n === 5) {

@@ -12,7 +12,7 @@ export const CERT_LEVEL_LABELS: Record<string, string> = {
 
 export const CERT_LEVEL_OPTIONS = Object.entries(CERT_LEVEL_LABELS);
 
-export const RELATIONSHIP_OPTIONS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Other"];
+export const RELATIONSHIP_OPTIONS = ["Spouse", "Partner", "Parent", "Sibling", "Child", "Friend", "Other"];
 
 // Duplicated from pricing.ts's own copy (that file is server-only, so a
 // client component can't import it directly) — pure string logic, no
