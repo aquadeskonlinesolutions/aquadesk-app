@@ -67,6 +67,19 @@ export async function saveDiverProfile(
   const birthday = fields.birthday.trim();
   const birthdayProblem = birthdayError(birthday);
   if (birthdayProblem) return { error: birthdayProblem };
+  // Last Dive Date: "" (clear) or a real YYYY-MM-DD calendar date — no
+  // Feb 30, no free text. Same calendar check as birthdayError.
+  if (fields.lastDiveDate) {
+    if (typeof fields.lastDiveDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(fields.lastDiveDate)) {
+      return { error: "Enter a valid last dive date." };
+    }
+    const [y, m, d] = fields.lastDiveDate.split("-").map(Number);
+    const check = new Date(Date.UTC(2000, m - 1, d));
+    check.setUTCFullYear(y);
+    if (y < 1 || check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) {
+      return { error: "Enter a valid last dive date." };
+    }
+  }
   // "Today" is the Asia/Manila date, so a dive earlier today counts even
   // between 00:00 and 08:00 Manila.
   if (fields.lastDiveDate && fields.lastDiveDate > manilaTodayStr()) {
