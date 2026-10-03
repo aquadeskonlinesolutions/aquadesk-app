@@ -178,7 +178,7 @@ export function BillSummary({
           )}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 border-t border-gray-200 pt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 border-t border-gray-200 pt-4">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Cash (PHP)</label>
             {num(input.cashAmount, (v) => update({ cashAmount: v }), "w-full")}

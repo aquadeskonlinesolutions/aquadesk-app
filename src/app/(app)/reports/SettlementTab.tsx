@@ -144,7 +144,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
   const hasRows = settlement.rows.length > 0;
 
   return (
-    <div className="grid gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-none gap-5">
       <div className="print:hidden bg-white border border-gray-200 rounded-2xl shadow-sm">
         <div className="px-5 py-4 border-b border-gray-200 flex items-start justify-between gap-4 flex-wrap">
           <div>

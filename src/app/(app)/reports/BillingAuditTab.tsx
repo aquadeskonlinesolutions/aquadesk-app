@@ -240,7 +240,7 @@ export function BillingAuditTab({ data }: { data: BillingAuditData }) {
   }
 
   return (
-    <div className="print:hidden grid gap-5">
+    <div className="print:hidden grid grid-cols-1 lg:grid-cols-none gap-5">
       <div className="text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
         Billing Audit gives you a complete invoice history and flags any bill that was closed more than once — a
         sign that charges may have changed after payment was collected.

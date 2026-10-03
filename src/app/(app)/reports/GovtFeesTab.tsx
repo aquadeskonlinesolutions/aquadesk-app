@@ -109,7 +109,7 @@ export function GovtFeesTab({
   const grandTotal = savedTotal + draftTotal;
 
   return (
-    <div className="grid gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-none gap-5">
       <div className="text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
         Log the government fees your dive center owes for the selected period — separate from what divers are
         charged.

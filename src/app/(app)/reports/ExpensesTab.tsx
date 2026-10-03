@@ -264,7 +264,7 @@ export function ExpensesTab({
   const estimatedAmount = form ? parseFloat(form.amount) || 0 : 0;
 
   return (
-    <div className="grid gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-none gap-5">
       <div className="text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
         Log dive center expenses outside of diver fees — fuel, maintenance, supplies, and more. Pick a category
         so spending stays easy to analyze, or use &quot;+ Add Category&quot; to create a new one for this dive

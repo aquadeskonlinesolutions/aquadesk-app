@@ -692,7 +692,7 @@ export function StaffTab({ data, refreshOverview }: { data: StaffActivityData; r
   const [educatorRows, setEducatorRows] = useState<EditableEducatorRow[]>(() => withEditable(data.educatorRows));
 
   return (
-    <div className="grid gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-none gap-5">
       <div className="text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
         Staff Activity Summary is a reference for commissions. Commission and Additional Rate are both entered by
         hand — AquaDesk only tallies the divers, dives, and rate paid.

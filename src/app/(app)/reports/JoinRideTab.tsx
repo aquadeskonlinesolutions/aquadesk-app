@@ -305,7 +305,7 @@ export function JoinRideTab({
 
   return (
     <div>
-      <div className="print:hidden grid gap-5">
+      <div className="print:hidden grid grid-cols-1 lg:grid-cols-none gap-5">
         <div className="text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
           Join ride rate: {peso(data.joinRideRatePerDiverPerDive)} per diver per dive (set in Settings &gt;
           Pricing &amp; Rates). Records are saved per trip/day, then statements can be grouped by company and

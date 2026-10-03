@@ -217,7 +217,7 @@ export function RentalGearsTab({
   const estimatedBalance = form ? (parseInt(form.quantity, 10) || 0) * (parseFloat(form.rate) || 0) : 0;
 
   return (
-    <div className="grid gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-none gap-5">
       <div className="text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
         Rental Gears tracks tanks, equipment, and peripherals rented between dive centers. Use To Collect /
         Collected for money in, and To Pay / Paid for money out.
