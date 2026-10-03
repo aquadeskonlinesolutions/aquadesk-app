@@ -67,6 +67,11 @@ export async function saveDiverProfile(
   const birthday = fields.birthday.trim();
   const birthdayProblem = birthdayError(birthday);
   if (birthdayProblem) return { error: birthdayProblem };
+  // "Today" is the Asia/Manila date, so a dive earlier today counts even
+  // between 00:00 and 08:00 Manila.
+  if (fields.lastDiveDate && fields.lastDiveDate > manilaTodayStr()) {
+    return { error: "Last dive date can't be in the future." };
+  }
 
   // Registration also stores two values derived from the birthday:
   // divers.age (shown on the staff crew page) and divers.is_minor (Minor

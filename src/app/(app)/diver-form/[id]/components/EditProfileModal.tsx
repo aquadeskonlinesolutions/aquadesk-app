@@ -52,6 +52,10 @@ export function EditProfileModal({
       setError("Last dive date is required for certified divers.");
       return;
     }
+    if (form.lastDiveDate && form.lastDiveDate > manilaTodayStr()) {
+      setError("Last dive date can't be in the future.");
+      return;
+    }
     const birthdayProblem = birthdayError(form.birthday);
     if (birthdayProblem) {
       setError(birthdayProblem);
@@ -174,7 +178,7 @@ export function EditProfileModal({
               </label>
               <input
                 type="date"
-                max={new Date().toISOString().slice(0, 10)}
+                max={manilaTodayStr()}
                 value={form.lastDiveDate}
                 onChange={(e) => setForm({ ...form, lastDiveDate: e.target.value })}
                 className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
