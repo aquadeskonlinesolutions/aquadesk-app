@@ -174,17 +174,23 @@ export function InvoicePanel({
               {num(payment.card_amount) > 0 && (
                 <tr className="border-b border-gray-100">
                   <td className="px-3 py-2">
-                    Card{num(payment.card_surcharge_amount) > 0 ? ` (incl. surcharge ${peso(num(payment.card_surcharge_amount))})` : ""}
+                    Card
                   </td>
-                  <td className="px-3 py-2 text-right">{peso(num(payment.card_amount))}</td>
+                  <td className="px-3 py-2 text-right">
+                    {peso(num(payment.card_amount))}
+                    {num(payment.card_surcharge_amount) > 0 ? ` + surcharge ${peso(num(payment.card_surcharge_amount))}` : ""}
+                  </td>
                 </tr>
               )}
               {num(payment.online_amount) > 0 && (
                 <tr className="border-b border-gray-100">
                   <td className="px-3 py-2">
-                    Online{num(payment.online_surcharge_amount) > 0 ? ` (incl. surcharge ${peso(num(payment.online_surcharge_amount))})` : ""}
+                    Online
                   </td>
-                  <td className="px-3 py-2 text-right">{peso(num(payment.online_amount))}</td>
+                  <td className="px-3 py-2 text-right">
+                    {peso(num(payment.online_amount))}
+                    {num(payment.online_surcharge_amount) > 0 ? ` + surcharge ${peso(num(payment.online_surcharge_amount))}` : ""}
+                  </td>
                 </tr>
               )}
               {num(payment.excess_amount) > 0 && (

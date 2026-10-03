@@ -56,8 +56,10 @@ export function computePaymentBreakdown(
   const cardSurchargeAmount = input.cardAmount * cardSurchargeRate;
   const onlineSurchargeAmount = input.onlineAmount * onlineSurchargeRate;
   const totalSurcharge = cardSurchargeAmount + onlineSurchargeAmount;
-  const totalTendered =
-    input.cashAmount + cashForeignPHP + input.cardAmount + cardSurchargeAmount + input.onlineAmount + onlineSurchargeAmount;
+  // Only what pays the bill counts against it: card/online amounts are
+  // entered before surcharge, and the surcharge is charged on top — kept
+  // separate (totalSurcharge), never revenue and never excess.
+  const totalTendered = input.cashAmount + cashForeignPHP + input.cardAmount + input.onlineAmount;
   const cappedOwed = Math.max(0, amountOwed);
   const totalCollected = Math.min(totalTendered, cappedOwed);
   // What was physically handed over beyond what's billed — real money, but
