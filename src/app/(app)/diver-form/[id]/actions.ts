@@ -908,17 +908,154 @@ export async function voidVisit(diverId: string, visitId: string): Promise<{ err
   return {};
 }
 
+// ── Server-side payment validation (shared by Save and Checkout) ────────
+//
+// Nothing money-related sent by the browser is trusted as-is: amounts and
+// discount must be numbers, non-negative, at most 2 decimals and within
+// what payments' numeric(12,2) columns hold; the exchange rate likewise
+// (6 decimals, numeric(12,6)). The discount can't exceed the bill's
+// subtotal (MK, 2026-10-03: no other discount rule or role limit). Any
+// typed exchange rate is accepted (MK's call) but one that differs from
+// the stored rate is recorded via log_payment_event (migration 052).
+
+const MAX_MONEY = 9_999_999_999.99;
+const MAX_RATE = 999_999.999999;
+
+function hasAtMostDecimals(value: number, places: number): boolean {
+  const f = 10 ** places;
+  return Math.abs(value * f - Math.round(value * f)) < 1e-6;
+}
+
+function paymentInputError(input: PaymentInput, subtotal: number): string | null {
+  const money: [string, unknown][] = [
+    ["Cash", input.cashAmount],
+    ["Card", input.cardAmount],
+    ["Online", input.onlineAmount],
+    ["Foreign cash amount", input.cashAmountForeign],
+    ["Discount", input.discount],
+  ];
+  for (const [label, value] of money) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return `${label} must be a number.`;
+    if (value < 0) return `${label} can't be negative.`;
+    if (!hasAtMostDecimals(value, 2)) return `${label} can have at most 2 decimal places.`;
+    if (value > MAX_MONEY) return `${label} is too large.`;
+  }
+  const rate = input.cashExchangeRate;
+  if (typeof rate !== "number" || !Number.isFinite(rate)) return "Exchange rate must be a number.";
+  if (rate < 0) return "Exchange rate can't be negative.";
+  if (!hasAtMostDecimals(rate, 6)) return "Exchange rate can have at most 6 decimal places.";
+  if (rate > MAX_RATE) return "Exchange rate is too large.";
+  if (Math.round(input.discount * 100) > Math.round(subtotal * 100)) {
+    return `Discount can't be more than the bill's subtotal (₱${subtotal.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`;
+  }
+  return null;
+}
+
+async function logPaymentEvent(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  visitId: string,
+  action: "payment_rejected" | "payment_rate_override",
+  notes: string,
+): Promise<string | null> {
+  const { error } = await supabase.rpc("log_payment_event", { p_visit_id: visitId, p_action: action, p_notes: notes });
+  return error ? error.message : null;
+}
+
+// Records a foreign-cash rate that differs from the dive center's stored
+// rate for that currency — only when it's newly entered (not on every
+// re-save of an already-recorded rate). Returns an error message if the
+// audit entry could not be written, so the payment isn't saved unrecorded.
+async function recordRateOverride(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  visitId: string,
+  input: PaymentInput,
+  storedCurrencies: { code: string; rateToPhp: number }[],
+): Promise<string | null> {
+  if (!(input.cashAmountForeign > 0) || !input.cashCurrencyCode) return null;
+  const stored = storedCurrencies.find((c) => c.code === input.cashCurrencyCode);
+  if (stored && Math.abs(stored.rateToPhp - input.cashExchangeRate) < 1e-9) return null;
+  const { data: previous } = await supabase
+    .from("payments")
+    .select("cash_currency_code, cash_exchange_rate")
+    .eq("visit_id", visitId)
+    .maybeSingle();
+  if (
+    previous &&
+    previous.cash_currency_code === input.cashCurrencyCode &&
+    Math.abs(Number(previous.cash_exchange_rate) - input.cashExchangeRate) < 1e-9
+  ) {
+    return null;
+  }
+  return logPaymentEvent(
+    supabase,
+    visitId,
+    "payment_rate_override",
+    `${input.cashCurrencyCode} rate ${input.cashExchangeRate} entered (stored rate: ${stored ? stored.rateToPhp : "none"}) for ${input.cashAmountForeign} ${input.cashCurrencyCode}.`,
+  );
+}
+
 // ── Bill summary / payment (kept open — not checkout) ───────────────────
 
 export async function savePaymentOnly(
   diverId: string,
   visitId: string,
   expectedUpdatedAt: string,
-  grandTotalPhp: number,
+  // The total the page was showing — only compared against the server's own
+  // total (stale-page check), never stored or used for the balance.
+  displayedGrandTotalPhp: number,
   input: PaymentInput,
 ): Promise<{ error?: string; conflict?: boolean; updatedAt?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
+
+  // This action only ever writes to `payments`, not `visits` — so unlike
+  // checkoutVisit (which already has a real visits.update to piggyback the
+  // check on), the optimistic-concurrency gate needs its own self-
+  // reassignment touch: no visits column actually changes, this exists
+  // purely to atomically enforce the version check and bump
+  // visits.updated_at (visits_set_updated_at trigger, migration 033) as the
+  // shared token both this action and checkoutVisit contend on.
+  const { data: visitRow } = await supabase
+    .from("visits")
+    .select("is_active")
+    .eq("id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .single();
+  if (!visitRow) return { error: "Visit not found." };
+
+  // Grand total from the visit's stored activities — exactly what the Bill
+  // Summary shows (sum of non-cancelled activities.total, which the
+  // compute_activity_total trigger maintains). Never the browser's figure.
+  const { data: activityRows, error: activitiesError } = await supabase
+    .from("activities")
+    .select("total, status")
+    .eq("visit_id", visitId)
+    .eq("dive_center_id", user.diveCenterId);
+  if (activitiesError) return { error: activitiesError.message };
+  const grandTotalPhp = (activityRows ?? [])
+    .filter((a) => a.status !== "cancelled")
+    .reduce((s, a) => s + Number(a.total), 0);
+
+  const inputProblem = paymentInputError(input, grandTotalPhp);
+  if (inputProblem) {
+    await logPaymentEvent(supabase, visitId, "payment_rejected", `Save refused: ${inputProblem}`);
+    return { error: inputProblem };
+  }
+  if (
+    typeof displayedGrandTotalPhp !== "number" ||
+    Math.round(displayedGrandTotalPhp * 100) !== Math.round(grandTotalPhp * 100)
+  ) {
+    await logPaymentEvent(
+      supabase,
+      visitId,
+      "payment_rejected",
+      `Save refused: page showed a total of ${displayedGrandTotalPhp}, server total is ${grandTotalPhp.toFixed(2)}.`,
+    );
+    return {
+      error: "This bill's totals changed since the page was loaded — reload the page before saving.",
+      conflict: true,
+    };
+  }
 
   if (input.onlineAmount > 0 && !input.onlineChannel) {
     // Grandfathers pre-existing online amounts recorded before this field
@@ -935,21 +1072,6 @@ export async function savePaymentOnly(
       return { error: "Select an Online channel before saving." };
     }
   }
-
-  // This action only ever writes to `payments`, not `visits` — so unlike
-  // checkoutVisit (which already has a real visits.update to piggyback the
-  // check on), the optimistic-concurrency gate needs its own self-
-  // reassignment touch: no visits column actually changes, this exists
-  // purely to atomically enforce the version check and bump
-  // visits.updated_at (visits_set_updated_at trigger, migration 033) as the
-  // shared token both this action and checkoutVisit contend on.
-  const { data: visitRow } = await supabase
-    .from("visits")
-    .select("is_active")
-    .eq("id", visitId)
-    .eq("dive_center_id", user.diveCenterId)
-    .single();
-  if (!visitRow) return { error: "Visit not found." };
 
   const { data: touched, error: touchError } = await supabase
     .from("visits")
@@ -981,6 +1103,9 @@ export async function savePaymentOnly(
   const amountOwed = grandTotalPhp - input.discount - depositsTotal;
   const breakdown = computePaymentBreakdown(input, config.cardSurchargeRate, config.onlineSurchargeRate, amountOwed);
   const balance = Math.max(0, amountOwed - breakdown.totalCollected);
+
+  const rateLogError = await recordRateOverride(supabase, visitId, input, config.currencies);
+  if (rateLogError) return { error: `Could not record the exchange rate in the audit log: ${rateLogError}` };
 
   let finalOnlineChannel: PaymentChannel | null = null;
   let finalCustomOnlineChannelId: string | null = null;
@@ -1158,20 +1283,6 @@ export async function checkoutVisit(
   const user = await getCurrentUser();
   const supabase = await createClient();
 
-  if (input.onlineAmount > 0 && !input.onlineChannel) {
-    // Same grandfathering as savePaymentOnly — an unchanged pre-existing
-    // online amount doesn't need a channel; only a new/changed one does.
-    const { data: existingForChannelCheck } = await supabase
-      .from("payments")
-      .select("online_amount")
-      .eq("visit_id", visitId)
-      .maybeSingle();
-    const unchanged = existingForChannelCheck && Number(existingForChannelCheck.online_amount) === input.onlineAmount;
-    if (!unchanged) {
-      return { error: "Select an Online channel before checking out." };
-    }
-  }
-
   const [{ data: diver }, { data: activitiesRaw }, { data: depositsRaw }] = await Promise.all([
     supabase.from("divers").select("first_name, last_name, nationality").eq("id", diverId).single(),
     supabase
@@ -1199,6 +1310,28 @@ export async function checkoutVisit(
   const grandTotal = completed.reduce((s, a) => s + (Number(a.dive_rate) + Number(a.fuel_surcharge) + Number(a.marine_tax) + Number(a.shark_fee) + Number(a.nitrox_fee) + Number(a.fifteen_l_fee) + Number(a.equipment_rental) + Number(a.addons)), 0);
   const depositsTotal = (depositsRaw ?? []).reduce((s, d) => s + Number(d.amount), 0);
 
+  // Same server-side validation as savePaymentOnly (grand total above is
+  // already computed here from the stored activities).
+  const inputProblem = paymentInputError(input, grandTotal);
+  if (inputProblem) {
+    await logPaymentEvent(supabase, visitId, "payment_rejected", `Checkout refused: ${inputProblem}`);
+    return { error: inputProblem };
+  }
+
+  if (input.onlineAmount > 0 && !input.onlineChannel) {
+    // Same grandfathering as savePaymentOnly — an unchanged pre-existing
+    // online amount doesn't need a channel; only a new/changed one does.
+    const { data: existingForChannelCheck } = await supabase
+      .from("payments")
+      .select("online_amount")
+      .eq("visit_id", visitId)
+      .maybeSingle();
+    const unchanged = existingForChannelCheck && Number(existingForChannelCheck.online_amount) === input.onlineAmount;
+    if (!unchanged) {
+      return { error: "Select an Online channel before checking out." };
+    }
+  }
+
   const config = await loadPaymentConfig(user.diveCenterId);
   const amountOwed = grandTotal - input.discount - depositsTotal;
   const breakdown = computePaymentBreakdown(input, config.cardSurchargeRate, config.onlineSurchargeRate, amountOwed);
@@ -1207,6 +1340,9 @@ export async function checkoutVisit(
   if (balance > 0.01) {
     return { error: `Balance of ₱${Math.round(balance).toLocaleString()} still due — collect full payment before checkout.` };
   }
+
+  const rateLogError = await recordRateOverride(supabase, visitId, input, config.currencies);
+  if (rateLogError) return { error: `Could not record the exchange rate in the audit log: ${rateLogError}` };
 
   // Optimistic-concurrency check: this WHERE clause only matches if nobody
   // else has changed the visit since expectedUpdatedAt was loaded (the
