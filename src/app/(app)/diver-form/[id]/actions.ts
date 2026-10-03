@@ -1392,12 +1392,11 @@ export async function getInvoiceForVisit(invoiceId: string) {
 
 // ── Bill unlock ──────────────────────────────────────────────────────────
 //
-// Verifies against the already-shipped verify_billing_unlock RPC (same
-// pattern as settings/staff-access/actions.ts and settings/pricing/
-// actions.ts) — never a plaintext password comparison, which is the real
-// security bug the blueprint flagged in the live app. On success, writes an
-// audit_logs row with action 'bill_unlocked', exactly what Billing Audit's
-// Bill Unlock Log already reads.
+// Goes through the unlock_bill RPC (migration 048): the billing password is
+// checked server-side with the same wrong-attempt lockout as Cancel Deposit
+// (5 tries / 30 minutes, one shared counter per user), and the visit reopen
+// + 'bill_unlocked' audit_logs row (what Billing Audit's Bill Unlock Log
+// reads) happen in the same transaction.
 export async function unlockBill(
   diverId: string,
   visitId: string,
@@ -1406,29 +1405,17 @@ export async function unlockBill(
   const user = await getCurrentUser();
   const supabase = await createClient();
 
-  const { data: verified, error: verifyError } = await supabase.rpc("verify_billing_unlock", {
-    p_dive_center_id: user.diveCenterId,
-    p_attempt: passwordAttempt,
-  });
-  if (verifyError) return { error: verifyError.message };
-  if (!verified) return { error: "Incorrect billing password." };
-
   const { data: diver } = await supabase.from("divers").select("first_name, last_name").eq("id", diverId).maybeSingle();
   const diverName = diver ? `${diver.first_name} ${diver.last_name}` : "Diver";
 
-  const { error: visitError } = await supabase
-    .from("visits")
-    .update({ is_paid: false, is_active: true, visit_status: "open" })
-    .eq("id", visitId)
-    .eq("dive_center_id", user.diveCenterId);
-  if (visitError) return { error: visitError.message };
-
-  const { error: logError } = await supabase.rpc("log_bill_unlock", {
-    p_dive_center_id: user.diveCenterId,
+  const { data, error } = await supabase.rpc("unlock_bill", {
     p_visit_id: visitId,
+    p_password: passwordAttempt,
     p_notes: `${diverName} — bill reopened for edits by ${user.fullName}`,
   });
-  if (logError) return { error: logError.message };
+  if (error) return { error: error.message };
+  const result = data as { ok: boolean; error?: string };
+  if (!result?.ok) return { error: result?.error ?? "Could not unlock this bill." };
 
   revalidatePath(`/diver-form/${diverId}`);
   revalidatePath("/reports");
