@@ -96,6 +96,11 @@ export type BusinessSummary = {
   rentalExpense: number;
   joinExpense: number;
   commissionsPaid: number;
+  // Cancelled deposits (migration 047), by cancellation date. Cash basis:
+  // the deposit already counted in Money In on the day it was received, so
+  // the refund is Money Out now and the forfeited part is NOT added again.
+  depositRefunds: number;
+  forfeitedDeposits: number;
   netProfit: number;
   notYetSettled: number;
   openDiverBills: number;
@@ -117,6 +122,19 @@ export type OverviewData = {
   // the actually-useful question: over how many days did this happen.
   daysServed: number;
   summary: BusinessSummary;
+  cancelledDeposits: CancelledDepositRow[];
+};
+
+export type CancelledDepositRow = {
+  depositDate: string;
+  cancelledDate: string;
+  diverName: string;
+  amount: number;
+  refundAmount: number;
+  forfeitedAmount: number;
+  reason: string;
+  // Received before the selected period — its Money In was counted then.
+  receivedBeforePeriod: boolean;
 };
 
 export async function loadOverviewData(
@@ -137,6 +155,7 @@ export async function loadOverviewData(
     { data: commissionRecords },
     { data: expensesInRange },
     { data: govtFeesInRange },
+    { data: cancelledInRange },
   ] = await Promise.all([
     supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
     supabase
@@ -194,6 +213,16 @@ export async function loadOverviewData(
       .eq("dive_center_id", diveCenterId)
       .gte("date", dateFrom)
       .lte("date", dateTo),
+    // Deposits cancelled in range (cancelled_date is the Manila calendar
+    // day), wherever they were originally received.
+    supabase
+      .from("deposits")
+      .select("deposit_date, cancelled_date, diver_id, amount, refund_amount, forfeited_amount, cancel_reason")
+      .eq("dive_center_id", diveCenterId)
+      .eq("status", "cancelled")
+      .gte("cancelled_date", dateFrom)
+      .lte("cancelled_date", dateTo)
+      .order("cancelled_date", { ascending: true }),
   ]);
 
   // ── Served/completed counts ────────────────────────────────────────────
@@ -240,8 +269,8 @@ export async function loadOverviewData(
         .in("visit_id", openVisitIds),
       // Not date-bound (unlike depositsInRange above) — a deposit taken
       // last month against a bill that's still open today still reduces
-      // what's actually still owed right now.
-      supabase.from("deposits").select("visit_id, amount").in("visit_id", openVisitIds),
+      // what's actually still owed right now. A cancelled one no longer does.
+      supabase.from("deposits").select("visit_id, amount").in("visit_id", openVisitIds).eq("status", "active"),
     ]);
     openDiverBills = openVisitIds.reduce((sum, visitId) => {
       const total = (openActivities ?? [])
@@ -319,8 +348,30 @@ export async function loadOverviewData(
   // ── Government fees ─────────────────────────────────────────────────────
   const govtFeesTotal = (govtFeesInRange ?? []).reduce((s, r) => s + safeNum(r.total), 0);
 
+  // ── Cancelled deposits ──────────────────────────────────────────────────
+  const cancelled = cancelledInRange ?? [];
+  const depositRefunds = cancelled.reduce((s, d) => s + safeNum(d.refund_amount), 0);
+  const forfeitedDeposits = cancelled.reduce((s, d) => s + safeNum(d.forfeited_amount), 0);
+  const cancelledDiverIds = [...new Set(cancelled.map((d) => d.diver_id))];
+  const { data: cancelledDivers } = cancelledDiverIds.length
+    ? await supabase.from("divers").select("id, first_name, last_name").in("id", cancelledDiverIds)
+    : { data: [] as { id: string; first_name: string; last_name: string }[] };
+  const cancelledDiverMap = new Map(
+    (cancelledDivers ?? []).map((d) => [d.id, `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim() || "—"]),
+  );
+  const cancelledDeposits: CancelledDepositRow[] = cancelled.map((d) => ({
+    depositDate: String(d.deposit_date),
+    cancelledDate: String(d.cancelled_date),
+    diverName: cancelledDiverMap.get(d.diver_id) ?? "—",
+    amount: safeNum(d.amount),
+    refundAmount: safeNum(d.refund_amount),
+    forfeitedAmount: safeNum(d.forfeited_amount),
+    reason: d.cancel_reason ?? "",
+    receivedBeforePeriod: String(d.deposit_date) < dateFrom,
+  }));
+
   const moneyIn = collectedFromDivers + depositsCollected + rentalIncome + joinIncome;
-  const moneyOut = govtFeesTotal + expenseTotal + rentalExpense + joinExpense + commissionsPaid;
+  const moneyOut = govtFeesTotal + expenseTotal + rentalExpense + joinExpense + commissionsPaid + depositRefunds;
   const netProfit = moneyIn - moneyOut;
   const notYetSettled =
     openDiverBills + rentalToCollect + rentalToPay + joinToCollect + joinToPay + unpaidCommissions;
@@ -342,6 +393,8 @@ export async function loadOverviewData(
       rentalExpense,
       joinExpense,
       commissionsPaid,
+      depositRefunds,
+      forfeitedDeposits,
       netProfit,
       notYetSettled,
       openDiverBills,
@@ -351,6 +404,7 @@ export async function loadOverviewData(
       joinToPay,
       unpaidCommissions,
     },
+    cancelledDeposits,
   };
 }
 
@@ -386,6 +440,7 @@ export async function loadMonthlyFinancials(diveCenterId: string, months = 12): 
     { data: commissionsRaw },
     { data: expensesRaw },
     { data: govtRaw },
+    { data: refundsRaw },
   ] = await Promise.all([
     supabase
       .from("payments")
@@ -434,6 +489,16 @@ export async function loadMonthlyFinancials(diveCenterId: string, months = 12): 
       .eq("dive_center_id", diveCenterId)
       .gte("date", rangeFrom)
       .lte("date", rangeTo),
+    // Deposit refunds are money out in the month the deposit was cancelled
+    // (same as loadOverviewData's moneyOut); the deposit itself stays in
+    // revenue for the month it was received.
+    supabase
+      .from("deposits")
+      .select("cancelled_date, refund_amount")
+      .eq("dive_center_id", diveCenterId)
+      .eq("status", "cancelled")
+      .gte("cancelled_date", rangeFrom)
+      .lte("cancelled_date", rangeTo),
   ]);
 
   const revenueByMonth = new Map<string, number>();
@@ -468,6 +533,9 @@ export async function loadMonthlyFinancials(diveCenterId: string, months = 12): 
   });
   (govtRaw ?? []).forEach((r) => {
     add(expensesByMonth, r.date.slice(0, 7), safeNum(r.total));
+  });
+  (refundsRaw ?? []).forEach((r) => {
+    add(expensesByMonth, String(r.cancelled_date).slice(0, 7), safeNum(r.refund_amount));
   });
 
   return monthKeys.map((month) => {
@@ -1118,6 +1186,22 @@ export type SettlementRow = {
   totalCollected: number;
   excessAmount: number;
   isDeposit: boolean;
+  // Deposit cancellation (migration 047). On the day a deposit was
+  // received its row keeps its original figures and just carries this
+  // annotation. On the day it was cancelled a separate isDepositRefund row
+  // shows the refund as a negative amount in the payout method's column
+  // (so that day's totals reconcile to the cash drawer); the forfeited
+  // part moves no cash and is noted only.
+  isDepositRefund?: boolean;
+  cancellation?: {
+    depositDate: string;
+    cancelledDate: string;
+    amount: number;
+    refundAmount: number;
+    forfeitedAmount: number;
+    refundMethodLabel: string | null;
+    reason: string;
+  };
 };
 
 export type SettlementData = {
@@ -1126,11 +1210,48 @@ export type SettlementData = {
   rows: SettlementRow[];
 };
 
+function depositCancellation(
+  d: {
+    status: string;
+    deposit_date: string;
+    cancelled_date: string | null;
+    amount: number;
+    refund_amount: number | null;
+    forfeited_amount: number | null;
+    refund_method: "cash" | "card" | "online" | null;
+    refund_channel: PaymentChannel | null;
+    refund_custom_channel_id: string | null;
+    cancel_reason: string | null;
+  },
+  customChannelLabelMap: Map<string, string>,
+): SettlementRow["cancellation"] {
+  if (d.status !== "cancelled" || !d.cancelled_date) return undefined;
+  const channelLabel = resolveChannelLabel(d.refund_channel, d.refund_custom_channel_id, customChannelLabelMap);
+  return {
+    depositDate: String(d.deposit_date),
+    cancelledDate: String(d.cancelled_date),
+    amount: safeNum(d.amount),
+    refundAmount: safeNum(d.refund_amount),
+    forfeitedAmount: safeNum(d.forfeited_amount),
+    refundMethodLabel:
+      d.refund_method === "cash"
+        ? "Cash"
+        : d.refund_method === "card"
+          ? "Card"
+          : d.refund_method === "online"
+            ? `Online${channelLabel ? ` (${channelLabel})` : ""}`
+            : null,
+    reason: d.cancel_reason ?? "",
+  };
+}
+
 export async function loadSettlementData(diveCenterId: string, date: string): Promise<SettlementData> {
   const supabase = await createClient();
   const { startIso: dayStart, endIso: dayEnd } = manilaDayBoundsUtcIso(date);
 
-  const [{ data: dc }, { data: paymentsRaw }, { data: depositsRaw }] = await Promise.all([
+  const DEPOSIT_COLUMNS =
+    "deposit_date, diver_id, amount, method, channel, custom_channel_id, received_by, status, cancelled_date, cancelled_by, cancel_reason, refund_amount, forfeited_amount, refund_method, refund_channel, refund_custom_channel_id";
+  const [{ data: dc }, { data: paymentsRaw }, { data: depositsRaw }, { data: cancelledRaw }] = await Promise.all([
     supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
     supabase
       .from("payments")
@@ -1143,22 +1264,38 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
       .order("paid_at", { ascending: true }),
     supabase
       .from("deposits")
-      .select("deposit_date, diver_id, amount, method, channel, custom_channel_id, received_by")
+      .select(DEPOSIT_COLUMNS)
       .eq("dive_center_id", diveCenterId)
       .eq("deposit_date", date)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("deposits")
+      .select(DEPOSIT_COLUMNS)
+      .eq("dive_center_id", diveCenterId)
+      .eq("status", "cancelled")
+      .eq("cancelled_date", date)
+      .order("cancelled_at", { ascending: true }),
   ]);
 
   const payments = paymentsRaw ?? [];
   const deposits = depositsRaw ?? [];
+  const cancelledToday = cancelledRaw ?? [];
 
-  const diverIds = [...new Set([...payments.map((p) => p.diver_id), ...deposits.map((d) => d.diver_id)].filter(Boolean))];
+  const diverIds = [
+    ...new Set(
+      [...payments.map((p) => p.diver_id), ...deposits.map((d) => d.diver_id), ...cancelledToday.map((d) => d.diver_id)].filter(
+        Boolean,
+      ),
+    ),
+  ];
   const visitIds = [...new Set(payments.map((p) => p.visit_id).filter(Boolean))];
   const customChannelIds = [
     ...new Set(
-      [...payments.map((p) => p.custom_online_channel_id), ...deposits.map((d) => d.custom_channel_id)].filter(
-        (id): id is string => !!id,
-      ),
+      [
+        ...payments.map((p) => p.custom_online_channel_id),
+        ...deposits.map((d) => d.custom_channel_id),
+        ...[...deposits, ...cancelledToday].map((d) => d.refund_custom_channel_id),
+      ].filter((id): id is string => !!id),
     ),
   ];
 
@@ -1183,7 +1320,13 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
   );
   const customChannelLabelMap = new Map((customChannelsData ?? []).map((c) => [c.id, c.label]));
 
-  const senderIds = [...new Set((invoiceEmails ?? []).map((ie) => ie.sent_by).filter((id): id is string => !!id))];
+  const senderIds = [
+    ...new Set(
+      [...(invoiceEmails ?? []).map((ie) => ie.sent_by), ...cancelledToday.map((d) => d.cancelled_by)].filter(
+        (id): id is string => !!id,
+      ),
+    ),
+  ];
   const { data: usersData } = senderIds.length
     ? await supabase.from("users").select("id, full_name").in("id", senderIds)
     : { data: [] as { id: string; full_name: string }[] };
@@ -1251,9 +1394,37 @@ export async function loadSettlementData(diveCenterId: string, date: string): Pr
     totalCollected: 0,
     excessAmount: 0,
     isDeposit: true,
+    cancellation: depositCancellation(d, customChannelLabelMap),
   }));
 
-  const rows = [...paymentRows, ...depositRows].sort((a, b) => a.date.localeCompare(b.date));
+  const refundRows: SettlementRow[] = cancelledToday.map((d) => {
+    const refund = safeNum(d.refund_amount);
+    return {
+      date,
+      diverId: d.diver_id,
+      diverName: diverMap.get(d.diver_id) ?? "—",
+      closedBy: (d.cancelled_by && userMap.get(d.cancelled_by)) || "—",
+      cashPHP: d.refund_method === "cash" ? -refund : 0,
+      foreign: "",
+      foreignPHP: 0,
+      card: d.refund_method === "card" ? -refund : 0,
+      cardSurcharge: 0,
+      online: d.refund_method === "online" ? -refund : 0,
+      onlineChannel: d.refund_method === "online" ? d.refund_channel : null,
+      onlineChannelLabel:
+        d.refund_method === "online"
+          ? resolveChannelLabel(d.refund_channel, d.refund_custom_channel_id, customChannelLabelMap)
+          : null,
+      onlineSurcharge: 0,
+      totalCollected: 0,
+      excessAmount: 0,
+      isDeposit: false,
+      isDepositRefund: true,
+      cancellation: depositCancellation(d, customChannelLabelMap),
+    };
+  });
+
+  const rows = [...paymentRows, ...depositRows, ...refundRows].sort((a, b) => a.date.localeCompare(b.date));
 
   return {
     diveCenterName: dc?.name ?? "Dive Center",
@@ -1292,7 +1463,7 @@ export async function loadDiverPaymentsExport(
   const supabase = await createClient();
   const { startIso, endIso } = { startIso: manilaDayBoundsUtcIso(dateFrom).startIso, endIso: manilaDayBoundsUtcIso(dateTo).endIso };
 
-  const [{ data: paymentsRaw }, { data: depositsRaw }] = await Promise.all([
+  const [{ data: paymentsRaw }, { data: depositsRaw }, { data: refundsRaw }] = await Promise.all([
     supabase
       .from("payments")
       .select("paid_at, diver_id, cash_amount, card_amount, online_amount, online_channel, custom_online_channel_id, notes")
@@ -1302,17 +1473,34 @@ export async function loadDiverPaymentsExport(
       .order("paid_at", { ascending: true }),
     supabase
       .from("deposits")
-      .select("deposit_date, diver_id, amount, method, channel, custom_channel_id")
+      .select("deposit_date, diver_id, amount, method, channel, custom_channel_id, status, cancelled_date")
       .eq("dive_center_id", diveCenterId)
       .gte("deposit_date", dateFrom)
       .lte("deposit_date", dateTo)
       .order("deposit_date", { ascending: true }),
+    // Deposit refunds are a cash outflow on the cancellation day (Manila),
+    // exported as negative rows; zero-refund cancellations move no cash.
+    supabase
+      .from("deposits")
+      .select("deposit_date, cancelled_date, diver_id, refund_amount, forfeited_amount, refund_method, refund_channel, refund_custom_channel_id, cancel_reason")
+      .eq("dive_center_id", diveCenterId)
+      .eq("status", "cancelled")
+      .gt("refund_amount", 0)
+      .gte("cancelled_date", dateFrom)
+      .lte("cancelled_date", dateTo),
   ]);
 
   const payments = paymentsRaw ?? [];
   const deposits = depositsRaw ?? [];
+  const refunds = refundsRaw ?? [];
 
-  const diverIds = [...new Set([...payments.map((p) => p.diver_id), ...deposits.map((d) => d.diver_id)].filter(Boolean))];
+  const diverIds = [
+    ...new Set(
+      [...payments.map((p) => p.diver_id), ...deposits.map((d) => d.diver_id), ...refunds.map((d) => d.diver_id)].filter(
+        Boolean,
+      ),
+    ),
+  ];
   const { data: diversData } = diverIds.length
     ? await supabase.from("divers").select("id, first_name, last_name, trace_number").in("id", diverIds)
     : { data: [] as { id: string; first_name: string; last_name: string; trace_number: string | null }[] };
@@ -1323,9 +1511,11 @@ export async function loadDiverPaymentsExport(
 
   const customChannelIds = [
     ...new Set(
-      [...payments.map((p) => p.custom_online_channel_id), ...deposits.map((d) => d.custom_channel_id)].filter(
-        (id): id is string => !!id,
-      ),
+      [
+        ...payments.map((p) => p.custom_online_channel_id),
+        ...deposits.map((d) => d.custom_channel_id),
+        ...refunds.map((d) => d.refund_custom_channel_id),
+      ].filter((id): id is string => !!id),
     ),
   ];
   const { data: customChannelsData } = customChannelIds.length
@@ -1374,7 +1564,20 @@ export async function loadDiverPaymentsExport(
       amount: safeNum(d.amount),
       paymentMethod: method === "cash" ? "Cash" : method === "card" ? "Card" : "Online",
       paymentChannel: channelLabel(method, d.channel, d.custom_channel_id),
-      notes: "",
+      notes: d.status === "cancelled" && d.cancelled_date ? `Deposit — cancelled on ${d.cancelled_date}` : "",
+    });
+  });
+
+  refunds.forEach((d) => {
+    const method = d.refund_method as "cash" | "card" | "online";
+    rows.push({
+      date: String(d.cancelled_date),
+      traceNumber: traceMap.get(d.diver_id) ?? "",
+      diverName: diverMap.get(d.diver_id) ?? "Unknown Diver",
+      amount: -safeNum(d.refund_amount),
+      paymentMethod: method === "cash" ? "Cash" : method === "card" ? "Card" : "Online",
+      paymentChannel: channelLabel(method, d.refund_channel, d.refund_custom_channel_id),
+      notes: `Deposit refund — received ${d.deposit_date}; forfeited ${safeNum(d.forfeited_amount).toFixed(2)}; reason: ${d.cancel_reason ?? ""}`,
     });
   });
 

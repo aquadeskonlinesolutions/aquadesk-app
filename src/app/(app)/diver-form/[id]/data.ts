@@ -196,18 +196,34 @@ export type Deposit = {
   channelLabel: string | null;
   depositDate: string;
   receivedBy: string | null;
+  // Cancellation (migration 047) — a cancelled deposit stays on file, shown
+  // muted, and is excluded from the bill's Deposits Applied total.
+  status: "active" | "cancelled";
+  cancellation: {
+    cancelledDate: string;
+    reason: string;
+    refundAmount: number;
+    forfeitedAmount: number;
+    refundMethodLabel: string | null;
+  } | null;
 };
 
 export async function loadDeposits(visitId: string): Promise<Deposit[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("deposits")
-    .select("id, amount, method, channel, custom_channel_id, deposit_date, received_by")
+    .select(
+      "id, amount, method, channel, custom_channel_id, deposit_date, received_by, status, cancelled_date, cancel_reason, refund_amount, forfeited_amount, refund_method, refund_channel, refund_custom_channel_id",
+    )
     .eq("visit_id", visitId)
     .order("created_at", { ascending: false });
 
   const rows = data ?? [];
-  const customChannelIds = [...new Set(rows.map((d) => d.custom_channel_id).filter((id): id is string => !!id))];
+  const customChannelIds = [
+    ...new Set(
+      rows.flatMap((d) => [d.custom_channel_id, d.refund_custom_channel_id]).filter((id): id is string => !!id),
+    ),
+  ];
   const { data: customChannelsData } = customChannelIds.length
     ? await supabase.from("payment_channels").select("id, label").in("id", customChannelIds)
     : { data: [] as { id: string; label: string }[] };
@@ -220,7 +236,28 @@ export async function loadDeposits(visitId: string): Promise<Deposit[]> {
     channelLabel: resolveChannelLabel(d.channel, d.custom_channel_id, customChannelLabelMap),
     depositDate: d.deposit_date,
     receivedBy: d.received_by,
+    status: d.status === "cancelled" ? "cancelled" : "active",
+    cancellation:
+      d.status === "cancelled"
+        ? {
+            cancelledDate: d.cancelled_date,
+            reason: d.cancel_reason ?? "",
+            refundAmount: Number(d.refund_amount) || 0,
+            forfeitedAmount: Number(d.forfeited_amount) || 0,
+            refundMethodLabel: refundMethodLabel(
+              d.refund_method,
+              resolveChannelLabel(d.refund_channel, d.refund_custom_channel_id, customChannelLabelMap),
+            ),
+          }
+        : null,
   }));
+}
+
+function refundMethodLabel(method: string | null, channelLabel: string | null): string | null {
+  if (method === "cash") return "Cash";
+  if (method === "card") return "Card";
+  if (method === "online") return channelLabel ? `Online (${channelLabel})` : "Online";
+  return null;
 }
 
 export type ExistingPayment = {

@@ -606,7 +606,7 @@ async function loadPaymentChannels(
 ): Promise<PaymentChannels> {
   const { startIso, endIso } = manilaDayBoundsUtcIso(todayStr);
 
-  const [{ data: payments }, { data: deposits }] = await Promise.all([
+  const [{ data: payments }, { data: deposits }, { data: refunds }] = await Promise.all([
     supabase
       .from("payments")
       .select(
@@ -620,6 +620,15 @@ async function loadPaymentChannels(
       .select("amount, method")
       .eq("dive_center_id", diveCenterId)
       .eq("deposit_date", todayStr),
+    // Refunds of deposits cancelled today (migration 047) leave the drawer
+    // today, through whichever method they were paid out by — same as the
+    // Settlement report's refund rows.
+    supabase
+      .from("deposits")
+      .select("refund_amount, refund_method")
+      .eq("dive_center_id", diveCenterId)
+      .eq("status", "cancelled")
+      .eq("cancelled_date", todayStr),
   ]);
 
   const rows = payments ?? [];
@@ -644,9 +653,14 @@ async function loadPaymentChannels(
       .filter((d) => d.method === method)
       .reduce((s, d) => s + safeNum(d.amount), 0);
 
-  const totalCash = cash + depSum("cash");
-  const totalCard = card + depSum("card");
-  const totalOnline = online + depSum("online");
+  const refundSum = (method: string) =>
+    (refunds ?? [])
+      .filter((d) => d.refund_method === method)
+      .reduce((s, d) => s + safeNum(d.refund_amount), 0);
+
+  const totalCash = cash + depSum("cash") - refundSum("cash");
+  const totalCard = card + depSum("card") - refundSum("card");
+  const totalOnline = online + depSum("online") - refundSum("online");
   // Foreign cash/change handed over above what was billed — real money, but
   // deliberately excluded from cash/card/online/total above (those must
   // stay reconciled to actual revenue). Tracked as its own figure instead

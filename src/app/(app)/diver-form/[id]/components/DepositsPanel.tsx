@@ -5,9 +5,15 @@ import { addDeposit } from "../actions";
 import type { Deposit } from "../data";
 import { BASE_PAYMENT_CHANNELS, ADD_CHANNEL_VALUE } from "@/lib/payments";
 import type { CustomChannelOption } from "@/lib/paymentChannels";
+import { CancelDepositModal } from "./CancelDepositModal";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
+}
+
+// Refund/forfeited amounts can carry centavos — never round those away.
+function peso2(n: number): string {
+  return `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtDate(dateStr: string): string {
@@ -23,6 +29,7 @@ export function DepositsPanel({
   receivedByDisplay,
   customChannels,
   onAdded,
+  onCancelled,
 }: {
   diverId: string;
   visitId: string;
@@ -30,7 +37,9 @@ export function DepositsPanel({
   receivedByDisplay: string;
   customChannels: CustomChannelOption[];
   onAdded: (d: Deposit) => void;
+  onCancelled: (deposits: Deposit[], visitUpdatedAt: string | null) => void;
 }) {
+  const [cancelling, setCancelling] = useState<Deposit | null>(null);
   const [amount, setAmount] = useState("0");
   const [method, setMethod] = useState<"cash" | "card" | "online">("cash");
   // Holds a base channel key, "" (none chosen), `custom:<id>` (an existing
@@ -77,12 +86,14 @@ export function DepositsPanel({
       } else {
         const label = customChannels.find((c) => c.id === channelId)?.label ?? newChannelLabel;
         onAdded({
-          id: crypto.randomUUID(),
+          id: res.id ?? crypto.randomUUID(),
           amount: amt,
           method,
           channelLabel: method === "online" ? (channel === "custom" ? label : BASE_PAYMENT_CHANNELS.find(([k]) => k === channel)?.[1] || null) : null,
           depositDate: new Date().toISOString().slice(0, 10),
           receivedBy: receivedByDisplay,
+          status: "active",
+          cancellation: null,
         });
         setAmount("0");
         setChannelSelection("");
@@ -185,17 +196,62 @@ export function DepositsPanel({
         {deposits.length === 0 ? (
           <div className="text-center py-6 text-gray-400 text-sm">No deposits on file.</div>
         ) : (
-          deposits.map((d) => (
-            <div key={d.id} className="px-5 py-3 flex items-center justify-between">
-              <div className="text-sm text-gray-700">
-                {fmtDate(d.depositDate)} · {d.method}
-                {d.method === "online" && d.channelLabel ? ` (${d.channelLabel})` : ""} · {d.receivedBy || "—"}
+          deposits.map((d) =>
+            d.cancellation ? (
+              <div key={d.id} className="px-5 py-3 bg-gray-50">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-gray-500">
+                    <span className="mr-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700 align-middle">
+                      Cancelled
+                    </span>
+                    {fmtDate(d.depositDate)} · {d.method}
+                    {d.method === "online" && d.channelLabel ? ` (${d.channelLabel})` : ""} · {d.receivedBy || "—"}
+                  </div>
+                  <div className="text-sm font-semibold text-gray-500 line-through">{peso(d.amount)}</div>
+                </div>
+                <div className="text-sm text-gray-600 mt-1">
+                  Cancelled on {fmtDate(d.cancellation.cancelledDate)} · Refunded {peso2(d.cancellation.refundAmount)}
+                  {d.cancellation.refundAmount > 0 && d.cancellation.refundMethodLabel
+                    ? ` (${d.cancellation.refundMethodLabel})`
+                    : ""}{" "}
+                  · Forfeited {peso2(d.cancellation.forfeitedAmount)}
+                </div>
+                <div className="text-sm text-gray-600 mt-0.5 break-words">Reason: {d.cancellation.reason}</div>
               </div>
-              <div className="text-sm font-semibold text-navy">{peso(d.amount)}</div>
-            </div>
-          ))
+            ) : (
+              <div key={d.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                <div className="text-sm text-gray-700">
+                  {fmtDate(d.depositDate)} · {d.method}
+                  {d.method === "online" && d.channelLabel ? ` (${d.channelLabel})` : ""} · {d.receivedBy || "—"}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => setCancelling(d)}
+                    className="text-sm font-medium text-red hover:underline"
+                  >
+                    Cancel deposit
+                  </button>
+                  <div className="text-sm font-semibold text-navy">{peso(d.amount)}</div>
+                </div>
+              </div>
+            ),
+          )
         )}
       </div>
+
+      {cancelling && (
+        <CancelDepositModal
+          diverId={diverId}
+          visitId={visitId}
+          deposit={cancelling}
+          customChannels={customChannels}
+          onClose={() => setCancelling(null)}
+          onCancelled={(next, visitUpdatedAt) => {
+            setCancelling(null);
+            onCancelled(next, visitUpdatedAt);
+          }}
+        />
+      )}
     </div>
   );
 }

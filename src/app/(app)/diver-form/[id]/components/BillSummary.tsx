@@ -53,7 +53,7 @@ export function BillSummary({
   const showToast = useToast();
 
   const grandTotal = activities.filter((a) => a.status !== "cancelled").reduce((s, a) => s + a.total, 0);
-  const depositsTotal = deposits.reduce((s, d) => s + d.amount, 0);
+  const depositsTotal = deposits.filter((d) => d.status === "active").reduce((s, d) => s + d.amount, 0);
   const amountOwed = grandTotal - input.discount - depositsTotal;
   const breakdown = computePaymentBreakdown(input, paymentConfig.cardSurchargeRate, paymentConfig.onlineSurchargeRate, amountOwed);
   const balance = Math.max(0, amountOwed - breakdown.totalCollected);

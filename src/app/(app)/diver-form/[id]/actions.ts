@@ -17,7 +17,7 @@ import {
 import { computePaymentBreakdown, type PaymentInput } from "./billing";
 import type { PaymentChannel } from "@/lib/payments";
 import { resolveOnlineChannel } from "@/lib/paymentChannels";
-import { loadPaymentConfig, loadInvoiceForVisit } from "./data";
+import { loadPaymentConfig, loadInvoiceForVisit, loadDeposits, type Deposit } from "./data";
 import { buildInvoiceEmailHtml } from "./invoiceEmailHtml";
 import { getResendClient, RESEND_FROM_EMAIL } from "@/lib/email/resend";
 
@@ -851,6 +851,19 @@ export async function voidVisit(diverId: string, visitId: string): Promise<{ err
     return { error: "Can't void a visit that already has activities or a payment on file." };
   }
 
+  // Voiding hard-deletes the visit, which cascades to its deposits — a
+  // cancelled deposit is part of the money trail (migration 047) and must
+  // never disappear that way.
+  const { count: cancelledDepositCount, error: depositCheckError } = await supabase
+    .from("deposits")
+    .select("id", { count: "exact", head: true })
+    .eq("visit_id", visitId)
+    .eq("status", "cancelled");
+  if (depositCheckError) return { error: depositCheckError.message };
+  if ((cancelledDepositCount ?? 0) > 0) {
+    return { error: "Can't void this visit — it has a cancelled deposit on file, which must stay on record." };
+  }
+
   const { error } = await supabase
     .from("visits")
     .delete()
@@ -990,7 +1003,7 @@ export async function addDeposit(
   channelId: string | null,
   newChannelLabel: string | null,
   receivedBy: string,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; id?: string }> {
   if (!(amount > 0)) return { error: "Deposit amount must be greater than 0." };
   if (method === "online" && !channel) return { error: "Select an Online channel." };
 
@@ -1010,22 +1023,80 @@ export async function addDeposit(
     }
   }
 
-  const { error } = await supabase.from("deposits").insert({
-    dive_center_id: user.diveCenterId,
-    diver_id: diverId,
-    visit_id: visitId,
-    amount,
-    method,
-    channel: finalChannel,
-    custom_channel_id: finalCustomChannelId,
-    deposit_date: manilaTodayStr(),
-    received_by: receivedBy.trim() || null,
-    recorded_by_user_id: user.id,
-  });
+  // Returns the real row id — the panel previously keyed a just-added
+  // deposit by a client-generated UUID, which Cancel Deposit can't act on.
+  const { data: inserted, error } = await supabase
+    .from("deposits")
+    .insert({
+      dive_center_id: user.diveCenterId,
+      diver_id: diverId,
+      visit_id: visitId,
+      amount,
+      method,
+      channel: finalChannel,
+      custom_channel_id: finalCustomChannelId,
+      deposit_date: manilaTodayStr(),
+      received_by: receivedBy.trim() || null,
+      recorded_by_user_id: user.id,
+    })
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
   revalidatePath(`/diver-form/${diverId}`);
-  return {};
+  return { id: inserted.id };
+}
+
+// Soft-cancels a deposit via the cancel_deposit RPC (migration 047), which
+// does everything that matters server-side in one transaction: billing
+// password check (same hash as verify_billing_unlock) with wrong-attempt
+// rate limiting, tenant check, row lock against double-clicks, refund cap,
+// forfeited = amount − refund computed there (never taken from the client),
+// and the audit_logs entry. Only the requested refund value comes from here.
+export type CancelDepositInput = {
+  refundAmount: string;
+  reason: string;
+  password: string;
+  refundMethod: "cash" | "card" | "online" | null;
+  // A base PaymentChannel key, or "custom" with refundCustomChannelId.
+  refundChannel: string | null;
+  refundCustomChannelId: string | null;
+};
+
+export async function cancelDeposit(
+  diverId: string,
+  visitId: string,
+  depositId: string,
+  input: CancelDepositInput,
+): Promise<{ error?: string; deposits?: Deposit[]; visitUpdatedAt?: string | null }> {
+  const refund = input.refundAmount.trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(refund)) {
+    return { error: "Refund amount must be 0 or more, with at most 2 decimal places." };
+  }
+  if (!input.reason.trim()) return { error: "A cancellation reason is required." };
+  if (!input.password) return { error: "Enter the billing password." };
+
+  await getCurrentUser();
+  const supabase = await createClient();
+
+  const isRefund = Number(refund) > 0;
+  const { data, error } = await supabase.rpc("cancel_deposit", {
+    p_deposit_id: depositId,
+    p_refund_amount: refund,
+    p_reason: input.reason,
+    p_password: input.password,
+    p_refund_method: isRefund ? input.refundMethod : null,
+    p_refund_channel: isRefund && input.refundMethod === "online" ? input.refundChannel : null,
+    p_refund_custom_channel_id:
+      isRefund && input.refundMethod === "online" && input.refundChannel === "custom" ? input.refundCustomChannelId : null,
+  });
+  if (error) return { error: error.message };
+  const result = data as { ok: boolean; error?: string; visit_updated_at?: string | null };
+  if (!result?.ok) return { error: result?.error ?? "Could not cancel this deposit." };
+
+  revalidatePath(`/diver-form/${diverId}`);
+  revalidatePath("/reports");
+  return { deposits: await loadDeposits(visitId), visitUpdatedAt: result.visit_updated_at ?? null };
 }
 
 // ── Checkout ─────────────────────────────────────────────────────────────
@@ -1067,7 +1138,8 @@ export async function checkoutVisit(
         "date, dive_site, package_id, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, status",
       )
       .eq("visit_id", visitId),
-    supabase.from("deposits").select("amount").eq("visit_id", visitId),
+    // Cancelled deposits (migration 047) are no longer credited to the bill.
+    supabase.from("deposits").select("amount").eq("visit_id", visitId).eq("status", "active"),
   ]);
 
   if (!diver) return { error: "Diver not found." };

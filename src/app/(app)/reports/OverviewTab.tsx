@@ -1,4 +1,10 @@
-import type { OverviewData, MonthlyFinancials, MonthlyFunVsCourseRevenue, NationalityCount } from "./data";
+import type {
+  OverviewData,
+  MonthlyFinancials,
+  MonthlyFunVsCourseRevenue,
+  NationalityCount,
+  CancelledDepositRow,
+} from "./data";
 import { EXCESS_LABEL, EXCESS_HINT } from "@/lib/payments";
 import { MonthlyBarChart, MonthlyLineChart, SimplePieChart } from "./charts";
 
@@ -13,6 +19,81 @@ const NATIONALITY_COLORS = [
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
+}
+
+// Deposit refund/forfeited amounts can carry centavos — never round those.
+function peso2(n: number): string {
+  return `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function fmtDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// Shown only when at least one deposit was cancelled in the period. Cash
+// basis: each deposit's Money In was counted on the day it was received;
+// here the refund is Money Out (already in Business Summary above) and the
+// forfeited part is what the dive center kept — listed, not re-counted.
+function CancelledDepositsSection({ rows }: { rows: CancelledDepositRow[] }) {
+  const totalRefunded = rows.reduce((s, r) => s + r.refundAmount, 0);
+  const totalForfeited = rows.reduce((s, r) => s + r.forfeitedAmount, 0);
+  const th = "px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400";
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm mb-5">
+      <div className="px-5 py-4 border-b border-gray-200">
+        <div className="text-sm font-extrabold text-navy">Cancelled Deposits</div>
+        <div className="text-sm text-gray-600 mt-0.5">
+          Deposits cancelled in this period. Refunds are counted in Money Out on the day they were given; forfeited
+          deposits are what the dive center kept (already counted in Money In when received).
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[760px]">
+          <thead>
+            <tr className="bg-gray-100 text-left">
+              <th className={th}>Deposit Date</th>
+              <th className={th}>Cancelled</th>
+              <th className={th}>Diver</th>
+              <th className={`${th} text-right`}>Original</th>
+              <th className={`${th} text-right`}>Refunded</th>
+              <th className={`${th} text-right`}>Forfeited Deposits</th>
+              <th className={th}>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-b border-gray-100 last:border-0 align-top">
+                <td className="px-3 py-3 whitespace-nowrap">
+                  {fmtDate(r.depositDate)}
+                  {r.receivedBeforePeriod && (
+                    <div className="text-xs text-gray-500">Received {fmtDate(r.depositDate)} (earlier period)</div>
+                  )}
+                </td>
+                <td className="px-3 py-3 whitespace-nowrap">{fmtDate(r.cancelledDate)}</td>
+                <td className="px-3 py-3 font-semibold text-navy">{r.diverName}</td>
+                <td className="px-3 py-3 text-right">{peso2(r.amount)}</td>
+                <td className="px-3 py-3 text-right">{peso2(r.refundAmount)}</td>
+                <td className="px-3 py-3 text-right">{peso2(r.forfeitedAmount)}</td>
+                <td className="px-3 py-3 text-gray-600 break-words max-w-[240px]">{r.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-gray-50 font-extrabold text-navy">
+              <td className="px-3 py-3" colSpan={4}>
+                Subtotal
+              </td>
+              <td className="px-3 py-3 text-right">{peso2(totalRefunded)}</td>
+              <td className="px-3 py-3 text-right">{peso2(totalForfeited)}</td>
+              <td className="px-3 py-3"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function SummaryRow({
@@ -139,6 +220,12 @@ export function OverviewTab({
                 <span>{peso(summary.excessCollected)}</span>
               </div>
             )}
+            {summary.forfeitedDeposits > 0 && (
+              <div className="flex justify-between py-2 pl-4 text-xs text-gray-500 italic">
+                <span>Forfeited deposits (retained) — already counted when received</span>
+                <span>{peso2(summary.forfeitedDeposits)}</span>
+              </div>
+            )}
           </div>
           <div className="mb-4">
             <SummaryRow label="Money Out" value={peso(summary.moneyOut)} bold />
@@ -147,6 +234,9 @@ export function OverviewTab({
             <SummaryRow label="Gear Rental Expense (Paid)" value={peso(summary.rentalExpense)} />
             <SummaryRow label="Join Ride Expense (Paid)" value={peso(summary.joinExpense)} />
             <SummaryRow label="Staff Commissions (Paid)" value={peso(summary.commissionsPaid)} />
+            {summary.depositRefunds > 0 && (
+              <SummaryRow label="Deposit Refunds (Cancelled Deposits)" value={peso2(summary.depositRefunds)} />
+            )}
           </div>
           <div
             className={`flex justify-between items-center font-display text-2xl rounded-xl px-5 py-4 mb-4 ${
@@ -176,6 +266,8 @@ export function OverviewTab({
           </div>
         </div>
       </div>
+
+      {data.cancelledDeposits.length > 0 && <CancelledDepositsSection rows={data.cancelledDeposits} />}
 
       {/* The four charts below are all independent of the date-range filter
           above — they compute their own trailing-12-month / year-to-date

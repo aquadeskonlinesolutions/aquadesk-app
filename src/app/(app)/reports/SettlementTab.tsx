@@ -16,6 +16,8 @@ function todayManila(): string {
 }
 
 function fmtPHP(n: number): string {
+  // U+2060 keeps the minus sign from wrapping away from the amount.
+  if (n < 0) return `−⁠₱${Math.round(-n).toLocaleString("en-PH")}`;
   return n === 0 ? "—" : `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
 
@@ -23,6 +25,29 @@ function fmtDate(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00`);
   if (isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function peso2(n: number): string {
+  return `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// Deposit cancellation notes (migration 047). The received-day deposit row
+// keeps its original figures; the cancel-day refund row carries the cash
+// outflow. Both say what happened so neither day changes without a trace.
+function cancellationNote(r: SettlementRow): string | null {
+  const c = r.cancellation;
+  if (!c) return null;
+  if (r.isDepositRefund) {
+    return `Deposit of ${peso2(c.amount)} received ${fmtDate(c.depositDate)} cancelled. Refunded ${peso2(c.refundAmount)}${
+      c.refundAmount > 0 && c.refundMethodLabel ? ` (${c.refundMethodLabel})` : ""
+    } · Forfeited ${peso2(c.forfeitedAmount)} (retained, no cash movement) · Reason: ${c.reason}`;
+  }
+  return `Cancelled on ${fmtDate(c.cancelledDate)} · Refunded ${peso2(c.refundAmount)} · Forfeited ${peso2(c.forfeitedAmount)}`;
+}
+
+function diverLabel(r: SettlementRow): string {
+  if (r.isDepositRefund) return `${r.diverName} (Deposit Refund)`;
+  return r.isDeposit ? `${r.diverName} (Deposit)` : r.diverName;
 }
 
 function totals(rows: SettlementRow[]) {
@@ -56,17 +81,17 @@ function downloadCsv(data: SettlementData) {
   const csvRows = data.rows.map((r) =>
     [
       r.date,
-      r.isDeposit ? `${r.diverName} (Deposit)` : r.diverName,
+      cancellationNote(r) ? `${diverLabel(r)} — ${cancellationNote(r)}` : diverLabel(r),
       r.closedBy,
       r.cashPHP,
-      r.isDeposit ? "" : r.foreign,
+      r.isDeposit || r.isDepositRefund ? "" : r.foreign,
       r.card,
-      r.isDeposit ? "" : r.cardSurcharge,
+      r.isDeposit || r.isDepositRefund ? "" : r.cardSurcharge,
       r.online,
       r.onlineChannelLabel ?? "",
-      r.isDeposit ? "" : r.onlineSurcharge,
-      r.isDeposit ? "" : r.totalCollected,
-      r.isDeposit ? "" : r.excessAmount,
+      r.isDeposit || r.isDepositRefund ? "" : r.onlineSurcharge,
+      r.isDeposit || r.isDepositRefund ? "" : r.totalCollected,
+      r.isDeposit || r.isDepositRefund ? "" : r.excessAmount,
     ]
       .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
       .join(","),
@@ -126,6 +151,8 @@ export function SettlementTab({ data }: { data: SettlementData }) {
             <div className="text-sm font-extrabold text-navy">Daily Settlement</div>
             <div className="text-xs text-gray-500 mt-0.5">
               All payments recorded for the selected date. Highlighted rows are deposits.
+              {settlement.rows.some((r) => r.isDepositRefund) &&
+                " Red rows are refunds of cancelled deposits, subtracted from this day's totals."}
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -204,7 +231,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                 settlement.rows.map((r, i) => (
                   <tr
                     key={i}
-                    className={`border-b border-gray-100 last:border-0 ${r.isDeposit ? "bg-orange-light" : ""}`}
+                    className={`border-b border-gray-100 last:border-0 ${r.isDeposit ? "bg-orange-light" : ""} ${r.isDepositRefund ? "bg-red-light" : ""}`}
                   >
                     <td className="px-3 py-3 whitespace-nowrap">{fmtDate(r.date)}</td>
                     <td className="px-3 py-3 font-semibold text-navy">
@@ -214,24 +241,37 @@ export function SettlementTab({ data }: { data: SettlementData }) {
                           Deposit
                         </span>
                       )}
+                      {r.isDeposit && r.cancellation && (
+                        <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700 align-middle">
+                          Cancelled
+                        </span>
+                      )}
+                      {r.isDepositRefund && (
+                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red text-white align-middle">
+                          Deposit Refund
+                        </span>
+                      )}
+                      {cancellationNote(r) && (
+                        <div className="text-sm font-normal text-gray-600 mt-1 max-w-[360px]">{cancellationNote(r)}</div>
+                      )}
                     </td>
                     <td className="px-3 py-3">{r.closedBy}</td>
                     <td className="px-3 py-3 text-right">{fmtPHP(r.cashPHP)}</td>
-                    <td className="px-3 py-3 text-gray-500 text-xs">{r.isDeposit ? "—" : r.foreign}</td>
+                    <td className="px-3 py-3 text-gray-500 text-xs">{r.isDeposit || r.isDepositRefund ? "—" : r.foreign}</td>
                     <td className="px-3 py-3 text-right">{fmtPHP(r.card)}</td>
-                    <td className="px-3 py-3 text-right">{r.isDeposit ? "—" : fmtPHP(r.cardSurcharge)}</td>
+                    <td className="px-3 py-3 text-right">{r.isDeposit || r.isDepositRefund ? "—" : fmtPHP(r.cardSurcharge)}</td>
                     <td className="px-3 py-3 text-right">
                       {fmtPHP(r.online)}
-                      {r.online > 0 && r.onlineChannelLabel && (
+                      {r.online !== 0 && r.onlineChannelLabel && (
                         <div className="text-xs text-gray-400 font-normal">{r.onlineChannelLabel}</div>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-right">{r.isDeposit ? "—" : fmtPHP(r.onlineSurcharge)}</td>
+                    <td className="px-3 py-3 text-right">{r.isDeposit || r.isDepositRefund ? "—" : fmtPHP(r.onlineSurcharge)}</td>
                     <td className="px-3 py-3 text-right font-semibold text-navy">
-                      {r.isDeposit ? "—" : fmtPHP(r.totalCollected)}
+                      {r.isDeposit || r.isDepositRefund ? "—" : fmtPHP(r.totalCollected)}
                     </td>
                     <td className="px-3 py-3 text-right text-orange">
-                      {r.isDeposit ? "—" : fmtPHP(r.excessAmount)}
+                      {r.isDeposit || r.isDepositRefund ? "—" : fmtPHP(r.excessAmount)}
                     </td>
                     <td className="px-3 py-3">
                       <Link
@@ -295,33 +335,35 @@ export function SettlementTab({ data }: { data: SettlementData }) {
             </thead>
             <tbody>
               {settlement.rows.map((r, i) => (
-                <tr key={i} className={r.isDeposit ? "bg-orange-light" : ""}>
+                <tr key={i} className={r.isDeposit ? "bg-orange-light" : r.isDepositRefund ? "bg-red-light" : ""}>
                   <td className="px-2 py-1.5 border-b border-gray-100">{fmtDate(r.date)}</td>
                   <td className="px-2 py-1.5 border-b border-gray-100">
                     {r.diverName}
-                    {r.isDeposit && <strong> (Deposit)</strong>}
+                    {r.isDeposit && <strong> (Deposit{r.cancellation ? " — Cancelled" : ""})</strong>}
+                    {r.isDepositRefund && <strong> (Deposit Refund)</strong>}
+                    {cancellationNote(r) && <div className="text-xs text-gray-700">{cancellationNote(r)}</div>}
                   </td>
                   <td className="px-2 py-1.5 border-b border-gray-100">{r.closedBy}</td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">{fmtPHP(r.cashPHP)}</td>
-                  <td className="px-2 py-1.5 border-b border-gray-100 text-xs">{r.isDeposit ? "—" : r.foreign}</td>
+                  <td className="px-2 py-1.5 border-b border-gray-100 text-xs">{r.isDeposit || r.isDepositRefund ? "—" : r.foreign}</td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">{fmtPHP(r.card)}</td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">
-                    {r.isDeposit ? "—" : fmtPHP(r.cardSurcharge)}
+                    {r.isDeposit || r.isDepositRefund ? "—" : fmtPHP(r.cardSurcharge)}
                   </td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">
                     {fmtPHP(r.online)}
-                    {r.online > 0 && r.onlineChannelLabel && (
+                    {r.online !== 0 && r.onlineChannelLabel && (
                       <div className="text-xs text-gray-500 font-normal">{r.onlineChannelLabel}</div>
                     )}
                   </td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">
-                    {r.isDeposit ? "—" : fmtPHP(r.onlineSurcharge)}
+                    {r.isDeposit || r.isDepositRefund ? "—" : fmtPHP(r.onlineSurcharge)}
                   </td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right font-bold">
-                    {r.isDeposit ? "—" : fmtPHP(r.totalCollected)}
+                    {r.isDeposit || r.isDepositRefund ? "—" : fmtPHP(r.totalCollected)}
                   </td>
                   <td className="px-2 py-1.5 border-b border-gray-100 text-right">
-                    {r.isDeposit ? "—" : fmtPHP(r.excessAmount)}
+                    {r.isDeposit || r.isDepositRefund ? "—" : fmtPHP(r.excessAmount)}
                   </td>
                 </tr>
               ))}

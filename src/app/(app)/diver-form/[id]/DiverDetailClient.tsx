@@ -164,6 +164,11 @@ export function DiverDetailClient({
             receivedByDisplay={isOwner ? diveCenterName : currentUserName}
             customChannels={paymentConfig.customChannels}
             onAdded={(d) => setDeposits((prev) => [d, ...prev])}
+            onCancelled={(next, visitUpdatedAt) => {
+              setDeposits(next);
+              // cancel_deposit bumps the bill's concurrency token — keep ours current.
+              if (visitUpdatedAt) setVisit({ ...visit, updatedAt: visitUpdatedAt });
+            }}
           />
         </>
       )}
