@@ -5,8 +5,8 @@ import { WarningBox, InfoBox } from "@/components/settings/SettingsSection";
 import { setOwnerPassword, setBillingPassword } from "./actions";
 
 export default async function SettingsPasswordsPage() {
-  const user = await requireOwner();
-  const data = await loadPasswordsData(user.diveCenterId);
+  await requireOwner();
+  const data = await loadPasswordsData();
 
   return (
     <div>

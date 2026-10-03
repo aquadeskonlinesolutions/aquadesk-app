@@ -52,20 +52,23 @@ export async function switchPricingMode(passwordAttempt: string) {
 
   const { data: dc } = await supabase
     .from("dive_centers")
-    .select("pricing_mode, owner_unlock_hash")
+    .select("pricing_mode")
     .eq("id", user.diveCenterId)
     .single();
 
-  if (!dc?.owner_unlock_hash) {
+  // Locked-out owner-password check (migration 050) — also reports when no
+  // owner password has been set yet.
+  const { data: checked, error: verifyError } = await supabase.rpc("check_unlock_password", {
+    p_kind: "owner",
+    p_password: passwordAttempt,
+  });
+  if (verifyError) return fail(verifyError.message);
+  const result = checked as { ok: boolean; code?: string; error?: string };
+  if (result?.code === "no_password") {
     return fail("Set your owner password first, under Passwords.");
   }
-
-  const { data: verified, error: verifyError } = await supabase.rpc(
-    "verify_owner_unlock",
-    { p_dive_center_id: user.diveCenterId, p_attempt: passwordAttempt },
-  );
-  if (verifyError) return fail(verifyError.message);
-  if (!verified) return fail("Incorrect owner password.");
+  if (!result?.ok) return fail(result?.error ?? "Incorrect owner password.");
+  if (!dc) return fail("Dive center not found.");
 
   const { data: openBills } = await supabase
     .from("visits")

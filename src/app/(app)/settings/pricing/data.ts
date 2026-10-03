@@ -48,12 +48,12 @@ export type PricingData = {
 export async function loadPricingData(diveCenterId: string): Promise<PricingData> {
   const supabase = await createClient();
 
-  const [{ data: dc }, { data: packages }, { data: rateTiers }, { data: otherCharges }] =
+  const [{ data: dc }, { data: packages }, { data: rateTiers }, { data: otherCharges }, { data: passwordStatus }] =
     await Promise.all([
       supabase
         .from("dive_centers")
         .select(
-          "pricing_mode, owner_unlock_hash, divemaster_rate_per_dive, ratio_bonus_enabled, ratio_bonus_extra_rate, join_ride_rate_per_diver_per_dive",
+          "pricing_mode, divemaster_rate_per_dive, ratio_bonus_enabled, ratio_bonus_extra_rate, join_ride_rate_per_diver_per_dive",
         )
         .eq("id", diveCenterId)
         .single(),
@@ -72,11 +72,13 @@ export async function loadPricingData(diveCenterId: string): Promise<PricingData
         .select("id, charge_name, amount, charge_type, sub_type, is_active")
         .eq("dive_center_id", diveCenterId)
         .order("charge_name"),
+      // Whether an owner password is set — the hash itself isn't readable (051).
+      supabase.rpc("password_status"),
     ]);
 
   return {
     pricingMode: (dc?.pricing_mode as PricingMode) ?? null,
-    hasOwnerPassword: !!dc?.owner_unlock_hash,
+    hasOwnerPassword: !!(passwordStatus as { owner_set?: boolean } | null)?.owner_set,
     packages: packages ?? [],
     rateTiers: rateTiers ?? [],
     otherCharges: otherCharges ?? [],

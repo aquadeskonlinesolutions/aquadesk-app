@@ -6,16 +6,16 @@ export type PasswordsData = {
   hasBillingPassword: boolean;
 };
 
-export async function loadPasswordsData(diveCenterId: string): Promise<PasswordsData> {
+// password_status (migration 050) returns only whether each password is
+// set — the hash columns themselves are not readable by the app (051).
+// It always answers for the signed-in user's own dive center.
+export async function loadPasswordsData(): Promise<PasswordsData> {
   const supabase = await createClient();
-  const { data: dc } = await supabase
-    .from("dive_centers")
-    .select("owner_unlock_hash, billing_unlock_hash")
-    .eq("id", diveCenterId)
-    .single();
+  const { data } = await supabase.rpc("password_status");
+  const status = (data ?? {}) as { owner_set?: boolean; billing_set?: boolean };
 
   return {
-    hasOwnerPassword: !!dc?.owner_unlock_hash,
-    hasBillingPassword: !!dc?.billing_unlock_hash,
+    hasOwnerPassword: !!status.owner_set,
+    hasBillingPassword: !!status.billing_set,
   };
 }
