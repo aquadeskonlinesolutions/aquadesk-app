@@ -90,7 +90,8 @@ export function DepositsPanel({
           amount: amt,
           method,
           channelLabel: method === "online" ? (channel === "custom" ? label : BASE_PAYMENT_CHANNELS.find(([k]) => k === channel)?.[1] || null) : null,
-          depositDate: new Date().toISOString().slice(0, 10),
+          // Asia/Manila calendar day, matching how addDeposit stores deposit_date.
+          depositDate: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10),
           receivedBy: receivedByDisplay,
           status: "active",
           cancellation: null,
