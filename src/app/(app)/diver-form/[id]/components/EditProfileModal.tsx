@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { saveDiverProfile, type ProfileFormFields } from "../actions";
 import { CERT_LEVEL_OPTIONS, RELATIONSHIP_OPTIONS } from "../constants";
 import type { DiverDetail } from "../data";
+import { birthdayError, manilaTodayStr } from "@/lib/age";
 
 export function EditProfileModal({
   diver,
@@ -33,6 +34,7 @@ export function EditProfileModal({
     emergencyContactRelationship: diver.emergencyContactRelationship ?? "",
     emergencyContactWhatsapp: diver.emergencyContactWhatsapp ?? "",
     emergencyContactEmail: diver.emergencyContactEmail ?? "",
+    birthday: diver.birthday ?? "",
   });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -48,6 +50,11 @@ export function EditProfileModal({
     // cert diver (first-timer) is exempt from both.
     if (form.certificationLevel !== "none" && !form.lastDiveDate) {
       setError("Last dive date is required for certified divers.");
+      return;
+    }
+    const birthdayProblem = birthdayError(form.birthday);
+    if (birthdayProblem) {
+      setError(birthdayProblem);
       return;
     }
     setError(null);
@@ -76,6 +83,9 @@ export function EditProfileModal({
           emergencyContactRelationship: form.emergencyContactRelationship.trim() || null,
           emergencyContactWhatsapp: form.emergencyContactWhatsapp.trim() || null,
           emergencyContactEmail: form.emergencyContactEmail.trim() || null,
+          birthday: form.birthday || null,
+          ...(res.age !== undefined ? { age: res.age } : {}),
+          ...(res.isMinor !== undefined ? { isMinor: res.isMinor } : {}),
         });
         onClose();
       }
@@ -111,6 +121,27 @@ export function EditProfileModal({
                 onChange={(e) => setForm({ ...form, lastName: e.target.value })}
                 className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Birthday</label>
+              <input
+                type="date"
+                max={manilaTodayStr()}
+                value={form.birthday}
+                onChange={(e) => setForm({ ...form, birthday: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex items-end">
+              {form.birthday && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, birthday: "" })}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Clear birthday
+                </button>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Certification Level</label>

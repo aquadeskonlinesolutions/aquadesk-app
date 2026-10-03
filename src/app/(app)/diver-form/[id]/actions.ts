@@ -20,6 +20,7 @@ import { resolveOnlineChannel } from "@/lib/paymentChannels";
 import { loadPaymentConfig, loadInvoiceForVisit, loadDeposits, type Deposit } from "./data";
 import { buildInvoiceEmailHtml } from "./invoiceEmailHtml";
 import { getResendClient, RESEND_FROM_EMAIL } from "@/lib/email/resend";
+import { ageOn, birthdayError } from "@/lib/age";
 
 // Same +8h-shift-then-read-UTC-fields trick already used in reports/data.ts,
 // dashboard/data.ts, and office.ts — a plain `new Date().toISOString()`
@@ -51,18 +52,48 @@ export type ProfileFormFields = {
   emergencyContactRelationship: string;
   emergencyContactWhatsapp: string;
   emergencyContactEmail: string;
+  // "YYYY-MM-DD", or "" to clear. divers.birthday is the single source of
+  // truth (registration writes the same column).
+  birthday: string;
 };
 
 export async function saveDiverProfile(
   diverId: string,
   fields: ProfileFormFields,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; age?: number | null; isMinor?: boolean }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
+
+  const birthday = fields.birthday.trim();
+  const birthdayProblem = birthdayError(birthday);
+  if (birthdayProblem) return { error: birthdayProblem };
+
+  // Registration also stores two values derived from the birthday:
+  // divers.age (shown on the staff crew page) and divers.is_minor (Minor
+  // banner/badge). When the birthday changes here, both are recalculated
+  // (Manila date) so nothing disagrees; on clear, age is cleared and
+  // is_minor is left as it was (nothing to recalculate from). Untouched
+  // when the birthday didn't change, so other edits behave as before.
+  const { data: current } = await supabase
+    .from("divers")
+    .select("birthday, age, is_minor")
+    .eq("id", diverId)
+    .eq("dive_center_id", user.diveCenterId)
+    .maybeSingle();
+  if (!current) return { error: "Diver not found." };
+
+  const birthdayChanged = (current.birthday ?? "") !== birthday;
+  const newAge = birthday ? ageOn(birthday) : null;
+  const birthdayUpdate = birthdayChanged
+    ? birthday
+      ? { birthday, age: newAge, is_minor: (newAge as number) < 18 }
+      : { birthday: null, age: null }
+    : {};
 
   const { error } = await supabase
     .from("divers")
     .update({
+      ...birthdayUpdate,
       first_name: fields.firstName.trim(),
       last_name: fields.lastName.trim(),
       certification_level: fields.certificationLevel,
@@ -87,7 +118,9 @@ export async function saveDiverProfile(
 
   if (error) return { error: error.message };
   revalidatePath(`/diver-form/${diverId}`);
-  return {};
+  return birthdayChanged
+    ? { age: newAge, isMinor: birthday ? (newAge as number) < 18 : !!current.is_minor }
+    : {};
 }
 
 // Standardized on the at/by pair, not the plain `medical_acknowledged`

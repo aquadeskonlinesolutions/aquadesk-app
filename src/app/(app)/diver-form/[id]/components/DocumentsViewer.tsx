@@ -28,7 +28,9 @@ function resolveIdentity(selected: RegistrationRecord, diver: DiverDetail) {
   return {
     firstName: selected.firstName ?? diver.firstName,
     lastName: selected.lastName ?? diver.lastName,
-    birthday: selected.birthday ?? diver.birthday,
+    // Birthday is the exception (MK, 2026-10-03): a corrected birthday must
+    // show on the document; the waiver content itself stays as signed.
+    birthday: diver.birthday ?? selected.birthday,
     nationality: selected.nationality ?? diver.nationality,
     email: selected.email ?? diver.email,
     phone: selected.phone ?? diver.phone,

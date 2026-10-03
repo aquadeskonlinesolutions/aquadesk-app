@@ -2,6 +2,7 @@
 
 import { CERT_LEVEL_LABELS } from "../constants";
 import type { DiverDetail } from "../data";
+import { ageOn } from "@/lib/age";
 
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -84,6 +85,9 @@ export function ProfileHeader({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Field label="Equipment" value={equipmentSummary(diver)} />
         <Field label="Nationality" value={diver.nationality ?? ""} />
+        <Field label="Birthday" value={diver.birthday ? fmtDate(diver.birthday) : "Not set"} />
+        {/* Always calculated from the birthday (Manila date), never the stored age. */}
+        {diver.birthday && <Field label="Age" value={String(ageOn(diver.birthday))} />}
         <Field label="Logged Dives" value={String(diver.loggedDives)} />
         <Field label="Last Dive Date" value={fmtDate(diver.lastDiveDate)} />
         <Field label="Nitrox Certified" value={diver.nitroxCertified ? "Yes" : "No"} />
