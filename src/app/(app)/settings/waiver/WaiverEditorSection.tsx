@@ -20,6 +20,7 @@ function formatDate(iso: string | null): string {
   return (
     "Last updated: " +
     new Date(iso).toLocaleDateString("en-PH", {
+      timeZone: "Asia/Manila",
       year: "numeric",
       month: "long",
       day: "numeric",

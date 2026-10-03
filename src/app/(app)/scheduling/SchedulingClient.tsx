@@ -8,6 +8,7 @@ import { PhaseOnePanel } from "./components/PhaseOnePanel";
 import { PhaseTwoPanel } from "./components/PhaseTwoPanel";
 import { PhaseThreePanel } from "./components/PhaseThreePanel";
 import { RosterPrintView } from "./components/RosterPrintView";
+import { ManilaDateNote } from "@/components/ManilaDateNote";
 
 function todayManila(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -98,6 +99,7 @@ export function SchedulingClient({
             onChange={(e) => changeDate(e.target.value)}
             className="border border-gray-300 rounded-md px-3 py-2 text-sm"
           />
+          <ManilaDateNote />
           <button
             onClick={printRoster}
             disabled={rosterPending}

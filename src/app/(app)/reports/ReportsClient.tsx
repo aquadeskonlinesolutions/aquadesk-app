@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { ManilaDateNote } from "@/components/ManilaDateNote";
 import {
   getOverviewData,
   getMonthlyFinancials,
@@ -304,6 +305,7 @@ export function ReportsClient({
           >
             {pending ? "Loading…" : "Apply"}
           </button>
+          <ManilaDateNote />
         </div>
       </div>
       {error && <div className="print:hidden mb-4 text-sm text-red">{error}</div>}

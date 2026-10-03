@@ -4,14 +4,15 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import type { EquipmentPrepDiver } from "../data";
 import { getEquipmentPrepDivers, getGearInventoryCounts, saveEquipmentNotes } from "../actions";
 import { GEAR_ITEMS } from "@/app/(app)/settings/inventory/constants";
+import { addDaysToDateStr, manilaTodayStr } from "@/lib/manila";
 
 const EQUIPMENT_COLUMNS = ["BCD", "Wetsuit", "Fins", "Mask", "Boots", "Regulator", "Weights", "Snorkel"];
 
+// Manila "today" + 1 calendar day, computed on the date itself — the old
+// version round-tripped through the device's timezone and, on a Manila
+// device before 08:00, returned today instead of tomorrow.
 function tomorrowManila(): string {
-  const now = new Date();
-  const manilaNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-  manilaNow.setDate(manilaNow.getDate() + 1);
-  return manilaNow.toISOString().slice(0, 10);
+  return addDaysToDateStr(manilaTodayStr(), 1);
 }
 
 function parseEquipment(raw: string | null): { items: { name: string; size: string | null; kg?: number | null }[]; computer: boolean } {

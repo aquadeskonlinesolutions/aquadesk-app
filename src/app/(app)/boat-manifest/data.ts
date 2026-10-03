@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { ageOn } from "@/lib/age";
 
 export type TripOption = {
   scheduleId: string;
@@ -102,10 +103,8 @@ function calcAge(birthday: string | null): number | null {
   if (!birthday) return null;
   const b = new Date(`${birthday}T00:00:00`);
   if (isNaN(b.getTime())) return null;
-  const now = new Date();
-  let age = now.getFullYear() - b.getFullYear();
-  const monthDiff = now.getMonth() - b.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < b.getDate())) age--;
+  // "Today" is the Asia/Manila date, not the server's (UTC on Cloudflare).
+  const age = ageOn(birthday);
   return age >= 0 ? age : null;
 }
 

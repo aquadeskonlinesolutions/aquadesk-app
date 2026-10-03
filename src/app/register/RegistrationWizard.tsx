@@ -6,6 +6,8 @@ import { sanitizeWaiverHtml } from "@/lib/sanitizeWaiverHtml";
 import { SignaturePad } from "@/components/SignaturePad";
 import { PhoneInput } from "@/components/PhoneInput";
 import { COUNTRY_CODES } from "@/lib/countryCodes";
+import { ageOn, manilaTodayStr } from "@/lib/age";
+import { ManilaDateNote } from "@/components/ManilaDateNote";
 import {
   RegistrationConfig,
   CERTIFICATION_LEVELS,
@@ -147,11 +149,8 @@ function calcAge(birthday: string): number | null {
   if (!birthday) return null;
   const b = new Date(birthday);
   if (Number.isNaN(b.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - b.getFullYear();
-  const m = today.getMonth() - b.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < b.getDate())) age--;
-  return age;
+  // Asia/Manila "today", independent of the device's timezone.
+  return ageOn(birthday);
 }
 
 export function RegistrationWizard({
@@ -315,6 +314,7 @@ export function RegistrationWizard({
       if (!form.firstName.trim()) e.push("First name is required.");
       if (!form.lastName.trim()) e.push("Last name is required.");
       if (!form.birthday) e.push("Birthday is required.");
+      else if (form.birthday > manilaTodayStr()) e.push("Birthday can't be in the future.");
       if (!form.nationality.trim()) e.push("Nationality is required.");
       if (!form.arrivalDate) e.push("Arrival date is required.");
       if (!form.departureDate) e.push("Departure date is required.");
@@ -346,6 +346,9 @@ export function RegistrationWizard({
       }
       if (form.certLevel && form.certLevel !== "None" && !form.lastDiveDate) {
         e.push("Last dive date is required for certified divers.");
+      }
+      if (form.lastDiveDate && form.lastDiveDate > manilaTodayStr()) {
+        e.push("Last dive date can't be in the future.");
       }
     }
     if (n === 7) {
@@ -651,9 +654,10 @@ export function RegistrationWizard({
                     type="date"
                     className={inputClass}
                     value={form.birthday}
-                    max={new Date().toISOString().slice(0, 10)}
+                    max={manilaTodayStr()}
                     onChange={(e) => setField("birthday", e.target.value)}
                   />
+                  <ManilaDateNote className="block mt-1" />
                 </div>
                 <div>
                   <label className={labelClass}>Age</label>
@@ -700,6 +704,7 @@ export function RegistrationWizard({
                     min={form.arrivalDate || undefined}
                     onChange={(e) => setField("departureDate", e.target.value)}
                   />
+                  <ManilaDateNote className="block mt-1" />
                 </div>
               </div>
               <div>
@@ -924,10 +929,11 @@ export function RegistrationWizard({
                     <input
                       type="date"
                       className={inputClass}
-                      max={new Date().toISOString().slice(0, 10)}
+                      max={manilaTodayStr()}
                       value={form.lastDiveDate}
                       onChange={(e) => setField("lastDiveDate", e.target.value)}
                     />
+                    <ManilaDateNote className="block mt-1" />
                   </div>
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <input

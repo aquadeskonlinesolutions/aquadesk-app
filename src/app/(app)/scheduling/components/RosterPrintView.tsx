@@ -10,7 +10,7 @@ export function RosterPrintView({ data }: { data: RosterData }) {
     <div className="hidden print:block p-6">
       <div className="font-display text-2xl text-navy mb-1">{data.diveCenterName} — Diver Roster</div>
       <div className="text-sm text-gray-600 mb-4">
-        Printed: {new Date().toLocaleString()} &nbsp;·&nbsp; {data.divers.length} active diver
+        Printed: {new Date().toLocaleString(undefined, { timeZone: "Asia/Manila" })} &nbsp;·&nbsp; {data.divers.length} active diver
         {data.divers.length === 1 ? "" : "s"}
       </div>
       <table className="w-full text-sm border border-gray-300">

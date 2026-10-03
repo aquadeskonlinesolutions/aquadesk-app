@@ -10,6 +10,7 @@ import {
   updatePaddleBillingEnabled,
 } from "@/lib/actions/office";
 import { StartBillingForm } from "./StartBillingForm";
+import { addDaysToDateStr, manilaTodayStr } from "@/lib/manila";
 
 type Status = "trial" | "active" | "suspended" | "cancelled";
 
@@ -55,12 +56,11 @@ const GRACE_DAYS = 5;
 
 function daysOverdue(dc: DiveCenter): number {
   if (!dc.billing_due_date || dc.subscription_status !== "active") return 0;
-  const due = new Date(`${dc.billing_due_date}T00:00:00`);
-  const graceEnd = new Date(due);
-  graceEnd.setDate(graceEnd.getDate() + GRACE_DAYS);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.floor((today.getTime() - graceEnd.getTime()) / 86400000);
+  // Plain Manila calendar dates — independent of the device's timezone.
+  const graceEnd = addDaysToDateStr(dc.billing_due_date, GRACE_DAYS);
+  const diffDays = Math.round(
+    (Date.parse(`${manilaTodayStr()}T00:00:00Z`) - Date.parse(`${graceEnd}T00:00:00Z`)) / 86400000,
+  );
   return diffDays > 0 ? diffDays : 0;
 }
 
@@ -79,11 +79,11 @@ export function DiveCenterList({ diveCenters }: { diveCenters: DiveCenter[] }) {
     const suspended = diveCenters.filter((d) => d.subscription_status === "suspended").length;
     const active = diveCenters.filter((d) => d.subscription_status === "active").length;
     const overdue = diveCenters.filter((d) => daysOverdue(d) > 0).length;
-    const now = new Date();
-    const thisMonth = diveCenters.filter((d) => {
-      const created = new Date(d.created_at);
-      return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear();
-    }).length;
+    // Manila month of each created_at timestamp vs the current Manila month.
+    const thisMonthKey = manilaTodayStr().slice(0, 7);
+    const thisMonth = diveCenters.filter(
+      (d) => new Date(Date.parse(d.created_at) + 8 * 60 * 60 * 1000).toISOString().slice(0, 7) === thisMonthKey,
+    ).length;
     return { total, active, suspended, thisMonth, overdue };
   }, [diveCenters]);
 

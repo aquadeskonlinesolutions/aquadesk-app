@@ -5,6 +5,7 @@ import { saveDiverProfile, type ProfileFormFields } from "../actions";
 import { CERT_LEVEL_OPTIONS, RELATIONSHIP_OPTIONS } from "../constants";
 import type { DiverDetail } from "../data";
 import { birthdayError, manilaTodayStr } from "@/lib/age";
+import { ManilaDateNote } from "@/components/ManilaDateNote";
 
 export function EditProfileModal({
   diver,
@@ -135,6 +136,7 @@ export function EditProfileModal({
                 onChange={(e) => setForm({ ...form, birthday: e.target.value })}
                 className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
               />
+              <ManilaDateNote className="block mt-1" />
             </div>
             <div className="flex items-end">
               {form.birthday && (
@@ -183,6 +185,7 @@ export function EditProfileModal({
                 onChange={(e) => setForm({ ...form, lastDiveDate: e.target.value })}
                 className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm"
               />
+              <ManilaDateNote className="block mt-1" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>

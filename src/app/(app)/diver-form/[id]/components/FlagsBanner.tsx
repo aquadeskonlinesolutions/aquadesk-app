@@ -8,7 +8,7 @@ function fmtDateTime(ts: string | null): string {
   if (!ts) return "—";
   const d = new Date(ts);
   if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" });
 }
 
 // No live-app precedent (grepped diver-form.html/divers.html/dashboard.html

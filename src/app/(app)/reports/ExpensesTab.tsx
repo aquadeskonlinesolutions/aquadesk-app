@@ -6,6 +6,7 @@ import { ADD_CATEGORY_VALUE, BASE_EXPENSE_CATEGORIES, PAYMENT_METHOD_LABELS } fr
 import type { ExpenseCategoryOption, ExpenseRecord, ExpensesData } from "./data";
 import { BASE_PAYMENT_CHANNELS, ADD_CHANNEL_VALUE } from "@/lib/payments";
 import type { CustomChannelOption } from "@/lib/paymentChannels";
+import { manilaTodayStr } from "@/lib/manila";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -107,7 +108,7 @@ type FormState = {
 function emptyForm(): FormState {
   return {
     id: null,
-    date: new Date().toISOString().slice(0, 10),
+    date: manilaTodayStr(),
     category: "fuel",
     customCategory: "",
     customCategoryId: null,

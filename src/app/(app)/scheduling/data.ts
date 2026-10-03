@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getPaidAmount } from "@/lib/payments";
 import { isDiverActive, isGroupActive } from "../divers/visibility";
 import type { TripTypeDurations } from "./tripWindow";
+import { ageOn } from "@/lib/age";
 
 // Plain calendar-year arithmetic, same as the old app's diverAge() — no
 // timezone risk since a birthday is a date-only value with no time
@@ -11,12 +12,8 @@ function calcAge(birthday: string | null): number | null {
   if (!birthday) return null;
   const [y, m, d] = birthday.split("-").map(Number);
   if (!y || !m || !d) return null;
-  const today = new Date();
-  let age = today.getFullYear() - y;
-  const hasHadBirthdayThisYear =
-    today.getMonth() + 1 > m || (today.getMonth() + 1 === m && today.getDate() >= d);
-  if (!hasHadBirthdayThisYear) age--;
-  return age;
+  // "Today" is the Asia/Manila date, not the server's (UTC on Cloudflare).
+  return ageOn(birthday);
 }
 
 export type TripSummary = {

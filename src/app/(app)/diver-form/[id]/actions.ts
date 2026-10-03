@@ -1360,7 +1360,7 @@ export async function checkoutVisit(
     .update({
       is_paid: true,
       is_active: false,
-      visit_end: new Date().toISOString().slice(0, 10),
+      visit_end: manilaTodayStr(),
       visit_status: "closed",
     })
     .eq("id", visitId)

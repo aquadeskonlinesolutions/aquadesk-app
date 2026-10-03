@@ -11,6 +11,7 @@ import {
 import type { JoinRideData, JoinRideDirection, JoinRideRecord } from "./data";
 import type { StatementLineItem } from "./actions";
 import { useSettlePayment } from "@/components/ui/SettlePaymentDialog";
+import { manilaTodayStr } from "@/lib/manila";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -91,7 +92,7 @@ type FormState = {
 function emptyForm(direction: JoinRideDirection): FormState {
   return {
     id: null,
-    date: new Date().toISOString().slice(0, 10),
+    date: manilaTodayStr(),
     company: "",
     numberOfDivers: "0",
     numberOfDives: "0",
@@ -788,7 +789,7 @@ export function JoinRideTab({
                 <strong>{generatedStatement.company}</strong>
                 <br />
                 Date Range: {fmtDate(generatedStatement.dateFrom)} – {fmtDate(generatedStatement.dateTo)}{" "}
-                &nbsp; Statement Date: {fmtDate(new Date().toISOString().slice(0, 10))}
+                &nbsp; Statement Date: {fmtDate(manilaTodayStr())}
               </div>
               <table className="w-full text-sm border border-gray-300 mb-4">
                 <thead>

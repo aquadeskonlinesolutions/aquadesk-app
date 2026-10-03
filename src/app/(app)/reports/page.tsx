@@ -1,16 +1,12 @@
 import { requireRevenueAccess } from "@/lib/dal";
 import { loadOverviewData, loadMonthlyFinancials, loadMonthlyFunVsCourseRevenue, loadTopNationalitiesYTD } from "./data";
 import { ReportsClient } from "./ReportsClient";
+import { manilaMonthRange } from "@/lib/manila";
 
+// The current Asia/Manila month — not the server's (UTC on Cloudflare,
+// which on the 1st before 08:00 Manila would still be last month).
 function currentMonthRange(): { from: string; to: string } {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const from = `${y}-${pad(m + 1)}-01`;
-  const lastDay = new Date(y, m + 1, 0).getDate();
-  const to = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
-  return { from, to };
+  return manilaMonthRange();
 }
 
 export default async function ReportsPage() {

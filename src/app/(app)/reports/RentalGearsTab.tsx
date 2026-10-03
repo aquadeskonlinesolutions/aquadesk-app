@@ -5,6 +5,7 @@ import { getRentalGearsData, saveRentalGearRecord, updateRentalGearStatus, delet
 import { EQUIPMENT_SUGGESTIONS } from "./constants";
 import type { RentalGearRecord, RentalGearsData } from "./data";
 import { useSettlePayment } from "@/components/ui/SettlePaymentDialog";
+import { manilaTodayStr } from "@/lib/manila";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -76,7 +77,7 @@ type FormState = {
 function emptyForm(): FormState {
   return {
     id: null,
-    date: new Date().toISOString().slice(0, 10),
+    date: manilaTodayStr(),
     equipment: "",
     company: "",
     quantity: "0",

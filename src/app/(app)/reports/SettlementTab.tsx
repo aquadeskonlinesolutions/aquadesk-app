@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getSettlementData } from "./actions";
 import type { SettlementRow, SettlementData } from "./data";
 import { EXCESS_LABEL } from "@/lib/payments";
+import { ManilaDateNote } from "@/components/ManilaDateNote";
 
 function todayManila(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -163,6 +164,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
               onChange={(e) => setDate(e.target.value)}
               className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
             />
+            <ManilaDateNote />
             <button
               onClick={load}
               disabled={pending}
@@ -315,7 +317,7 @@ export function SettlementTab({ data }: { data: SettlementData }) {
         <div className="hidden print:block p-6">
           <div className="font-display text-2xl text-navy mb-1">{settlement.diveCenterName} — Daily Settlement</div>
           <div className="text-sm text-gray-600 mb-4">
-            Date: {fmtDate(settlement.date)} &nbsp;·&nbsp; Printed: {new Date().toLocaleString()}
+            Date: {fmtDate(settlement.date)} &nbsp;·&nbsp; Printed: {new Date().toLocaleString(undefined, { timeZone: "Asia/Manila" })}
           </div>
           <table className="w-full text-sm border border-gray-300">
             <thead>

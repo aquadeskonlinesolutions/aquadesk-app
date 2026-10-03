@@ -14,9 +14,9 @@ function fmtDateTime(ts: string | null): string {
   const d = new Date(ts);
   if (isNaN(d.getTime())) return "—";
   return (
-    d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
+    d.toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" }) +
     " " +
-    d.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
+    d.toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit" })
   );
 }
 
