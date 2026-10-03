@@ -882,7 +882,6 @@ export async function savePaymentOnly(
   visitId: string,
   expectedUpdatedAt: string,
   grandTotalPhp: number,
-  depositsTotal: number,
   input: PaymentInput,
 ): Promise<{ error?: string; conflict?: boolean; updatedAt?: string }> {
   const user = await getCurrentUser();
@@ -934,6 +933,16 @@ export async function savePaymentOnly(
       conflict: true,
     };
   }
+
+  // Deposits total is computed here from the visit's active deposits —
+  // never taken from the browser (same query as checkoutVisit).
+  const { data: depositRows, error: depositsError } = await supabase
+    .from("deposits")
+    .select("amount")
+    .eq("visit_id", visitId)
+    .eq("status", "active");
+  if (depositsError) return { error: depositsError.message };
+  const depositsTotal = (depositRows ?? []).reduce((s, d) => s + Number(d.amount), 0);
 
   const config = await loadPaymentConfig(user.diveCenterId);
   const amountOwed = grandTotalPhp - input.discount - depositsTotal;

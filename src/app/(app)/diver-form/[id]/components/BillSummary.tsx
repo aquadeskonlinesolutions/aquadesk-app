@@ -96,7 +96,7 @@ export function BillSummary({
       return;
     }
     startTransition(async () => {
-      const res = await savePaymentOnly(diverId, visit.id, visit.updatedAt, grandTotal, depositsTotal, resolved.input);
+      const res = await savePaymentOnly(diverId, visit.id, visit.updatedAt, grandTotal, resolved.input);
       if (res.error) {
         setError(res.error);
         if (res.conflict) {
