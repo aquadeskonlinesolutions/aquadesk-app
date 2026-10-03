@@ -637,13 +637,15 @@ async function loadPaymentChannels(
   // in whole bills/denominations) — the stored total_collected/total_paid
   // is deliberately capped to what was actually billed. Card/online are
   // charged to an exact amount the secretary enters, so overage there in
-  // practice never happens; cash absorbs the cap per row so this channel
-  // split still sums to the same real total_collected, not the raw tender.
+  // practice never happens; cash absorbs the cap per row so it never
+  // exceeds what was billed, not the raw tender. Card/online surcharges are
+  // charged on top of the bill (never part of total_collected), so they're
+  // shown in Card/Online but not taken off cash.
   const card = rows.reduce((s, p) => s + safeNum(p.card_amount) + safeNum(p.card_surcharge_amount), 0);
   const online = rows.reduce((s, p) => s + safeNum(p.online_amount) + safeNum(p.online_surcharge_amount), 0);
   const cash = rows.reduce((s, p) => {
     const rawCash = safeNum(p.cash_amount) + safeNum(p.cash_amount_foreign) * safeNum(p.cash_exchange_rate);
-    const nonCash = safeNum(p.card_amount) + safeNum(p.card_surcharge_amount) + safeNum(p.online_amount) + safeNum(p.online_surcharge_amount);
+    const nonCash = safeNum(p.card_amount) + safeNum(p.online_amount);
     return s + Math.max(0, Math.min(rawCash, getPaidAmount(p) - nonCash));
   }, 0);
 
