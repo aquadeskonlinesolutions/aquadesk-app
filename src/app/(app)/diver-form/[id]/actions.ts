@@ -1526,7 +1526,7 @@ export async function sendInvoice(diverId: string, invoiceEmailId: string): Prom
   const [{ data: invoice }, { data: diver }, { data: dc }] = await Promise.all([
     supabase
       .from("invoice_emails")
-      .select("invoice_snapshot")
+      .select("invoice_snapshot, visit_id")
       .eq("id", invoiceEmailId)
       .eq("dive_center_id", user.diveCenterId)
       .single(),
@@ -1537,9 +1537,19 @@ export async function sendInvoice(diverId: string, invoiceEmailId: string): Prom
   if (!invoice) return { error: "Invoice not found." };
   if (!diver?.email) return { error: "This diver has no email address on file." };
 
+  // The snapshot has no deposits; show the visit's active ones (same as the
+  // print view and Bill Summary's Deposits Applied).
+  const { data: depositRows, error: depositsError } = await supabase
+    .from("deposits")
+    .select("amount")
+    .eq("visit_id", invoice.visit_id)
+    .eq("status", "active");
+  if (depositsError) return { error: `Could not load deposits: ${depositsError.message}` };
+
   const html = buildInvoiceEmailHtml({
     diveCenterName: dc?.name ?? "Your Dive Center",
     snapshot: (invoice.invoice_snapshot ?? {}) as Record<string, unknown>,
+    depositsApplied: (depositRows ?? []).reduce((s, d) => s + Number(d.amount), 0),
   });
 
   const resend = getResendClient();

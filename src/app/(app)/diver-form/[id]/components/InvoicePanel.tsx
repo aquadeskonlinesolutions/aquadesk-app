@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { sendInvoice } from "../actions";
 import type { VisitInvoice } from "../data";
+import { fmtExchangeRate, fmtForeignAmount, summarizeInvoice } from "../invoiceSummary";
 import { EXCESS_LABEL } from "@/lib/payments";
 
 function peso(n: number): string {
@@ -29,6 +30,7 @@ export function InvoicePanel({
   diverId,
   diveCenterName,
   invoice,
+  depositsApplied,
   onSent,
   onUnlockClick,
   isPrintTarget,
@@ -37,6 +39,7 @@ export function InvoicePanel({
   diverId: string;
   diveCenterName: string;
   invoice: VisitInvoice;
+  depositsApplied: number;
   onSent: () => void;
   onUnlockClick: () => void;
   isPrintTarget: boolean;
@@ -47,9 +50,7 @@ export function InvoicePanel({
 
   const snap = invoice.snapshot;
   const activities = (snap.activities as Record<string, unknown>[] | undefined) ?? [];
-  const payment = (snap.payment as Record<string, unknown> | undefined) ?? {};
-  const grandTotal = num(snap.grand_total);
-  const discount = num(snap.discount);
+  const summary = summarizeInvoice(snap, depositsApplied);
   const diverName = typeof snap.diver_name === "string" ? snap.diver_name : "Diver";
   const nationality = typeof snap.nationality === "string" ? snap.nationality : null;
   const closedAt = typeof snap.closed_at === "string" ? snap.closed_at : invoice.sentAt;
@@ -159,49 +160,70 @@ export function InvoicePanel({
         <div className="flex justify-end">
           <table className="min-w-[280px] border border-gray-200 rounded-lg overflow-hidden text-sm">
             <tbody>
-              {discount > 0 && (
+              <tr className="border-b border-gray-100">
+                <td className="px-3 py-2">Subtotal</td>
+                <td className="px-3 py-2 text-right">{peso(summary.subtotal)}</td>
+              </tr>
+              {summary.discount > 0 && (
                 <tr className="border-b border-gray-100">
                   <td className="px-3 py-2">Discount</td>
-                  <td className="px-3 py-2 text-right text-red">− {peso(discount)}</td>
+                  <td className="px-3 py-2 text-right text-red">− {peso(summary.discount)}</td>
                 </tr>
               )}
-              {num(payment.cash_amount) > 0 && (
+              {summary.depositsApplied > 0 && (
+                <tr className="border-b border-gray-100">
+                  <td className="px-3 py-2">Less: Deposit</td>
+                  <td className="px-3 py-2 text-right text-red">− {peso(summary.depositsApplied)}</td>
+                </tr>
+              )}
+              {(summary.discount > 0 || summary.depositsApplied > 0) && (
+                <tr className="border-b border-gray-100 font-semibold">
+                  <td className="px-3 py-2">Amount Due</td>
+                  <td className="px-3 py-2 text-right">{peso(summary.amountDue)}</td>
+                </tr>
+              )}
+              {summary.cash > 0 && (
                 <tr className="border-b border-gray-100">
                   <td className="px-3 py-2">Cash</td>
-                  <td className="px-3 py-2 text-right">{peso(num(payment.cash_amount))}</td>
+                  <td className="px-3 py-2 text-right">{peso(summary.cash)}</td>
                 </tr>
               )}
-              {num(payment.card_amount) > 0 && (
+              {summary.foreignCash && (
                 <tr className="border-b border-gray-100">
-                  <td className="px-3 py-2">
-                    Card
-                  </td>
+                  <td className="px-3 py-2">Cash ({summary.foreignCash.currency})</td>
                   <td className="px-3 py-2 text-right">
-                    {peso(num(payment.card_amount))}
-                    {num(payment.card_surcharge_amount) > 0 ? ` + surcharge ${peso(num(payment.card_surcharge_amount))}` : ""}
+                    {summary.foreignCash.currency} {fmtForeignAmount(summary.foreignCash.amount)} @ ₱
+                    {fmtExchangeRate(summary.foreignCash.rate)} = {peso(summary.foreignCash.php)}
                   </td>
                 </tr>
               )}
-              {num(payment.online_amount) > 0 && (
+              {summary.card && (
                 <tr className="border-b border-gray-100">
-                  <td className="px-3 py-2">
-                    Online
-                  </td>
+                  <td className="px-3 py-2">Card</td>
                   <td className="px-3 py-2 text-right">
-                    {peso(num(payment.online_amount))}
-                    {num(payment.online_surcharge_amount) > 0 ? ` + surcharge ${peso(num(payment.online_surcharge_amount))}` : ""}
+                    {peso(summary.card.amount)}
+                    {summary.card.surcharge > 0 ? ` (surcharge ${peso(summary.card.surcharge)})` : ""}
                   </td>
                 </tr>
               )}
-              {num(payment.excess_amount) > 0 && (
+              {summary.online && (
+                <tr className="border-b border-gray-100">
+                  <td className="px-3 py-2">Online</td>
+                  <td className="px-3 py-2 text-right">
+                    {peso(summary.online.amount)}
+                    {summary.online.surcharge > 0 ? ` (surcharge ${peso(summary.online.surcharge)})` : ""}
+                  </td>
+                </tr>
+              )}
+              {summary.excess > 0 && (
                 <tr className="border-b border-gray-100">
                   <td className="px-3 py-2 text-orange">{EXCESS_LABEL}</td>
-                  <td className="px-3 py-2 text-right text-orange">{peso(num(payment.excess_amount))}</td>
+                  <td className="px-3 py-2 text-right text-orange">{peso(summary.excess)}</td>
                 </tr>
               )}
               <tr className="bg-navy text-white font-bold">
                 <td className="px-3 py-2">Grand Total</td>
-                <td className="px-3 py-2 text-right">{peso(grandTotal)}</td>
+                <td className="px-3 py-2 text-right">{peso(summary.grandTotal)}</td>
               </tr>
             </tbody>
           </table>

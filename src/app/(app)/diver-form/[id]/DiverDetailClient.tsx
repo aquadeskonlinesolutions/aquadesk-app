@@ -178,6 +178,7 @@ export function DiverDetailClient({
           diverId={diver.id}
           diveCenterName={diveCenterName}
           invoice={invoice}
+          depositsApplied={deposits.filter((d) => d.status === "active").reduce((s, d) => s + d.amount, 0)}
           onSent={() => setInvoice((prev) => (prev ? { ...prev, emailDeliveryStatus: "sent", emailSentAt: new Date().toISOString() } : prev))}
           onUnlockClick={() => setUnlockOpen(true)}
           isPrintTarget={printTarget === "invoice"}
