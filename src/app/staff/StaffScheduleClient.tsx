@@ -91,6 +91,8 @@ type CrewTrip = {
   departure_time: string | null;
   notes: string | null;
   is_joiner: boolean;
+  // Added by migration 056; missing from older get_crew_schedule versions.
+  boat_mode?: "own_boat" | "join_ride" | "rental";
   joiner_boat_name: string | null;
   guest_divers_count: number | null;
   guest_dive_center_name: string | null;
@@ -262,22 +264,32 @@ export function StaffScheduleClient() {
         ) : (
           trips.map((trip) => {
             const tally = tripTankTally(trip);
-            const boatIcon = trip.is_joiner ? "🔗" : "🚤";
+            // is_joiner is true for rentals too; boat_mode tells them apart.
+            // Without boat_mode (function not migrated) this is the old behaviour.
+            const isRental = trip.boat_mode === "rental";
+            const isJoinRide = trip.is_joiner && !isRental;
+            const boatIcon = isJoinRide ? "🔗" : "🚤";
+            const boatName = isRental ? trip.joiner_boat_name || "Boat TBD" : (trip.boat?.name ?? "Boat TBD");
             return (
               <div key={trip.schedule_id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 {/* Header */}
                 <div className="bg-gray-100 px-5 py-4 border-b border-gray-200">
                   <div className="font-display text-navy text-lg mb-1 flex items-center gap-2 flex-wrap">
                     <span>
-                      {boatIcon} {trip.boat?.name ?? "Boat TBD"}
+                      {boatIcon} {boatName}
                     </span>
-                    {trip.is_joiner && (
+                    {isJoinRide && (
                       <span className="text-xs font-bold bg-orange-light text-orange rounded-full px-2.5 py-0.5">
                         Join Ride
                       </span>
                     )}
+                    {isRental && (
+                      <span className="text-xs font-bold bg-gray-200 text-navy rounded-full px-2.5 py-0.5">
+                        Rental
+                      </span>
+                    )}
                   </div>
-                  {trip.is_joiner && trip.joiner_boat_name ? (
+                  {isJoinRide && trip.joiner_boat_name ? (
                     <div className="text-xs text-gray-600">🏪 Joining: {trip.joiner_boat_name}</div>
                   ) : (
                     <>
