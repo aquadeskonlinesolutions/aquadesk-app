@@ -176,9 +176,10 @@ export async function loadManifestDetail(
     scheduleId,
     scheduleDate: schedule.schedule_date,
     // A rental boat isn't in Settings > Fleet: its name and captain are the
-    // ones typed on the trip, and stay blank when missing.
+    // ones typed on the trip, and stay blank when missing. An own boat uses
+    // the trip's captain, falling back to the Fleet default captain.
     boatName: isRental ? (schedule.joiner_boat_name ?? "") : (boat?.name ?? "Unknown Boat"),
-    captain: isRental ? schedule.captain : (boat?.captain ?? null),
+    captain: isRental ? schedule.captain : (schedule.captain || boat?.captain || null),
     siteLabel: siteNames?.length ? siteNames.join(", ") : "________",
     district: manifest?.district ?? "",
     port: manifest?.port ?? "",

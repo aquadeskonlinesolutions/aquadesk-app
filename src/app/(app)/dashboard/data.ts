@@ -402,7 +402,9 @@ async function loadAlerts(
     .select("id, schedule_date")
     .eq("dive_center_id", diveCenterId)
     .in("schedule_date", last3DayStrs)
-    .eq("is_joiner", true)
+    // Join rides only — a rental is also is_joiner, but it isn't logged
+    // as a join ride.
+    .eq("boat_mode", "join_ride")
     .eq("cancelled", false);
 
   const { data: recentJoinLogged } = await supabase
