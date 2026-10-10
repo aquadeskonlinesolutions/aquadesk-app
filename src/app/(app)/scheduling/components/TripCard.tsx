@@ -829,11 +829,30 @@ export function TripCard({
                   />
                 </div>
               </div>
+            ) : form.boatMode === "rental" ? (
+              <div className="col-span-2 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Rental Boat Name</label>
+                  <input
+                    disabled={locked}
+                    value={form.joinerBoatName}
+                    onChange={(e) => setForm({ ...form, joinerBoatName: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Boat Captain (optional)</label>
+                  <input
+                    disabled={locked}
+                    value={form.captain}
+                    onChange={(e) => setForm({ ...form, captain: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm disabled:bg-gray-50"
+                  />
+                </div>
+              </div>
             ) : (
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  {form.boatMode === "rental" ? "Rental Boat Name" : "Their Boat Name"}
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Their Boat Name</label>
                 <input
                   disabled={locked}
                   value={form.joinerBoatName}

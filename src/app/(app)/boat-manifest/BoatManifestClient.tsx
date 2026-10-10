@@ -24,9 +24,11 @@ function formatTime(time: string | null): string {
 // Matches boat-manifest.html's real displayBoatName(): every rendered
 // boat name is prefixed "MBCA " (Bureau-of-Customs vessel-type
 // convention), guarded case-insensitively so a boat already named with
-// that prefix in Settings > Fleet never gets it doubled.
+// that prefix in Settings > Fleet never gets it doubled. A rental trip
+// saved without a boat name stays blank (no lone "MBCA").
 function mbca(name: string): string {
   const trimmed = name.trim();
+  if (!trimmed) return "";
   return /^mbca\b/i.test(trimmed) ? trimmed : `MBCA ${trimmed}`;
 }
 
@@ -144,7 +146,7 @@ export function BoatManifestClient({
             <option value="">— Choose a trip —</option>
             {trips.map((t) => (
               <option key={t.scheduleId} value={t.scheduleId}>
-                {mbca(t.boatName)} — {t.siteLabel} — {formatTime(t.departureTime)}
+                {mbca(t.boatName) || "Rental boat (no name)"} — {t.siteLabel} — {formatTime(t.departureTime)}
                 {t.hasManifestEdits ? " ✏️ edited" : ""}
               </option>
             ))}

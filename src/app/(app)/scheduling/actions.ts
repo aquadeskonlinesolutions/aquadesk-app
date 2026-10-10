@@ -142,9 +142,12 @@ async function replaceScheduleSpareTanks(
 
 // Matches scheduling.html's validateTrip: an own-boat trip needs a
 // captain name and a non-negative fuel figure before it can be saved —
-// join-ride/rental trips need neither (no boat of ours to fuel/crew).
+// join-ride/rental trips need neither (no boat of ours to fuel/crew), only
+// the boat's name (same rule as the form; the rental captain is optional).
 function validateOwnBoatFields(input: TripFormInput): string | null {
-  if (input.boatMode !== "own_boat") return null;
+  if (input.boatMode !== "own_boat") {
+    return input.joinerBoatName.trim() ? null : "Boat name is required.";
+  }
   if (!input.captain.trim()) return "Enter the boat captain before saving this trip.";
   if (input.fuelConsumedLiters === null || input.fuelConsumedLiters < 0) {
     return "Enter the fuel consumption in liters before saving this trip.";
@@ -174,7 +177,8 @@ export async function createTrip(
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
       trip_type_id: input.tripTypeId,
-      captain: isJoiner ? null : input.captain.trim() || null,
+      // A rental keeps its captain for the boat manifest; a join ride has none.
+      captain: input.boatMode === "join_ride" ? null : input.captain.trim() || null,
       notes: input.notes.trim() || null,
       fuel_consumed_liters: isJoiner ? null : input.fuelConsumedLiters,
       guest_divers_count: input.guestDiversCount || null,
@@ -226,7 +230,8 @@ export async function updateTrip(
       joiner_boat_name: isJoiner ? input.joinerBoatName.trim() || null : null,
       departure_time: input.departureTime || null,
       trip_type_id: input.tripTypeId,
-      captain: isJoiner ? null : input.captain.trim() || null,
+      // A rental keeps its captain for the boat manifest; a join ride has none.
+      captain: input.boatMode === "join_ride" ? null : input.captain.trim() || null,
       notes: input.notes.trim() || null,
       fuel_consumed_liters: isJoiner ? null : input.fuelConsumedLiters,
       guest_divers_count: input.guestDiversCount || null,

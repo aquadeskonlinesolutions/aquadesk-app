@@ -35,6 +35,8 @@ async function siteNamesBySchedule(
   return map;
 }
 
+const MANIFEST_BOAT_MODES = ["own_boat", "rental"];
+
 export async function loadTripsForDate(
   diveCenterId: string,
   date: string,
@@ -44,10 +46,13 @@ export async function loadTripsForDate(
   const [{ data: schedules }, { data: boats }, { data: manifests }] = await Promise.all([
     supabase
       .from("schedules")
-      .select("id, boat_id, departure_time")
+      .select("id, boat_id, boat_mode, joiner_boat_name, departure_time")
       .eq("dive_center_id", diveCenterId)
       .eq("schedule_date", date)
-      .eq("is_joiner", false)
+      // Own boats and rental boats only — a join ride is someone else's
+      // boat, so it never gets a manifest from us. (is_joiner is true for
+      // both rental and join ride; boat_mode is what tells them apart.)
+      .in("boat_mode", MANIFEST_BOAT_MODES)
       .eq("cancelled", false)
       .order("departure_time"),
     supabase.from("boats").select("id, name").eq("dive_center_id", diveCenterId),
@@ -70,7 +75,7 @@ export async function loadTripsForDate(
     const siteNames = sitesBySchedule.get(s.id);
     return {
       scheduleId: s.id,
-      boatName: boat?.name ?? "Unknown Boat",
+      boatName: s.boat_mode === "rental" ? (s.joiner_boat_name ?? "") : (boat?.name ?? "Unknown Boat"),
       siteLabel: siteNames?.length ? siteNames.join(", ") : "No sites",
       departureTime: s.departure_time,
       hasManifestEdits: !!(
@@ -116,11 +121,13 @@ export async function loadManifestDetail(
 
   const { data: schedule } = await supabase
     .from("schedules")
-    .select("id, boat_id, schedule_date")
+    .select("id, boat_id, boat_mode, joiner_boat_name, captain, schedule_date")
     .eq("id", scheduleId)
     .eq("dive_center_id", diveCenterId)
+    .in("boat_mode", MANIFEST_BOAT_MODES)
     .single();
   if (!schedule) return null;
+  const isRental = schedule.boat_mode === "rental";
 
   const [{ data: boat }, sitesBySchedule, { data: scheduleDivers }, { data: manifest }] =
     await Promise.all([
@@ -168,8 +175,10 @@ export async function loadManifestDetail(
   return {
     scheduleId,
     scheduleDate: schedule.schedule_date,
-    boatName: boat?.name ?? "Unknown Boat",
-    captain: boat?.captain ?? null,
+    // A rental boat isn't in Settings > Fleet: its name and captain are the
+    // ones typed on the trip, and stay blank when missing.
+    boatName: isRental ? (schedule.joiner_boat_name ?? "") : (boat?.name ?? "Unknown Boat"),
+    captain: isRental ? schedule.captain : (boat?.captain ?? null),
     siteLabel: siteNames?.length ? siteNames.join(", ") : "________",
     district: manifest?.district ?? "",
     port: manifest?.port ?? "",
