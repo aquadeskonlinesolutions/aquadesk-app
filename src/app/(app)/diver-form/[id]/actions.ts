@@ -253,6 +253,26 @@ export async function saveDiverEquipment(
 
 // ── Visits + Activities ─────────────────────────────────────────────────
 
+const CLOSED_BILL_ERROR = "This bill is closed. Unlock it with the billing password before changing it.";
+
+// The database refuses activity changes on a closed/voided visit (migration
+// 057); this gives the same answer up front, before a multi-row action
+// starts. Returns an error message, or null when the visit is open.
+async function closedVisitError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  diveCenterId: string,
+  visitId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("visits")
+    .select("visit_status")
+    .eq("id", visitId)
+    .eq("dive_center_id", diveCenterId)
+    .maybeSingle();
+  if (!data) return "Visit not found.";
+  return data.visit_status === "open" ? null : CLOSED_BILL_ERROR;
+}
+
 export async function createVisit(
   diverId: string,
   experienceType: "fun_diving" | "dive_course",
@@ -287,6 +307,9 @@ export async function addActivityRow(
 ): Promise<{ error?: string }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
+
+  const closedError = await closedVisitError(supabase, user.diveCenterId, visitId);
+  if (closedError) return { error: closedError };
 
   const { error } = await supabase.from("activities").insert({
     dive_center_id: user.diveCenterId,
@@ -485,6 +508,9 @@ export async function applyChargesToVisit(
   const user = await getCurrentUser();
   const supabase = await createClient();
 
+  const closedError = await closedVisitError(supabase, user.diveCenterId, visitId);
+  if (closedError) return { error: closedError };
+
   const [{ data: visit }, { data: dc }, { data: rowsRaw }] = await Promise.all([
     supabase
       .from("visits")
@@ -675,6 +701,9 @@ export async function applyBundleToVisit(
   const user = await getCurrentUser();
   const supabase = await createClient();
 
+  const closedError = await closedVisitError(supabase, user.diveCenterId, visitId);
+  if (closedError) return { error: closedError };
+
   const { data: bundle } = await supabase
     .from("bundles")
     .select("id, name, price, equipment_included")
@@ -760,6 +789,9 @@ export async function saveRateSelectionsAndApply(
 }> {
   const user = await getCurrentUser();
   const supabase = await createClient();
+
+  const closedError = await closedVisitError(supabase, user.diveCenterId, visitId);
+  if (closedError) return { error: closedError };
 
   for (const sel of selections) {
     const { error } = await supabase.from("visit_rate_selections").upsert(

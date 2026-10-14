@@ -260,7 +260,9 @@ export async function loadOverviewData(
   let openDiverBills = 0;
   if (openVisitIds.length > 0) {
     const [{ data: openActivities }, { data: openPayments }, { data: openDeposits }] = await Promise.all([
-      supabase.from("activities").select("visit_id, total").in("visit_id", openVisitIds),
+      // Cancelled activities aren't billed (Bill Summary, Save and Checkout
+      // all skip them), so they don't count toward what's still owed.
+      supabase.from("activities").select("visit_id, total").in("visit_id", openVisitIds).neq("status", "cancelled"),
       supabase
         .from("payments")
         .select(
@@ -1755,11 +1757,22 @@ export type AuditUnlockLog = {
   notes: string;
 };
 
+// One change made to a bill while it was reopened after Unlock Bill —
+// written by the database (migration 057), never by the app.
+export type AuditBillChange = {
+  id: string;
+  label: string;
+  changedBy: string;
+  changedAt: string;
+  details: string;
+};
+
 export type BillingAuditData = {
   diveCenterName: string;
   flagged: AuditFlaggedVisit[];
   invoices: AuditInvoiceRow[];
   unlocks: AuditUnlockLog[];
+  changesAfterUnlock: AuditBillChange[];
 };
 
 export async function loadBillingAuditData(
@@ -1783,6 +1796,7 @@ export async function loadBillingAuditData(
     { data: invoiceEmailsRaw },
     { data: allInvoiceEmailsRaw },
     { data: unlockLogsRaw },
+    { data: changeLogsRaw },
   ] = await Promise.all([
     supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
     supabase
@@ -1813,12 +1827,22 @@ export async function loadBillingAuditData(
       .eq("dive_center_id", diveCenterId)
       .eq("action", "bill_unlocked")
       .order("created_at", { ascending: false }),
+    // Changes after an unlock — scoped to the applied date range.
+    supabase
+      .from("audit_logs")
+      .select("id, performed_by, notes, created_at")
+      .eq("dive_center_id", diveCenterId)
+      .eq("action", "bill_changed_after_unlock")
+      .gte("created_at", startIso)
+      .lte("created_at", endIso)
+      .order("created_at", { ascending: false }),
   ]);
 
   const visits = visitsRaw ?? [];
   const invoiceEmails = invoiceEmailsRaw ?? [];
   const allInvoiceEmails = allInvoiceEmailsRaw ?? [];
   const unlockLogs = unlockLogsRaw ?? [];
+  const changeLogs = changeLogsRaw ?? [];
 
   const diverIds = [
     ...new Set(
@@ -1833,6 +1857,7 @@ export async function loadBillingAuditData(
         ...invoiceEmails.map((i) => i.sent_by),
         ...allInvoiceEmails.map((i) => i.sent_by),
         ...unlockLogs.map((l) => l.performed_by),
+        ...changeLogs.map((l) => l.performed_by),
       ].filter((id): id is string => !!id),
     ),
   ];
@@ -1907,5 +1932,17 @@ export async function loadBillingAuditData(
     };
   });
 
-  return { diveCenterName: dc?.name ?? "Dive Center", flagged, invoices, unlocks };
+  const changesAfterUnlock: AuditBillChange[] = changeLogs.map((log) => {
+    const notes = log.notes || "—";
+    const split = notes.indexOf(" — ");
+    return {
+      id: log.id,
+      label: split > 0 ? notes.slice(0, split) : "—",
+      changedBy: (log.performed_by && userMap.get(log.performed_by)) || "—",
+      changedAt: log.created_at,
+      details: split > 0 ? notes.slice(split + 3) : notes,
+    };
+  });
+
+  return { diveCenterName: dc?.name ?? "Dive Center", flagged, invoices, unlocks, changesAfterUnlock };
 }

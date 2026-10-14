@@ -377,6 +377,45 @@ export function BillingAuditTab({ data }: { data: BillingAuditData }) {
           </div>
         )}
       </div>
+
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-200">
+          <div className="text-sm font-extrabold text-navy">Changes After Unlock</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Every change made to a bill while it was reopened with the billing password (before → after).
+          </div>
+        </div>
+        {data.changesAfterUnlock.length === 0 ? (
+          <div className="p-8 text-center text-gray-400 text-sm">No changes after an unlock in this period.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-100 text-left">
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Diver</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Changed By
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Changed At
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.changesAfterUnlock.map((c) => (
+                  <tr key={c.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-3 font-semibold text-navy">{c.label}</td>
+                    <td className="px-4 py-3">{c.changedBy}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{fmtDateTime(c.changedAt)}</td>
+                    <td className="px-4 py-3 text-gray-600">{c.details}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
