@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 import { loadCustomChannels, type CustomChannelOption } from "@/lib/paymentChannels";
+import { loadAddonCategories, type AddonCategoryOption } from "@/lib/addonCategories";
 
 // Resolves a channel enum value + (for "custom") its per-dive-center row
 // id into one final display string — works uniformly for the 4 fixed
@@ -207,6 +208,40 @@ export type Deposit = {
     refundMethodLabel: string | null;
   } | null;
 };
+
+// Visit-level add-ons (migration 059) — shown in the Bill Summary. The old
+// per-activity "addons" amount on a row (Activity.addons) is separate legacy
+// data and keeps counting as before.
+export type VisitAddon = {
+  id: string;
+  description: string;
+  categoryId: string | null;
+  categoryName: string;
+  amount: number;
+};
+
+export type { AddonCategoryOption };
+
+export async function loadVisitAddons(visitId: string): Promise<VisitAddon[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("visit_addons")
+    .select("id, description, category_id, category_name, amount")
+    .eq("visit_id", visitId)
+    .order("created_at", { ascending: true });
+  return (data ?? []).map((a) => ({
+    id: a.id,
+    description: a.description,
+    categoryId: a.category_id,
+    categoryName: a.category_name,
+    amount: Number(a.amount) || 0,
+  }));
+}
+
+export async function loadAddonCategoryOptions(diveCenterId: string): Promise<AddonCategoryOption[]> {
+  const supabase = await createClient();
+  return loadAddonCategories(supabase, diveCenterId);
+}
 
 export async function loadDeposits(visitId: string): Promise<Deposit[]> {
   const supabase = await createClient();

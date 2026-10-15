@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { sendInvoice } from "../actions";
 import type { VisitInvoice } from "../data";
-import { fmtExchangeRate, fmtForeignAmount, summarizeInvoice } from "../invoiceSummary";
+import { fmtExchangeRate, fmtForeignAmount, showOlderAddonsColumn, snapshotAddons, summarizeInvoice } from "../invoiceSummary";
 import { EXCESS_LABEL } from "@/lib/payments";
 
 function peso(n: number): string {
@@ -51,6 +51,8 @@ export function InvoicePanel({
   const snap = invoice.snapshot;
   const activities = (snap.activities as Record<string, unknown>[] | undefined) ?? [];
   const summary = summarizeInvoice(snap, depositsApplied);
+  const addonLines = snapshotAddons(snap);
+  const olderAddonsColumn = showOlderAddonsColumn(snap);
   const diverName = typeof snap.diver_name === "string" ? snap.diver_name : "Diver";
   const nationality = typeof snap.nationality === "string" ? snap.nationality : null;
   const closedAt = typeof snap.closed_at === "string" ? snap.closed_at : invoice.sentAt;
@@ -135,7 +137,9 @@ export function InvoicePanel({
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-right">Nitrox</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-right">15L</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-right">Equip.</th>
-              <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-right">Addons</th>
+              {olderAddonsColumn && (
+                <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-right">Addons</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -151,11 +155,32 @@ export function InvoicePanel({
                 <td className="px-2 py-2 text-right">{peso(num(a.nitrox_fee))}</td>
                 <td className="px-2 py-2 text-right">{peso(num(a.fifteen_l_fee))}</td>
                 <td className="px-2 py-2 text-right">{peso(num(a.equipment_rental))}</td>
-                <td className="px-2 py-2 text-right">{peso(num(a.addons))}</td>
+                {olderAddonsColumn && <td className="px-2 py-2 text-right">{peso(num(a.addons))}</td>}
               </tr>
             ))}
           </tbody>
         </table>
+
+        {addonLines.length > 0 && (
+          <table className="w-full text-sm mb-5">
+            <thead>
+              <tr className="bg-gray-100 text-left">
+                <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Add-ons</th>
+                <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Category</th>
+                <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {addonLines.map((l, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td className="px-2 py-2">{l.description}</td>
+                  <td className="px-2 py-2">{l.category}</td>
+                  <td className="px-2 py-2 text-right">{peso(l.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
         <div className="flex justify-end">
           <table className="min-w-[280px] border border-gray-200 rounded-lg overflow-hidden text-sm">

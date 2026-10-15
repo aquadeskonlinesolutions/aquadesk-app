@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getPaidAmount } from "@/lib/payments";
+import { loadAddonTotals } from "@/lib/addons";
 import { isDiverActive, isGroupActive } from "../divers/visibility";
 import type { TripTypeDurations } from "./tripWindow";
 import { ageOn } from "@/lib/age";
@@ -970,7 +971,7 @@ export async function loadRosterDivers(diveCenterId: string): Promise<RosterData
         .order("created_at", { ascending: false }),
       supabase
         .from("visits")
-        .select("diver_id, is_active, is_paid, visit_status, experience_type, course_rate_id, created_at")
+        .select("id, diver_id, is_active, is_paid, visit_status, experience_type, course_rate_id, created_at")
         .eq("dive_center_id", diveCenterId)
         .neq("visit_status", "voided")
         .order("created_at", { ascending: false }),
@@ -1037,6 +1038,15 @@ export async function loadRosterDivers(diveCenterId: string): Promise<RosterData
   activities.forEach((a) => {
     if (a.status === "cancelled") return;
     activitiesTotalByDiver.set(a.diver_id, (activitiesTotalByDiver.get(a.diver_id) ?? 0) + (Number(a.total) || 0));
+  });
+  // Visit-level add-ons (migration 059) count toward what a diver has been billed.
+  const addonTotalByVisit = await loadAddonTotals(
+    supabase,
+    visits.map((v) => v.id),
+  );
+  visits.forEach((v) => {
+    const t = addonTotalByVisit.get(v.id);
+    if (t) activitiesTotalByDiver.set(v.diver_id, (activitiesTotalByDiver.get(v.diver_id) ?? 0) + t);
   });
   const paidTotalByDiver = new Map<string, number>();
   const anyPaymentIsPaidByDiver = new Set<string>();

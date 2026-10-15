@@ -14,6 +14,28 @@
 // subtotal; old app: total collected incl. surcharge), so the subtotal is
 // taken from the activity rows the invoice itself prints instead.
 
+export type InvoiceAddon = { description: string; category: string; amount: number };
+
+// Visit-level add-ons stored on a new invoice snapshot (migration 059). An
+// older snapshot has no `addons_list` key and returns an empty list.
+export function snapshotAddons(snapshot: Record<string, unknown>): InvoiceAddon[] {
+  const list = snapshot.addons_list;
+  if (!Array.isArray(list)) return [];
+  return list.map((r) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    return { description: String(o.description ?? ""), category: String(o.category ?? ""), amount: num(o.amount) };
+  });
+}
+
+// Whether to print the per-row "Add-ons" column: always for an older invoice
+// (it had that column), and for a new one only if a row still carries an
+// older per-row amount.
+export function showOlderAddonsColumn(snapshot: Record<string, unknown>): boolean {
+  if (!Array.isArray(snapshot.addons_list)) return true;
+  const activities = (snapshot.activities as Record<string, unknown>[] | undefined) ?? [];
+  return activities.some((a) => num(a.addons) !== 0);
+}
+
 export type InvoiceSummary = {
   subtotal: number;
   discount: number;
@@ -49,7 +71,10 @@ export function summarizeInvoice(snapshot: Record<string, unknown>, depositsAppl
   const activities = (snapshot.activities as Record<string, unknown>[] | undefined) ?? [];
   const payment = (snapshot.payment as Record<string, unknown> | undefined) ?? {};
 
-  const subtotal = activities.reduce((s, a) => s + activityRowTotal(a), 0);
+  // Activity rows (incl. any older per-row add-on) + the visit's add-ons.
+  const subtotal =
+    activities.reduce((s, a) => s + activityRowTotal(a), 0) +
+    snapshotAddons(snapshot).reduce((s, a) => s + a.amount, 0);
   const discount = num(snapshot.discount);
   const deposits = Math.max(0, num(depositsApplied));
   const amountDue = Math.max(0, subtotal - discount - deposits);

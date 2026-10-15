@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { savePaymentOnly, checkoutVisit } from "../actions";
 import { computePaymentBreakdown, type PaymentInput } from "../billing";
-import type { Activity, Deposit, ExistingPayment, PaymentConfig, Visit } from "../data";
+import type { Activity, AddonCategoryOption, Deposit, ExistingPayment, PaymentConfig, Visit, VisitAddon } from "../data";
+import { AddonsSection } from "./AddonsSection";
 import { useToast } from "@/components/ui/Toast";
 import { EXCESS_LABEL, EXCESS_HINT, BASE_PAYMENT_CHANNELS, ADD_CHANNEL_VALUE } from "@/lib/payments";
 
@@ -32,6 +33,10 @@ export function BillSummary({
   visit,
   setVisit,
   activities,
+  addons,
+  setAddons,
+  addonCategories,
+  setAddonCategories,
   deposits,
   existingPayment,
   paymentConfig,
@@ -41,6 +46,10 @@ export function BillSummary({
   visit: Visit;
   setVisit: (v: Visit | null) => void;
   activities: Activity[];
+  addons: VisitAddon[];
+  setAddons: React.Dispatch<React.SetStateAction<VisitAddon[]>>;
+  addonCategories: AddonCategoryOption[];
+  setAddonCategories: React.Dispatch<React.SetStateAction<AddonCategoryOption[]>>;
   deposits: Deposit[];
   existingPayment: ExistingPayment | null;
   paymentConfig: PaymentConfig;
@@ -52,7 +61,11 @@ export function BillSummary({
   const [pending, startTransition] = useTransition();
   const showToast = useToast();
 
-  const grandTotal = activities.filter((a) => a.status !== "cancelled").reduce((s, a) => s + a.total, 0);
+  // Activities (including any older per-row add-on amount) + this visit's add-ons.
+  // The server recomputes this itself on Save and Checkout; this is display.
+  const grandTotal =
+    activities.filter((a) => a.status !== "cancelled").reduce((s, a) => s + a.total, 0) +
+    addons.reduce((s, a) => s + a.amount, 0);
   const depositsTotal = deposits.filter((d) => d.status === "active").reduce((s, d) => s + d.amount, 0);
   const amountOwed = grandTotal - input.discount - depositsTotal;
   const breakdown = computePaymentBreakdown(input, paymentConfig.cardSurchargeRate, paymentConfig.onlineSurchargeRate, amountOwed);
@@ -177,6 +190,15 @@ export function BillSummary({
             </div>
           )}
         </div>
+
+        <AddonsSection
+          diverId={diverId}
+          visitId={visit.id}
+          addons={addons}
+          setAddons={setAddons}
+          categories={addonCategories}
+          setCategories={setAddonCategories}
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 border-t border-gray-200 pt-4">
           <div>

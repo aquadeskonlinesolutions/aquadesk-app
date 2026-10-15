@@ -17,6 +17,7 @@ import {
 import { computePaymentBreakdown, type PaymentInput } from "./billing";
 import type { PaymentChannel } from "@/lib/payments";
 import { resolveOnlineChannel } from "@/lib/paymentChannels";
+import { loadAddonTotals } from "@/lib/addons";
 import { loadPaymentConfig, loadInvoiceForVisit, loadDeposits, type Deposit } from "./data";
 import { buildInvoiceEmailHtml } from "./invoiceEmailHtml";
 import { getResendClient, RESEND_FROM_EMAIL } from "@/lib/email/resend";
@@ -935,13 +936,15 @@ export async function voidVisit(diverId: string, visitId: string): Promise<{ err
   const user = await getCurrentUser();
   const supabase = await createClient();
 
-  const [{ count: activityCount }, { count: paymentCount }] = await Promise.all([
+  const [{ count: activityCount }, { count: paymentCount }, { count: addonCount }] = await Promise.all([
     supabase.from("activities").select("id", { count: "exact", head: true }).eq("visit_id", visitId),
     supabase.from("payments").select("id", { count: "exact", head: true }).eq("visit_id", visitId),
+    // Add-ons (migration 059) would cascade-delete with the visit.
+    supabase.from("visit_addons").select("id", { count: "exact", head: true }).eq("visit_id", visitId),
   ]);
 
-  if ((activityCount ?? 0) > 0 || (paymentCount ?? 0) > 0) {
-    return { error: "Can't void a visit that already has activities or a payment on file." };
+  if ((activityCount ?? 0) > 0 || (paymentCount ?? 0) > 0 || (addonCount ?? 0) > 0) {
+    return { error: "Can't void a visit that already has activities, add-ons or a payment on file." };
   }
 
   // Voiding hard-deletes the visit, which cascades to its deposits — a
@@ -1092,9 +1095,16 @@ export async function savePaymentOnly(
     .eq("visit_id", visitId)
     .eq("dive_center_id", user.diveCenterId);
   if (activitiesError) return { error: activitiesError.message };
-  const grandTotalPhp = (activityRows ?? [])
-    .filter((a) => a.status !== "cancelled")
-    .reduce((s, a) => s + Number(a.total), 0);
+  // + this visit's add-ons (migration 059), from the one shared function.
+  const addonTotalPhp = (await loadAddonTotals(supabase, [visitId])).get(visitId) ?? 0;
+  const grandTotalPhp =
+    Math.round(
+      ((activityRows ?? [])
+        .filter((a) => a.status !== "cancelled")
+        .reduce((s, a) => s + Number(a.total), 0) +
+        addonTotalPhp) *
+        100,
+    ) / 100;
 
   const inputProblem = paymentInputError(input, grandTotalPhp);
   if (inputProblem) {
@@ -1371,7 +1381,20 @@ export async function checkoutVisit(
   }
 
   const completed = activities.filter((a) => a.status !== "cancelled");
-  const grandTotal = completed.reduce((s, a) => s + (Number(a.dive_rate) + Number(a.fuel_surcharge) + Number(a.marine_tax) + Number(a.shark_fee) + Number(a.nitrox_fee) + Number(a.fifteen_l_fee) + Number(a.equipment_rental) + Number(a.addons)), 0);
+  // Add-ons (migration 059): the visit's own list for the invoice, and its
+  // total from the same shared function every other screen uses.
+  const { data: addonRows } = await supabase
+    .from("visit_addons")
+    .select("description, category_name, amount")
+    .eq("visit_id", visitId)
+    .order("created_at", { ascending: true });
+  const addonTotal = (await loadAddonTotals(supabase, [visitId])).get(visitId) ?? 0;
+  const grandTotal =
+    Math.round(
+      (completed.reduce((s, a) => s + (Number(a.dive_rate) + Number(a.fuel_surcharge) + Number(a.marine_tax) + Number(a.shark_fee) + Number(a.nitrox_fee) + Number(a.fifteen_l_fee) + Number(a.equipment_rental) + Number(a.addons)), 0) +
+        addonTotal) *
+        100,
+    ) / 100;
   const depositsTotal = (depositsRaw ?? []).reduce((s, d) => s + Number(d.amount), 0);
 
   // Same server-side validation as savePaymentOnly (grand total above is
@@ -1513,6 +1536,13 @@ export async function checkoutVisit(
       equipment_rental: Number(a.equipment_rental),
       addons: Number(a.addons),
       status: a.status,
+    })),
+    // Visit-level add-ons (migration 059). Older invoices have no such key and
+    // keep showing their per-row Add-ons column.
+    addons_list: (addonRows ?? []).map((r) => ({
+      description: r.description,
+      category: r.category_name,
+      amount: Number(r.amount),
     })),
     discount: input.discount,
     payment: {

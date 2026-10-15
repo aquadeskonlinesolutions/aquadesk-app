@@ -72,6 +72,7 @@ function ActivityRow({
   diveSites,
   packages,
   courseRates,
+  showLegacyAddons,
 }: {
   diverId: string;
   activity: Activity;
@@ -82,6 +83,9 @@ function ActivityRow({
   diveSites: DiveSiteOption[];
   packages: PackageOption[];
   courseRates: CourseRateOption[];
+  // True only when some row on this bill still carries an older per-row
+  // add-on amount; new add-ons live in the Bill Summary (migration 059).
+  showLegacyAddons: boolean;
 }) {
   const [fields, setFields] = useState<ActivityFields>(toFields(activity));
   const fieldsRef = useRef(fields);
@@ -338,7 +342,11 @@ function ActivityRow({
       <td className="px-2 py-2">{numInput(fields.nitroxFee, (v) => updateLocal({ nitroxFee: v }))}</td>
       <td className="px-2 py-2">{numInput(fields.fifteenLFee, (v) => updateLocal({ fifteenLFee: v }))}</td>
       <td className="px-2 py-2">{numInput(fields.equipmentRental, (v) => updateLocal({ equipmentRental: v }))}</td>
-      <td className="px-2 py-2">{numInput(fields.addons, (v) => updateLocal({ addons: v }))}</td>
+      {showLegacyAddons && (
+        <td className="px-2 py-2 text-xs text-gray-600" title="Older add-on amount on this row — read-only, still counted">
+          {peso(fields.addons)}
+        </td>
+      )}
       <td className="px-2 py-2">
         <select
           value={fields.status}
@@ -391,6 +399,7 @@ export function VisitPanel({
   packages,
   rateSelections,
   bundles,
+  addonsTotal,
 }: {
   diverId: string;
   visit: Visit | null;
@@ -403,6 +412,8 @@ export function VisitPanel({
   packages: PackageOption[];
   rateSelections: RateSelection[];
   bundles: BundleOption[];
+  // Sum of this visit's Bill Summary add-ons (migration 059).
+  addonsTotal: number;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [choosingCourse, setChoosingCourse] = useState(false);
@@ -530,9 +541,11 @@ export function VisitPanel({
     setChangeGroup({ group, initial: sel });
   }
 
-  const grandTotal = activities
-    .filter((a) => a.status !== "cancelled")
-    .reduce((s, a) => s + a.total, 0);
+  const grandTotal =
+    activities.filter((a) => a.status !== "cancelled").reduce((s, a) => s + a.total, 0) + addonsTotal;
+  // Older per-row add-on amounts (before add-ons moved to the Bill Summary)
+  // show read-only and keep counting; the column is hidden when there are none.
+  const showLegacyAddons = activities.some((a) => a.addons !== 0);
 
   // Bundles (migration 058): the new-style bundle row has rowType "bundle";
   // an older bundle row only has bundleId (and can't be removed — nothing
@@ -762,7 +775,11 @@ export function VisitPanel({
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Nitrox</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">15L</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Equip.</th>
-              <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Addons</th>
+              {showLegacyAddons && (
+                <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400" title="Older add-on amounts — new add-ons are in the Bill Summary">
+                  Older add-ons
+                </th>
+              )}
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Status</th>
               <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-center">Action</th>
             </tr>
@@ -770,7 +787,7 @@ export function VisitPanel({
           <tbody>
             {activities.length === 0 ? (
               <tr>
-                <td colSpan={13} className="text-center py-8 text-gray-400 text-sm">
+                <td colSpan={showLegacyAddons ? 13 : 12} className="text-center py-8 text-gray-400 text-sm">
                   No activities logged yet.
                 </td>
               </tr>
@@ -790,6 +807,7 @@ export function VisitPanel({
                     diveSites={diveSites}
                     packages={packages}
                     courseRates={courseRates}
+                    showLegacyAddons={showLegacyAddons}
                   />
                 ) : (
                   <tr key={a.id} className="border-b border-gray-100 last:border-0 text-xs">
@@ -805,7 +823,7 @@ export function VisitPanel({
                     <td className="px-2 py-2">{peso(a.nitroxFee)}</td>
                     <td className="px-2 py-2">{peso(a.fifteenLFee)}</td>
                     <td className="px-2 py-2">{peso(a.equipmentRental)}</td>
-                    <td className="px-2 py-2">{peso(a.addons)}</td>
+                    {showLegacyAddons && <td className="px-2 py-2">{peso(a.addons)}</td>}
                     <td className="px-2 py-2">{a.status}</td>
                     <td className="px-2 py-2"></td>
                   </tr>
@@ -816,7 +834,7 @@ export function VisitPanel({
           {activities.length > 0 && (
             <tfoot>
               <tr className="bg-navy text-white font-extrabold">
-                <td className="px-2 py-2" colSpan={12}>
+                <td className="px-2 py-2" colSpan={showLegacyAddons ? 12 : 11}>
                   Visit Total
                 </td>
                 <td className="px-2 py-2 text-right">{peso(grandTotal)}</td>
@@ -825,6 +843,13 @@ export function VisitPanel({
           )}
         </table>
       </div>
+      {(showLegacyAddons || addonsTotal > 0) && (
+        <div className="px-5 py-2 text-xs text-gray-500 border-t border-gray-100">
+          {showLegacyAddons && "Older add-on amounts on this bill are shown read-only and still count in the total. "}
+          {addonsTotal > 0 && `Visit Total includes ${peso(addonsTotal)} of add-ons from the Bill Summary. `}
+          New add-ons are added in the Bill Summary.
+        </div>
+      )}
 
       {ambiguousGroups && visit && (
         <RateSelectModal

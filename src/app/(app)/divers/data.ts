@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getPaidAmount } from "@/lib/payments";
+import { loadAddonTotals } from "@/lib/addons";
 import { isDiverActive, isGroupActive } from "./visibility";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
@@ -136,6 +137,16 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
 
   const activitiesByVisit = new Map<string, { date: string; total: number; status: string }[]>();
   const activitiesTotalByDiver = new Map<string, number>();
+  // Visit-level add-ons (migration 059), per visit and rolled up per diver.
+  const addonTotalByVisit = await loadAddonTotals(
+    supabase,
+    (visits ?? []).map((v) => v.id),
+  );
+  const addonsTotalByDiver = new Map<string, number>();
+  (visits ?? []).forEach((v) => {
+    const t = addonTotalByVisit.get(v.id);
+    if (t) addonsTotalByDiver.set(v.diver_id, (addonsTotalByDiver.get(v.diver_id) ?? 0) + t);
+  });
   (activities ?? []).forEach((a) => {
     const visitList = activitiesByVisit.get(a.visit_id) ?? [];
     visitList.push({ date: a.date, total: Number(a.total) || 0, status: a.status });
@@ -170,7 +181,7 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
       .slice(0, 3)
       .map(([date, total]) => ({ date, total }));
 
-    const totalBill = nonCancelled.reduce((s, a) => s + a.total, 0);
+    const totalBill = nonCancelled.reduce((s, a) => s + a.total, 0) + (visit ? (addonTotalByVisit.get(visit.id) ?? 0) : 0);
     const paid = getPaidAmount(payment);
     // Always derive from the live activities total, never the stale
     // payments.grand_total_php snapshot (a write-once-per-Save field that
@@ -190,7 +201,7 @@ async function buildDiverCards(supabase: Supabase, diveCenterId: string, diverId
     // history, not just their single most recent visit.
     const diverVisits = nonVoidedVisitsByDiver.get(d.id) ?? [];
     const hasOpenVisit = diverVisits.some((v) => v.isActive && v.status !== "closed" && !v.isPaid);
-    const activitiesTotal = activitiesTotalByDiver.get(d.id) ?? 0;
+    const activitiesTotal = (activitiesTotalByDiver.get(d.id) ?? 0) + (addonsTotalByDiver.get(d.id) ?? 0);
     const paidTotal = paidTotalByDiver.get(d.id) ?? 0;
     const hasClosedRecord =
       diverVisits.some((v) => v.isPaid || !v.isActive || v.status === "closed") ||

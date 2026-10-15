@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { safeNum, getPaidAmount, PAYMENT_CHANNEL_LABELS, type PaymentChannel } from "@/lib/payments";
 import { loadCustomChannels, type CustomChannelOption } from "@/lib/paymentChannels";
+import { loadAddonTotals } from "@/lib/addons";
 import { EXPENSE_CATEGORY_LABELS } from "./constants";
 
 // Resolves a channel enum value + (for "custom") its per-dive-center row
@@ -277,10 +278,13 @@ export async function loadOverviewData(
       // what's actually still owed right now. A cancelled one no longer does.
       supabase.from("deposits").select("visit_id, amount").in("visit_id", openVisitIds).eq("status", "active"),
     ]);
+    // Visit-level add-ons (migration 059) are part of what is still owed.
+    const openAddonTotals = await loadAddonTotals(supabase, openVisitIds);
     openDiverBills = openVisitIds.reduce((sum, visitId) => {
-      const total = (openActivities ?? [])
-        .filter((a) => a.visit_id === visitId)
-        .reduce((s, a) => s + safeNum(a.total), 0);
+      const total =
+        (openActivities ?? [])
+          .filter((a) => a.visit_id === visitId)
+          .reduce((s, a) => s + safeNum(a.total), 0) + (openAddonTotals.get(visitId) ?? 0);
       const payment = (openPayments ?? []).find((p) => p.visit_id === visitId);
       const depositsForVisit = (openDeposits ?? [])
         .filter((d) => d.visit_id === visitId)

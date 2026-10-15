@@ -16,6 +16,8 @@ import {
   loadActivePackages,
   loadRateSelections,
   loadBundles,
+  loadVisitAddons,
+  loadAddonCategoryOptions,
 } from "./data";
 import { createClient } from "@/lib/supabase/server";
 import { DiverDetailClient } from "./DiverDetailClient";
@@ -28,7 +30,19 @@ export default async function DiverDetailPage({ params }: { params: Promise<{ id
   if (!diver) notFound();
 
   const supabase = await createClient();
-  const [notes, rentalItems, visit, courseRates, paymentConfig, dc, registrations, diveSites, packages, bundles] =
+  const [
+    notes,
+    rentalItems,
+    visit,
+    courseRates,
+    paymentConfig,
+    dc,
+    registrations,
+    diveSites,
+    packages,
+    bundles,
+    addonCategories,
+  ] =
     await Promise.all([
       loadDiverNotes(id),
       loadEquipmentRentalRates(user.diveCenterId),
@@ -40,15 +54,17 @@ export default async function DiverDetailPage({ params }: { params: Promise<{ id
       loadDiveSites(user.diveCenterId),
       loadActivePackages(user.diveCenterId),
       loadBundles(user.diveCenterId),
+      loadAddonCategoryOptions(user.diveCenterId),
     ]);
-  const [activities, deposits, existingPayment, rateSelections] = visit
+  const [activities, deposits, existingPayment, rateSelections, addons] = visit
     ? await Promise.all([
         loadActivities(visit.id),
         loadDeposits(visit.id),
         loadExistingPayment(visit.id),
         loadRateSelections(visit.id),
+        loadVisitAddons(visit.id),
       ])
-    : [[], [], null, []];
+    : [[], [], null, [], []];
   const invoice = visit && visit.visitStatus === "closed" ? await loadInvoiceForVisit(visit.id) : null;
 
   return (
@@ -72,6 +88,8 @@ export default async function DiverDetailPage({ params }: { params: Promise<{ id
       packages={packages}
       initialRateSelections={rateSelections}
       bundles={bundles}
+      initialAddons={addons}
+      addonCategories={addonCategories}
     />
   );
 }

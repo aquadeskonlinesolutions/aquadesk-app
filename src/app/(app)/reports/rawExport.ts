@@ -17,6 +17,7 @@
 import { Buffer } from "node:buffer";
 import { zipSync, strToU8 } from "fflate";
 import { requireRevenueAccess } from "@/lib/dal";
+import { createClient } from "@/lib/supabase/server";
 import { EXPENSE_CATEGORY_LABELS, PAYMENT_METHOD_LABELS } from "./constants";
 import {
   loadDiverPaymentsExport,
@@ -60,6 +61,39 @@ function expensePaymentMethodCell(paymentMethod: string | null, channelLabel: st
   return label;
 }
 
+// Visit-level add-ons (migration 059) added within the range, by Manila date.
+// Add-ons are already inside each diver's payment amounts in Divers.csv; this
+// is the itemised list behind them. Existing files are unchanged.
+async function loadAddonsCsvRows(diveCenterId: string, dateFrom: string, dateTo: string): Promise<(string | number)[][]> {
+  const supabase = await createClient();
+  const { data: rows } = await supabase
+    .from("visit_addons")
+    .select("diver_id, description, category_name, amount, created_at")
+    .eq("dive_center_id", diveCenterId)
+    .gte("created_at", `${dateFrom}T00:00:00+08:00`)
+    .lte("created_at", `${dateTo}T23:59:59.999+08:00`)
+    .order("created_at", { ascending: true });
+  const list = rows ?? [];
+  if (list.length === 0) return [];
+  const { data: divers } = await supabase
+    .from("divers")
+    .select("id, first_name, last_name, trace_number")
+    .in("id", [...new Set(list.map((r) => r.diver_id))]);
+  const byId = new Map((divers ?? []).map((d) => [d.id, d]));
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" });
+  return list.map((r) => {
+    const d = byId.get(r.diver_id);
+    return [
+      day.format(new Date(r.created_at)),
+      d?.trace_number ?? "",
+      d ? `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim() : "",
+      r.description,
+      r.category_name,
+      Number(r.amount),
+    ];
+  });
+}
+
 export async function exportRawData(
   dateFrom: string,
   dateTo: string,
@@ -84,6 +118,11 @@ export async function exportRawData(
   // same as RentalGearsTab/JoinRideTab already do for their own tables.
   const rentalRows = rentalGears.records.filter((r) => r.date >= dateFrom && r.date <= dateTo);
   const joinRows = joinRide.records.filter((r) => r.date >= dateFrom && r.date <= dateTo);
+
+  const addonsCsv = toCsv(
+    ["Date", "Trace Number", "Name of Diver", "Description", "Category", "Amount"],
+    await loadAddonsCsvRows(user.diveCenterId, dateFrom, dateTo),
+  );
 
   const diversCsv = toCsv(
     ["Date", "Trace Number", "Name of Diver", "Amount", "Payment Method", "Payment Channel", "Notes"],
@@ -208,6 +247,7 @@ export async function exportRawData(
       "Rental Gears.csv": strToU8(rentalGearsCsv),
       "Join Ride.csv": strToU8(joinRideCsv),
       "Staff Activity Summary.csv": strToU8(staffActivityCsv),
+      "Add-ons.csv": strToU8(addonsCsv),
     },
     { level: 6 },
   );

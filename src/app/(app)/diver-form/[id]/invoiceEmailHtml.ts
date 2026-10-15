@@ -7,7 +7,7 @@
 // The totals themselves come from invoiceSummary.ts, shared with the print view.
 
 import { EXCESS_LABEL } from "@/lib/payments";
-import { activityRowTotal, fmtExchangeRate, fmtForeignAmount, summarizeInvoice } from "./invoiceSummary";
+import { activityRowTotal, fmtExchangeRate, fmtForeignAmount, snapshotAddons, summarizeInvoice } from "./invoiceSummary";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -42,6 +42,18 @@ export function buildInvoiceEmailHtml(params: {
           <td style="padding:8px;border-bottom:1px solid #eee;font-size:13px;">${String(a.date ?? "—")}</td>
           <td style="padding:8px;border-bottom:1px solid #eee;font-size:13px;">${String(a.dive_site ?? "—")}</td>
           <td style="padding:8px;border-bottom:1px solid #eee;font-size:13px;text-align:right;">${peso(activityRowTotal(a))}</td>
+        </tr>`,
+    )
+    .join("");
+
+  // Visit-level add-ons (migration 059) — one line each, after the activities.
+  const addonRows = snapshotAddons(snapshot)
+    .map(
+      (l) => `
+        <tr>
+          <td style="padding:8px;border-bottom:1px solid #eee;font-size:13px;">Add-on</td>
+          <td style="padding:8px;border-bottom:1px solid #eee;font-size:13px;">${l.description}${l.category ? ` (${l.category})` : ""}</td>
+          <td style="padding:8px;border-bottom:1px solid #eee;font-size:13px;text-align:right;">${peso(l.amount)}</td>
         </tr>`,
     )
     .join("");
@@ -96,7 +108,7 @@ export function buildInvoiceEmailHtml(params: {
         <th style="padding:8px;font-size:11px;text-transform:uppercase;color:#888;text-align:right;">Amount</th>
       </tr>
     </thead>
-    <tbody>${rows}</tbody>
+    <tbody>${rows}${addonRows}</tbody>
   </table>
 
   <table style="width:100%;max-width:360px;margin-left:auto;border:1px solid #eee;border-radius:8px;overflow:hidden;border-collapse:collapse;">

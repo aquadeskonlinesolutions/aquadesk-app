@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { safeNum, getPaidAmount } from "@/lib/payments";
+import { loadAddonTotals } from "@/lib/addons";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -71,6 +72,8 @@ async function loadActiveDivers(supabase: Supabase, diveCenterId: string) {
 
   const diverIds = [...new Set(openVisits.map((v) => v.diver_id))];
   const visitIds = openVisits.map((v) => v.id);
+  // Visit-level add-ons (migration 059) count toward what is owed.
+  const addonTotals = await loadAddonTotals(supabase, visitIds);
 
   const [{ data: divers }, { data: activities }, { data: payments }] =
     await Promise.all([
@@ -107,10 +110,9 @@ async function loadActiveDivers(supabase: Supabase, diveCenterId: string) {
       const visitActivities = (activities ?? []).filter(
         (a) => a.visit_id === visit.id,
       );
-      const total = visitActivities.reduce(
-        (sum, a) => sum + safeNum(a.total),
-        0,
-      );
+      const total =
+        visitActivities.reduce((sum, a) => sum + safeNum(a.total), 0) +
+        (addonTotals.get(visit.id) ?? 0);
       const payment = (payments ?? []).find((p) => p.visit_id === visit.id);
       const balance = Math.max(0, total - getPaidAmount(payment));
 

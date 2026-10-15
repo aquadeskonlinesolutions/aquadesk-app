@@ -67,6 +67,12 @@ function InvoicePreview({
       addons: snapNum(a, "addons"),
     }),
   );
+  // Visit-level add-ons (migration 059) — absent on older invoices.
+  const addonLines = (Array.isArray(snap.addons_list) ? (snap.addons_list as Record<string, unknown>[]) : []).map((l) => ({
+    description: snapStr(l, "description") || "—",
+    category: snapStr(l, "category") || "—",
+    amount: snapNum(l, "amount"),
+  }));
   const discount = snapNum(snap, "discount");
   const grandTotal = invoice.totalBilled;
   const cash = snapNum(snap, "cash_amount", "cash");
@@ -169,6 +175,27 @@ function InvoicePreview({
             )}
           </tbody>
         </table>
+
+        {addonLines.length > 0 && (
+          <table className="w-full text-sm mb-5">
+            <thead>
+              <tr className="bg-gray-100 text-left">
+                <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Add-ons</th>
+                <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400">Category</th>
+                <th className="px-2 py-2 text-xs font-semibold uppercase text-gray-400 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {addonLines.map((l, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td className="px-2 py-2">{l.description}</td>
+                  <td className="px-2 py-2">{l.category}</td>
+                  <td className="px-2 py-2 text-right">{peso(l.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
         <div className="flex justify-end">
           <table className="min-w-[280px] border border-gray-200 rounded-lg overflow-hidden text-sm">

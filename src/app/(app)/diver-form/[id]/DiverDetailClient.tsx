@@ -31,6 +31,8 @@ import type {
   PackageOption,
   RateSelection,
   BundleOption,
+  VisitAddon,
+  AddonCategoryOption,
 } from "./data";
 
 export function DiverDetailClient({
@@ -53,6 +55,8 @@ export function DiverDetailClient({
   packages,
   initialRateSelections,
   bundles,
+  initialAddons,
+  addonCategories: initialAddonCategories,
 }: {
   initialDiver: DiverDetail;
   initialNotes: DiverNote[];
@@ -73,6 +77,8 @@ export function DiverDetailClient({
   packages: PackageOption[];
   initialRateSelections: RateSelection[];
   bundles: BundleOption[];
+  initialAddons: VisitAddon[];
+  addonCategories: AddonCategoryOption[];
 }) {
   const [diver, setDiver] = useState(initialDiver);
   const [editOpen, setEditOpen] = useState(false);
@@ -81,6 +87,9 @@ export function DiverDetailClient({
   const [visit, setVisit] = useState(initialVisit);
   const [activities, setActivities] = useState(initialActivities);
   const [deposits, setDeposits] = useState(initialDeposits);
+  const [addons, setAddons] = useState(initialAddons);
+  const [addonCategories, setAddonCategories] = useState(initialAddonCategories);
+  const addonsTotal = addons.reduce((s, a) => s + a.amount, 0);
   const [invoice, setInvoice] = useState(initialInvoice);
   const [unlockOpen, setUnlockOpen] = useState(false);
   // This page has two independent print-only sections (Invoice, Signed
@@ -143,6 +152,7 @@ export function DiverDetailClient({
         packages={packages}
         rateSelections={initialRateSelections}
         bundles={bundles}
+        addonsTotal={addonsTotal}
       />
 
       {visit && visit.isActive && visit.visitStatus === "open" && (
@@ -152,6 +162,10 @@ export function DiverDetailClient({
             visit={visit}
             setVisit={setVisit}
             activities={activities}
+            addons={addons}
+            setAddons={setAddons}
+            addonCategories={addonCategories}
+            setAddonCategories={setAddonCategories}
             deposits={deposits}
             existingPayment={existingPayment}
             paymentConfig={paymentConfig}
