@@ -1348,7 +1348,7 @@ export async function checkoutVisit(
     supabase
       .from("activities")
       .select(
-        "date, dive_site, package_id, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, status",
+        "date, dive_site, package_id, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, status, row_type",
       )
       .eq("visit_id", visitId),
     // Cancelled deposits (migration 047) are no longer credited to the bill.
@@ -1357,7 +1357,11 @@ export async function checkoutVisit(
 
   if (!diver) return { error: "Diver not found." };
 
-  const activities = activitiesRaw ?? [];
+  // A bundle row (migration 058) always goes last on the invoice; every other
+  // row keeps the order it had (Array.sort is stable).
+  const activities = [...(activitiesRaw ?? [])].sort(
+    (a, b) => Number(a.row_type === "bundle") - Number(b.row_type === "bundle"),
+  );
   const stillOpen = activities.some((a) => a.status === "planned" || a.status === "scheduled" || a.status === "ongoing");
   if (stillOpen) {
     return { error: "Every activity must be completed or cancelled before checkout." };

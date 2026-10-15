@@ -18,6 +18,7 @@ import { normalizeSiteKey } from "../constants";
 import { useToast } from "@/components/ui/Toast";
 import { RateSelectModal } from "./RateSelectModal";
 import { ApplyBundleModal } from "./ApplyBundleModal";
+import { diveCountFromSite } from "../diveCount";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -537,7 +538,11 @@ export function VisitPanel({
   const diveRows = activities.filter((a) => a.status !== "cancelled" && a.rowType !== "bundle");
   const hasNewBundle = activities.some((a) => a.rowType === "bundle");
   const hasLegacyBundle = activities.some((a) => a.status !== "cancelled" && a.bundleId && a.rowType !== "bundle");
-  const matchingBundles = bundles.filter((b) => b.diveCount === diveRows.length);
+  // Dives, not rows: a package row stands for as many dives as it has site
+  // entries (Gato = 3). A row that can't be counted blocks the bundle.
+  const uncountableRow = diveRows.find((a) => diveCountFromSite(a.diveSite) === null);
+  const totalDives = diveRows.reduce((s, a) => s + (diveCountFromSite(a.diveSite) ?? 0), 0);
+  const matchingBundles = uncountableRow ? [] : bundles.filter((b) => b.diveCount === totalDives);
   // The bundle row always shows last, whatever its date.
   const shownActivities = [...activities].sort((x, y) => Number(x.rowType === "bundle") - Number(y.rowType === "bundle"));
 
@@ -846,13 +851,15 @@ export function VisitPanel({
         <ApplyBundleModal
           diverId={diverId}
           visitId={visit.id}
-          diveCount={diveRows.length}
+          diveCount={totalDives}
           bundles={matchingBundles}
           otherDiveCounts={[...new Set(bundles.map((b) => b.diveCount))].sort((x, y) => x - y)}
           blockedReason={
             hasLegacyBundle
               ? "This visit already has a bundle from before this update, which can't be changed here. Nothing can be applied on top of it."
-              : null
+              : uncountableRow
+                ? `The dives on the ${uncountableRow.date} row (${uncountableRow.diveSite?.trim() || "no dive site"}) can't be counted. Set that row's dive site to one entry per dive (for example "Gato, Gato, Gato") first.`
+                : null
           }
           onClose={() => setBundleModalOpen(false)}
           onApplied={() => window.location.reload()}
