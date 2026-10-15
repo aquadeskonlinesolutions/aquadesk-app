@@ -357,6 +357,8 @@ async function loadAlerts(
     .select("date, diver_id")
     .eq("dive_center_id", diveCenterId)
     .eq("status", "completed")
+    // A bundle row (migration 058) is a price line, not a dive.
+    .is("row_type", null)
     .in("date", last3DayStrs);
 
   const { data: recentGovtFees } = await supabase

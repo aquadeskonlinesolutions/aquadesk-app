@@ -507,6 +507,10 @@ export type Activity = {
   // lump-sum price, purely a display tag (VisitPanel italicizes diveSite
   // when set), never read for pricing.
   bundleId: string | null;
+  // 'bundle' only on a new-style bundle row (migration 058); null on every
+  // ordinary dive and on every row from before that migration (including old
+  // bundle rows, which only carry bundleId).
+  rowType: "bundle" | null;
   staffName: string | null;
   diveRate: number;
   fuelSurcharge: number;
@@ -567,10 +571,11 @@ export async function loadActivities(visitId: string): Promise<Activity[]> {
   const { data } = await supabase
     .from("activities")
     .select(
-      "id, visit_id, schedule_id, date, dive_site, package_id, bundle_id, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, discount, total, status, notes",
+      "id, visit_id, schedule_id, date, dive_site, package_id, bundle_id, row_type, staff_name, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee, equipment_rental, addons, discount, total, status, notes",
     )
     .eq("visit_id", visitId)
-    .order("date", { ascending: true });
+    .order("date", { ascending: true })
+    .order("created_at", { ascending: true });
 
   return (data ?? []).map((a) => ({
     id: a.id,
@@ -580,6 +585,7 @@ export async function loadActivities(visitId: string): Promise<Activity[]> {
     diveSite: a.dive_site,
     packageId: a.package_id,
     bundleId: a.bundle_id,
+    rowType: a.row_type === "bundle" ? "bundle" : null,
     staffName: a.staff_name,
     diveRate: Number(a.dive_rate) || 0,
     fuelSurcharge: Number(a.fuel_surcharge) || 0,

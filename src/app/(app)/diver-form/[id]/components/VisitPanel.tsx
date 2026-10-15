@@ -8,6 +8,7 @@ import {
   deleteActivityRow,
   voidVisit,
   applyChargesToVisit,
+  removeBundleFromVisit,
   autoFillFromActivitySelection,
   type ActivityFields,
   type AmbiguousPackageGroup,
@@ -350,7 +351,11 @@ function ActivityRow({
         </select>
       </td>
       <td className="px-2 py-2 text-center">
-        {locked ? (
+        {activity.rowType === "bundle" ? (
+          <span title="Use Remove Bundle to take this off the bill" className="text-gray-300 cursor-not-allowed">
+            🔒
+          </span>
+        ) : locked ? (
           <span
             title="Created from Scheduling — cancel instead of deleting"
             className="text-gray-300 cursor-not-allowed"
@@ -526,6 +531,30 @@ export function VisitPanel({
     .filter((a) => a.status !== "cancelled")
     .reduce((s, a) => s + a.total, 0);
 
+  // Bundles (migration 058): the new-style bundle row has rowType "bundle";
+  // an older bundle row only has bundleId (and can't be removed — nothing
+  // saved to restore). Dive rows are everything else that isn't cancelled.
+  const diveRows = activities.filter((a) => a.status !== "cancelled" && a.rowType !== "bundle");
+  const hasNewBundle = activities.some((a) => a.rowType === "bundle");
+  const hasLegacyBundle = activities.some((a) => a.status !== "cancelled" && a.bundleId && a.rowType !== "bundle");
+  const matchingBundles = bundles.filter((b) => b.diveCount === diveRows.length);
+  // The bundle row always shows last, whatever its date.
+  const shownActivities = [...activities].sort((x, y) => Number(x.rowType === "bundle") - Number(y.rowType === "bundle"));
+
+  function removeBundle() {
+    if (!visit) return;
+    if (!window.confirm("Remove this bundle? Every dive goes back to the price it had before the bundle was applied.")) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await removeBundleFromVisit(diverId, visit.id);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      window.location.reload();
+    });
+  }
+
   // Shared by the "never had a visit" empty state and the "latest visit is
   // closed/voided" read-only view below — starting a new visit is the same
   // action (createVisit against the existing diver) regardless of why there's
@@ -627,7 +656,16 @@ export function VisitPanel({
                 ↺ Apply Charges
               </button>
             )}
-            {activities.length > 0 && visit.experienceType !== "dive_course" && bundles.length > 0 && (
+            {hasNewBundle && (
+              <button
+                onClick={removeBundle}
+                disabled={pending}
+                className="px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 text-navy rounded-md hover:bg-gray-50 disabled:opacity-60"
+              >
+                Remove Bundle
+              </button>
+            )}
+            {activities.length > 0 && visit.experienceType !== "dive_course" && bundles.length > 0 && !hasNewBundle && (
               <button
                 onClick={() => setBundleModalOpen(true)}
                 disabled={pending}
@@ -726,7 +764,7 @@ export function VisitPanel({
                 </td>
               </tr>
             ) : (
-              activities.map((a) =>
+              shownActivities.map((a) =>
                 isEditable ? (
                   <ActivityRow
                     key={a.id}
@@ -808,8 +846,14 @@ export function VisitPanel({
         <ApplyBundleModal
           diverId={diverId}
           visitId={visit.id}
-          diveCount={activities.filter((a) => a.status !== "cancelled").length}
-          bundles={bundles}
+          diveCount={diveRows.length}
+          bundles={matchingBundles}
+          otherDiveCounts={[...new Set(bundles.map((b) => b.diveCount))].sort((x, y) => x - y)}
+          blockedReason={
+            hasLegacyBundle
+              ? "This visit already has a bundle from before this update, which can't be changed here. Nothing can be applied on top of it."
+              : null
+          }
           onClose={() => setBundleModalOpen(false)}
           onApplied={() => window.location.reload()}
         />

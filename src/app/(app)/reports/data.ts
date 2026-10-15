@@ -162,6 +162,9 @@ export async function loadOverviewData(
       .from("activities")
       .select("diver_id, status, date")
       .eq("dive_center_id", diveCenterId)
+      // Bundle rows (migration 058) are a price line, not a dive — never
+      // counted as a day or dive served. Null for all ordinary/older rows.
+      .is("row_type", null)
       .gte("date", dateFrom)
       .lte("date", dateTo),
     supabase
@@ -730,6 +733,8 @@ export async function loadStaffActivityData(
         .from("activities")
         .select("diver_id, visit_id, date, dive_site, staff_name, status, schedule_id, dive_rate")
         .eq("dive_center_id", diveCenterId)
+        // A bundle row (migration 058) is never a dive or a commission line.
+        .is("row_type", null)
         .gte("date", dateFrom)
         .lte("date", dateTo),
       supabase

@@ -377,6 +377,18 @@ export async function deleteActivityRow(diverId: string, activityId: string): Pr
   const user = await getCurrentUser();
   const supabase = await createClient();
 
+  // A bundle row carries the saved-prices link that Remove Bundle needs —
+  // deleting it by hand would leave the dives at ₱0 with no way back.
+  const { data: target } = await supabase
+    .from("activities")
+    .select("row_type")
+    .eq("id", activityId)
+    .eq("dive_center_id", user.diveCenterId)
+    .maybeSingle();
+  if (target?.row_type === "bundle") {
+    return { error: "This is a bundle row. Use Remove Bundle to take it off the bill." };
+  }
+
   const { error } = await supabase
     .from("activities")
     .delete()
@@ -510,6 +522,18 @@ export async function applyChargesToVisit(
 
   const closedError = await closedVisitError(supabase, user.diveCenterId, visitId);
   if (closedError) return { error: closedError };
+
+  // A visit with a new-style bundle row is priced by that bundle — re-running
+  // Apply Charges would put dive rates back on top of it (double charge).
+  const { count: bundleRowCount } = await supabase
+    .from("activities")
+    .select("id", { count: "exact", head: true })
+    .eq("visit_id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("row_type", "bundle");
+  if (bundleRowCount) {
+    return { error: "This visit has a bundle applied. Remove the bundle first, then Apply Charges." };
+  }
 
   const [{ data: visit }, { data: dc }, { data: rowsRaw }] = await Promise.all([
     supabase
@@ -680,19 +704,15 @@ export async function applyChargesToVisit(
 }
 
 // Applies a configured multi-dive Bundle (Settings > Courses > Bundles,
-// migration 037) to a fun-diving visit: every non-cancelled activity row
-// except the chronologically last one has its dive_rate/fuel_surcharge/
-// marine_tax/shark_fee/equipment_rental zeroed; the last row carries the
-// bundle's flat price as dive_rate, bundle.name as dive_site (rendered in
-// italics — see VisitPanel.tsx), and bundle_id for the display tag.
-// Per the confirmed business rule, a bundle price is fully inclusive of
-// everything EXCEPT nitrox_fee/fifteen_l_fee, which stay untouched on every
-// row — and every field remains manually editable afterward, same as any
-// other Apply Charges result. Equipment is folded into the bundle price
-// unless the bundle's own equipment_included flag is false, in which case
-// the diver's saved equipment selection is priced and added to the last
-// row's equipment_rental (same resolveEquipmentCharge lookup and per-dive/
-// per-day cadence dedup as applyChargesToVisit's tier-mode fun-diving path).
+// migration 037) to an open fun-diving visit — migration 058. Nothing is
+// deleted and no dive's site name is touched: each dive row's exact prices
+// are saved to activity_bundle_snapshots and set to ₱0, and ONE new bundle
+// row (row_type 'bundle') carries the bundle's price. The bundle must have
+// the same dive count as the visit's dive rows. Nitrox/15L stay on the dive
+// rows untouched. If the bundle doesn't include equipment, the diver's saved
+// gear selection is priced with the same per-dive/per-day rule Apply Charges
+// uses and put on the bundle row. The whole thing is one database function
+// (apply_bundle), so it is all-or-nothing.
 export async function applyBundleToVisit(
   diverId: string,
   visitId: string,
@@ -706,30 +726,24 @@ export async function applyBundleToVisit(
 
   const { data: bundle } = await supabase
     .from("bundles")
-    .select("id, name, price, equipment_included")
+    .select("id, equipment_included")
     .eq("id", bundleId)
     .eq("dive_center_id", user.diveCenterId)
     .maybeSingle();
   if (!bundle) return { error: "Bundle not found." };
 
-  const { data: rowsRaw } = await supabase
-    .from("activities")
-    .select("id, date")
-    .eq("visit_id", visitId)
-    .eq("dive_center_id", user.diveCenterId)
-    .neq("status", "cancelled")
-    .order("date", { ascending: true })
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
-
-  const rows = rowsRaw ?? [];
-  if (rows.length === 0) return { error: "Add at least one activity before applying a bundle." };
-
   let equipmentRental = 0;
   if (!bundle.equipment_included) {
+    const { data: rows } = await supabase
+      .from("activities")
+      .select("date")
+      .eq("visit_id", visitId)
+      .eq("dive_center_id", user.diveCenterId)
+      .neq("status", "cancelled")
+      .is("row_type", null);
     const totals = await resolveEquipmentCharge(user.diveCenterId, diverId);
     const seenDates = new Set<string>();
-    for (const row of rows) {
+    for (const row of rows ?? []) {
       equipmentRental += totals.perDive;
       if (totals.perDay > 0 && !seenDates.has(row.date)) {
         equipmentRental += totals.perDay;
@@ -738,39 +752,35 @@ export async function applyBundleToVisit(
     }
   }
 
-  const lastRow = rows[rows.length - 1];
-  for (const row of rows) {
-    const isLast = row.id === lastRow.id;
-    const { error } = await supabase
-      .from("activities")
-      .update(
-        isLast
-          ? {
-              dive_rate: bundle.price,
-              fuel_surcharge: 0,
-              marine_tax: 0,
-              shark_fee: 0,
-              equipment_rental: equipmentRental,
-              dive_site: bundle.name,
-              bundle_id: bundle.id,
-              package_id: null,
-            }
-          : {
-              dive_rate: 0,
-              fuel_surcharge: 0,
-              marine_tax: 0,
-              shark_fee: 0,
-              equipment_rental: 0,
-              bundle_id: null,
-            },
-      )
-      .eq("id", row.id)
-      .eq("dive_center_id", user.diveCenterId);
-    if (error) return { error: error.message };
-  }
+  const { data, error } = await supabase.rpc("apply_bundle", {
+    p_visit_id: visitId,
+    p_bundle_id: bundleId,
+    p_equipment: equipmentRental,
+  });
+  if (error) return { error: error.message };
 
   revalidatePath(`/diver-form/${diverId}`);
-  return { updatedCount: rows.length };
+  return { updatedCount: Number((data as { dives?: number } | null)?.dives ?? 0) };
+}
+
+// Takes a new-style bundle off an open bill: restores every dive's saved
+// prices and deletes only the bundle row (migration 058). Bundles from
+// before the rework have no saved prices and are refused.
+export async function removeBundleFromVisit(
+  diverId: string,
+  visitId: string,
+): Promise<{ error?: string }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  const closedError = await closedVisitError(supabase, user.diveCenterId, visitId);
+  if (closedError) return { error: closedError };
+
+  const { error } = await supabase.rpc("remove_bundle", { p_visit_id: visitId });
+  if (error) return { error: error.message };
+
+  revalidatePath(`/diver-form/${diverId}`);
+  return {};
 }
 
 // Persists the secretary's picks for each ambiguous site-combo (a package,

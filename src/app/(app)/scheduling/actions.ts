@@ -894,6 +894,8 @@ export async function markBoatReturned(
         .select("diver_id")
         .eq("dive_center_id", user.diveCenterId)
         .eq("date", schedule.schedule_date)
+        // A bundle row (migration 058) is a price line, not a logged dive.
+        .is("row_type", null)
         .in("diver_id", candidateIds);
       const dupIds = [...new Set((existing ?? []).map((r) => r.diver_id))];
       if (dupIds.length > 0) {

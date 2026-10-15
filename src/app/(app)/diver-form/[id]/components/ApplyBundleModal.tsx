@@ -18,13 +18,19 @@ export function ApplyBundleModal({
   visitId,
   diveCount,
   bundles,
+  otherDiveCounts,
+  blockedReason,
   onClose,
   onApplied,
 }: {
   diverId: string;
   visitId: string;
   diveCount: number;
+  // Only bundles whose dive count equals this visit's dive count.
   bundles: BundleOption[];
+  // Dive counts of every configured bundle, for the "none match" message.
+  otherDiveCounts: number[];
+  blockedReason: string | null;
   onClose: () => void;
   onApplied: () => void;
 }) {
@@ -62,11 +68,22 @@ export function ApplyBundleModal({
         <div className="px-6 py-4">
           <div className="text-sm text-gray-600 mb-4">
             This visit has <span className="font-semibold text-navy">{diveCount}</span> dive
-            {diveCount === 1 ? "" : "s"} logged. Pick the bundle to apply — every dive rate on this
-            visit will be zeroed and replaced with the bundle&apos;s flat price on the last row.
+            {diveCount === 1 ? "" : "s"} logged. Only a bundle for exactly that many dives is offered.
+            Applying it sets each dive to ₱0 (the old prices are saved) and adds one bundle row with
+            the flat price — it can be removed again.
           </div>
 
           {error && <div className="text-sm text-red mb-3">{error}</div>}
+          {blockedReason && <div className="text-sm text-red mb-3">{blockedReason}</div>}
+          {!blockedReason && bundles.length === 0 && (
+            <div className="text-sm text-orange mb-3">
+              No bundle is set up for {diveCount} dive{diveCount === 1 ? "" : "s"}.
+              {otherDiveCounts.length > 0 && (
+                <> Bundles exist for: {otherDiveCounts.join(", ")} dives.</>
+              )}{" "}
+              Nothing can be applied.
+            </div>
+          )}
 
           <div className="grid gap-2 mb-3">
             {bundles.map((b) => (
@@ -91,7 +108,7 @@ export function ApplyBundleModal({
           {selected && !selected.equipmentIncluded && (
             <div className="text-xs text-orange mb-3">
               Equipment isn&apos;t included in this bundle &mdash; it will be priced separately and
-              added to the last row.
+              added to the bundle row.
             </div>
           )}
 
@@ -101,7 +118,7 @@ export function ApplyBundleModal({
             </button>
             <button
               onClick={submit}
-              disabled={saving || !bundleId}
+              disabled={saving || !bundleId || !!blockedReason || bundles.length === 0}
               className="px-4 py-1.5 text-sm font-medium bg-navy text-white rounded-md hover:bg-navy-dark disabled:opacity-60"
             >
               {saving ? "Applying…" : "Apply Bundle"}
