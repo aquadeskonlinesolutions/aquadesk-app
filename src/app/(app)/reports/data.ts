@@ -735,7 +735,7 @@ export async function loadStaffActivityData(
         .single(),
       supabase
         .from("activities")
-        .select("diver_id, visit_id, date, dive_site, staff_name, status, schedule_id, dive_rate")
+        .select("diver_id, visit_id, date, dive_site, staff_name, status, schedule_id, dive_rate, row_type")
         .eq("dive_center_id", diveCenterId)
         // A bundle row (migration 058) is never a dive or a commission line.
         // Course fee rows (060) stay in: they feed Our Dive Educators.
@@ -853,8 +853,15 @@ export async function loadStaffActivityData(
   const visitIds = [...new Set(completed.map((a) => a.visit_id))];
 
   const { data: visitsData } = visitIds.length
-    ? await supabase.from("visits").select("id, experience_type, course_rate_id").in("id", visitIds)
-    : { data: [] as { id: string; experience_type: string; course_rate_id: string | null }[] };
+    ? await supabase.from("visits").select("id, experience_type, course_rate_id, mode_switched_at").in("id", visitIds)
+    : {
+        data: [] as {
+          id: string;
+          experience_type: string;
+          course_rate_id: string | null;
+          mode_switched_at: string | null;
+        }[],
+      };
 
   const courseRateIds = [
     ...new Set((visitsData ?? []).map((v) => v.course_rate_id).filter((id): id is string => !!id)),
@@ -875,8 +882,19 @@ export async function loadStaffActivityData(
     const staffName = a.staff_name?.trim() || "Unassigned";
     const date = a.date;
     const visit = visitMap.get(a.visit_id);
-    if (visit?.experience_type === "dive_course") {
-      const title = (visit.course_rate_id && courseNameMap.get(visit.course_rate_id)) || "Course";
+    // A course line is: a course fee row added in the new way (row_type
+    // 'course_fee', migration 060), OR any row of an older course bill that was
+    // never switched (mode_switched_at null — every bill before 060, so past
+    // lines are exactly as they were). Unmarked rows on a bill that staff
+    // switched are fun dives, not course lines.
+    const isCourseFeeRow = a.row_type === "course_fee";
+    const onOlderCourseBill =
+      visit?.experience_type === "dive_course" && !visit.mode_switched_at && a.row_type !== "bundle";
+    if (isCourseFeeRow || onOlderCourseBill) {
+      const visitCourse = (visit?.course_rate_id && courseNameMap.get(visit.course_rate_id)) || "Course";
+      // A new course fee row names its own course (the secretary picks it on
+      // the row); older rows keep the bill's course name as before.
+      const title = isCourseFeeRow ? a.dive_site?.trim() || visitCourse : visitCourse;
       courseRows.push({ staffName, date, title, diverId: a.diver_id, rate: safeNum(a.dive_rate) });
     } else if (!a.schedule_id) {
       const label = a.dive_site?.trim() || "Unnamed";
