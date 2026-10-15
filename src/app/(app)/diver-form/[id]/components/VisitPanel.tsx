@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/Toast";
 import { RateSelectModal } from "./RateSelectModal";
 import { ApplyBundleModal } from "./ApplyBundleModal";
 import { diveCountFromSite } from "../diveCount";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
@@ -412,6 +413,7 @@ export function VisitPanel({
   const [changeGroup, setChangeGroup] = useState<{ group: AmbiguousPackageGroup; initial: RateSelection } | null>(null);
   const [bundleModalOpen, setBundleModalOpen] = useState(false);
   const showToast = useToast();
+  const confirm = useConfirm();
 
   function startNewVisit(experienceType: "fun_diving" | "dive_course", courseRateId: string | null) {
     setError(null);
@@ -546,9 +548,13 @@ export function VisitPanel({
   // The bundle row always shows last, whatever its date.
   const shownActivities = [...activities].sort((x, y) => Number(x.rowType === "bundle") - Number(y.rowType === "bundle"));
 
-  function removeBundle() {
+  async function removeBundle() {
     if (!visit) return;
-    if (!window.confirm("Remove this bundle? Every dive goes back to the price it had before the bundle was applied.")) return;
+    const yes = await confirm(
+      "The bundle row will be removed from this bill, and each dive goes back to its original price. Nothing else changes.",
+      { title: "Remove Bundle", confirmLabel: "Remove Bundle", danger: true, dismissible: true },
+    );
+    if (!yes) return;
     setError(null);
     startTransition(async () => {
       const res = await removeBundleFromVisit(diverId, visit.id);

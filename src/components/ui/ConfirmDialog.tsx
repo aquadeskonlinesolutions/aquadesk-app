@@ -1,12 +1,15 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 type ConfirmOptions = {
   title?: string;
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  // Opt-in: Esc and a click on the dark backdrop also cancel. Off by default so
+  // existing confirmations behave exactly as before.
+  dismissible?: boolean;
 };
 
 type ConfirmState = {
@@ -37,12 +40,32 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     setState(null);
   }
 
+  const dismissible = !!state?.options.dismissible;
+  useEffect(() => {
+    if (!dismissible) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setState((s) => {
+          s?.resolve(false);
+          return null;
+        });
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dismissible]);
+
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
       {state && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (dismissible && e.target === e.currentTarget) settle(false);
+          }}
+        >
+          <div role="dialog" aria-modal="true" className="bg-white rounded-2xl shadow-lg max-w-sm w-full">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <div className="font-display text-xl text-navy">{state.options.title ?? "Confirm"}</div>
               <button
