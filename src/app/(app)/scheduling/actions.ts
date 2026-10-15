@@ -763,6 +763,9 @@ export async function markBoatReturned(
 ): Promise<{
   error?: string;
   skippedDivers?: string[];
+  // Divers whose bill is in Course mode right now — no activity row is
+  // written for them (courses are entered by hand as course fee rows).
+  courseModeDivers?: string[];
   duplicates?: { diverId: string; name: string }[];
 }> {
   const user = await getCurrentUser();
@@ -886,8 +889,30 @@ export async function markBoatReturned(
   // date/site (e.g. logged manually via Diver Detail) before Boat Returned
   // is ever clicked. First pass surfaces the conflict for a Proceed/Exclude
   // choice rather than silently double-charging.
+  // A diver whose open bill is in Course mode right now gets no row from Boat
+  // Return (read live, so a mid-visit switch is respected either way).
+  const { data: openVisitModes } = (diverRows ?? []).length
+    ? await supabase
+        .from("visits")
+        .select("diver_id, experience_type, created_at")
+        .eq("dive_center_id", user.diveCenterId)
+        .eq("visit_status", "open")
+        .eq("is_active", true)
+        .in("diver_id", (diverRows ?? []).map((r) => r.diver_id))
+        .order("created_at", { ascending: false })
+    : { data: [] as { diver_id: string; experience_type: string; created_at: string }[] };
+  const latestModeByDiver = new Map<string, string>();
+  (openVisitModes ?? []).forEach((v) => {
+    if (!latestModeByDiver.has(v.diver_id)) latestModeByDiver.set(v.diver_id, v.experience_type);
+  });
+  const courseDiverIds = new Set(
+    [...latestModeByDiver.entries()].filter(([, mode]) => mode === "dive_course").map(([id]) => id),
+  );
+
   if (!options.forceProceed) {
-    const candidateIds = (diverRows ?? []).map((r) => r.diver_id).filter((id) => !excludeSet.has(id));
+    const candidateIds = (diverRows ?? [])
+      .map((r) => r.diver_id)
+      .filter((id) => !excludeSet.has(id) && !courseDiverIds.has(id));
     if (candidateIds.length > 0) {
       const { data: existing } = await supabase
         .from("activities")
@@ -914,13 +939,14 @@ export async function markBoatReturned(
   }
 
   const skippedDivers: string[] = [];
+  const courseModeDivers: string[] = [];
   const activityRows: Record<string, unknown>[] = [];
 
   for (const row of diverRows ?? []) {
     if (excludeSet.has(row.diver_id)) continue;
     const { data: visit } = await supabase
       .from("visits")
-      .select("id")
+      .select("id, experience_type")
       .eq("dive_center_id", user.diveCenterId)
       .eq("diver_id", row.diver_id)
       .eq("visit_status", "open")
@@ -936,6 +962,18 @@ export async function markBoatReturned(
         .eq("id", row.diver_id)
         .single();
       skippedDivers.push(diver ? `${diver.first_name} ${diver.last_name}` : row.diver_id);
+      continue;
+    }
+
+    // Course mode: no activity row (migration 060 behaviour; the secretary
+    // enters the course fee by hand). Fun mode is exactly as before.
+    if (visit.experience_type === "dive_course") {
+      const { data: diver } = await supabase
+        .from("divers")
+        .select("first_name, last_name")
+        .eq("id", row.diver_id)
+        .single();
+      courseModeDivers.push(diver ? `${diver.first_name} ${diver.last_name}` : row.diver_id);
       continue;
     }
 
@@ -1044,7 +1082,10 @@ export async function markBoatReturned(
     .eq("dive_center_id", user.diveCenterId);
 
   revalidatePath("/scheduling");
-  return skippedDivers.length > 0 ? { skippedDivers } : {};
+  return {
+    ...(skippedDivers.length > 0 ? { skippedDivers } : {}),
+    ...(courseModeDivers.length > 0 ? { courseModeDivers } : {}),
+  };
 }
 
 // Group CRUD moved to the Divers page (src/app/(app)/divers/actions.ts) —

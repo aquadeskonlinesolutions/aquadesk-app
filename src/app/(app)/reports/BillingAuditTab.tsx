@@ -407,6 +407,41 @@ export function BillingAuditTab({ data }: { data: BillingAuditData }) {
 
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
         <div className="px-5 py-4 border-b border-gray-200">
+          <div className="text-sm font-extrabold text-navy">Fun Diving / Course Switches</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Every time a bill was switched between Fun Diving and Course, and whether its course fee was kept or removed.
+          </div>
+        </div>
+        {data.modeSwitches.length === 0 ? (
+          <div className="p-8 text-center text-gray-400 text-sm">No mode switches in this period.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-100 text-left">
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Diver</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Switched By</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Switched At</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Switch</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.modeSwitches.map((s) => (
+                  <tr key={s.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-3 font-semibold text-navy">{s.label}</td>
+                    <td className="px-4 py-3">{s.switchedBy}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{fmtDateTime(s.switchedAt)}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.details}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-200">
           <div className="text-sm font-extrabold text-navy">Changes After Unlock</div>
           <div className="text-xs text-gray-500 mt-0.5">
             Every change made to a bill while it was reopened with the billing password (before → after).

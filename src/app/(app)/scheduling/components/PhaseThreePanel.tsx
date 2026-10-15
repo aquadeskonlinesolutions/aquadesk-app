@@ -199,6 +199,7 @@ function TripSummaryCard({
   const [staffTanks, setStaffTanks] = useState<StaffDiveTanks[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[] | null>(null);
+  const [courseSkipped, setCourseSkipped] = useState<string[] | null>(null);
   const [duplicates, setDuplicates] = useState<{ diverId: string; name: string }[] | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -230,6 +231,7 @@ function TripSummaryCard({
   function returnBoat(options: { excludeDiverIds?: string[]; forceProceed?: boolean } = {}) {
     setError(null);
     setSkipped(null);
+    setCourseSkipped(null);
     startTransition(async () => {
       const res = await markBoatReturned(scheduleId, options);
       if (res.error) {
@@ -239,6 +241,7 @@ function TripSummaryCard({
       } else {
         setDuplicates(null);
         if (res.skippedDivers && res.skippedDivers.length > 0) setSkipped(res.skippedDivers);
+        if (res.courseModeDivers && res.courseModeDivers.length > 0) setCourseSkipped(res.courseModeDivers);
         onReturned();
         refresh();
       }
@@ -322,6 +325,11 @@ function TripSummaryCard({
 
       <div className="p-4 grid gap-3">
         {error && <div className="text-sm text-red">{error}</div>}
+        {courseSkipped && (
+          <div className="text-xs bg-orange-light text-orange border border-orange/20 px-3 py-2 rounded-md">
+            In Course mode, so no activity row was written for: {courseSkipped.join(", ")}. Add their course fee on the Diver Form.
+          </div>
+        )}
         {skipped && (
           <div className="text-xs bg-orange-light text-orange border border-orange/20 px-3 py-2 rounded-md">
             No open visit found for: {skipped.join(", ")} — their activity rows were skipped.

@@ -524,6 +524,9 @@ export type Visit = {
   invoiceCount: number;
   courseRateId: string | null;
   courseName: string | null;
+  // When staff first switched this bill's mode (migration 060); null on every
+  // bill that never was — including all older course bills.
+  modeSwitchedAt: string | null;
 };
 
 export type Activity = {
@@ -542,10 +545,10 @@ export type Activity = {
   // lump-sum price, purely a display tag (VisitPanel italicizes diveSite
   // when set), never read for pricing.
   bundleId: string | null;
-  // 'bundle' only on a new-style bundle row (migration 058); null on every
-  // ordinary dive and on every row from before that migration (including old
-  // bundle rows, which only carry bundleId).
-  rowType: "bundle" | null;
+  // 'bundle' only on a new-style bundle row (migration 058); 'course_fee' on a
+  // course fee row added while the bill was in Course mode (migration 060);
+  // null on every ordinary dive and on every row from before those migrations.
+  rowType: "bundle" | "course_fee" | null;
   staffName: string | null;
   diveRate: number;
   fuelSurcharge: number;
@@ -571,7 +574,7 @@ export async function loadLatestVisit(diverId: string, diveCenterId: string): Pr
   const { data } = await supabase
     .from("visits")
     .select(
-      "id, updated_at, experience_type, visit_start, visit_end, visit_status, is_active, invoice_count, course_rate_id",
+      "id, updated_at, experience_type, visit_start, visit_end, visit_status, is_active, invoice_count, course_rate_id, mode_switched_at",
     )
     .eq("diver_id", diverId)
     .eq("dive_center_id", diveCenterId)
@@ -597,6 +600,7 @@ export async function loadLatestVisit(diverId: string, diveCenterId: string): Pr
     invoiceCount: data.invoice_count ?? 0,
     courseRateId: data.course_rate_id,
     courseName: course?.course_name ?? null,
+    modeSwitchedAt: data.mode_switched_at ?? null,
   };
 }
 
@@ -620,7 +624,7 @@ export async function loadActivities(visitId: string): Promise<Activity[]> {
     diveSite: a.dive_site,
     packageId: a.package_id,
     bundleId: a.bundle_id,
-    rowType: a.row_type === "bundle" ? "bundle" : null,
+    rowType: a.row_type === "bundle" ? "bundle" : a.row_type === "course_fee" ? "course_fee" : null,
     staffName: a.staff_name,
     diveRate: Number(a.dive_rate) || 0,
     fuelSurcharge: Number(a.fuel_surcharge) || 0,

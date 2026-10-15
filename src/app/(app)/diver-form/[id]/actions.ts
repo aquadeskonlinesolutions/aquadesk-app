@@ -312,14 +312,31 @@ export async function addActivityRow(
   const closedError = await closedVisitError(supabase, user.diveCenterId, visitId);
   if (closedError) return { error: closedError };
 
+  // A row added while the bill is in Course mode is a course fee row
+  // (migration 060) — the secretary fills in the course, rate and instructor.
+  const { data: visitRow } = await supabase
+    .from("visits")
+    .select("experience_type")
+    .eq("id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .maybeSingle();
+
   const { error } = await supabase.from("activities").insert({
     dive_center_id: user.diveCenterId,
     diver_id: diverId,
     visit_id: visitId,
     date,
     status: "planned",
+    ...(visitRow?.experience_type === "dive_course" ? { row_type: "course_fee" } : {}),
   });
 
+  // The database allows only one BLANK course fee row per visit: a double
+  // click (or a second Add Activity before the first row is filled in) just
+  // reuses the empty row that is already there.
+  if (error && error.code === "23505" && visitRow?.experience_type === "dive_course") {
+    revalidatePath(`/diver-form/${diverId}`);
+    return {};
+  }
   if (error) return { error: error.message };
   revalidatePath(`/diver-form/${diverId}`);
   return {};
@@ -539,7 +556,7 @@ export async function applyChargesToVisit(
   const [{ data: visit }, { data: dc }, { data: rowsRaw }] = await Promise.all([
     supabase
       .from("visits")
-      .select("experience_type, course_rate_id, course_rates(equipment_included)")
+      .select("experience_type, course_rate_id, mode_switched_at, course_rates(equipment_included)")
       .eq("id", visitId)
       .eq("dive_center_id", user.diveCenterId)
       .single(),
@@ -550,6 +567,8 @@ export async function applyChargesToVisit(
       .eq("visit_id", visitId)
       .eq("dive_center_id", user.diveCenterId)
       .neq("status", "cancelled")
+      // Course fee rows (migration 060) and bundle rows are never repriced.
+      .is("row_type", null)
       .order("date", { ascending: true })
       .order("created_at", { ascending: true })
       // Rows from the same Boat Return call (a multi-site trip) share an
@@ -568,8 +587,21 @@ export async function applyChargesToVisit(
   const rows = rowsRaw ?? [];
   if (rows.length === 0) return { updatedCount: 0 };
 
-  const isCourse = visit.experience_type === "dive_course";
+  // An older course bill (never switched) keeps today's course pricing for its
+  // unmarked rows. A bill that has been switched (migration 060) treats its
+  // unmarked rows as fun dives, whatever mode it is in now.
+  const isCourse = visit.experience_type === "dive_course" && !visit.mode_switched_at;
   const isPackage = !isCourse && dc?.pricing_mode === "package";
+  // Days with a course fee row: no equipment is charged on those days (course
+  // gear is bundled into the course by design).
+  const { data: courseFeeRows } = await supabase
+    .from("activities")
+    .select("date")
+    .eq("visit_id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .eq("row_type", "course_fee")
+    .neq("status", "cancelled");
+  const courseDays = new Set((courseFeeRows ?? []).map((r) => r.date));
   const cadence = isCourse ? null : await getChargeCadence(user.diveCenterId);
   const seenPerDayCharge = {
     marineTax: new Set<string>(),
@@ -653,10 +685,14 @@ export async function applyChargesToVisit(
       };
     } else if (dc?.pricing_mode === "tier") {
       result = await autoPriceTierMode(user.diveCenterId, diveSiteText, cumulativeDiveCount, wantsNitrox, wants15L);
-      result.equipmentRental =
-        equipmentTotals.perDive + (seenPerDayCharge.equipment.has(row.date) ? 0 : equipmentTotals.perDay);
-      if (equipmentTotals.perDay > 0 && !seenPerDayCharge.equipment.has(row.date)) {
-        seenPerDayCharge.equipment.add(row.date);
+      if (courseDays.has(row.date)) {
+        result.equipmentRental = 0;
+      } else {
+        result.equipmentRental =
+          equipmentTotals.perDive + (seenPerDayCharge.equipment.has(row.date) ? 0 : equipmentTotals.perDay);
+        if (equipmentTotals.perDay > 0 && !seenPerDayCharge.equipment.has(row.date)) {
+          seenPerDayCharge.equipment.add(row.date);
+        }
       }
     } else {
       return { error: "This dive center has no pricing mode configured yet (see Settings > Pricing & Rates)." };
@@ -702,6 +738,86 @@ export async function applyChargesToVisit(
 
   revalidatePath(`/diver-form/${diverId}`);
   return { updatedCount, missingRateCount };
+}
+
+// What "Apply Charges" would change on an OLDER course bill (never switched —
+// migration 060). Those bills keep today's pricing: every unmarked row is
+// repriced from the bill's one course rate, the first carrying it and the rest
+// set to ₱0. This lets the screen warn before that happens. Course fee rows
+// added in the new way are never touched and are not listed.
+export async function previewLegacyCourseCharges(
+  visitId: string,
+): Promise<{ rows: { date: string; site: string; current: number; next: number; otherFees: number }[] }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  const { data: visit } = await supabase
+    .from("visits")
+    .select("experience_type, course_rate_id, mode_switched_at")
+    .eq("id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .maybeSingle();
+  if (!visit || visit.experience_type !== "dive_course" || visit.mode_switched_at) return { rows: [] };
+
+  const { data: rowsRaw } = await supabase
+    .from("activities")
+    .select("date, dive_site, dive_rate, fuel_surcharge, marine_tax, shark_fee, nitrox_fee, fifteen_l_fee")
+    .eq("visit_id", visitId)
+    .eq("dive_center_id", user.diveCenterId)
+    .neq("status", "cancelled")
+    .is("row_type", null)
+    .order("date", { ascending: true })
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+
+  const price = (await autoPriceCourseMode(user.diveCenterId, visit.course_rate_id)).diveRate;
+  let charged = false;
+  const out: { date: string; site: string; current: number; next: number; otherFees: number }[] = [];
+  for (const r of rowsRaw ?? []) {
+    let next = 0;
+    if (!charged) {
+      next = price;
+      if (price > 0) charged = true;
+    }
+    const current = Number(r.dive_rate) || 0;
+    const otherFees =
+      (Number(r.fuel_surcharge) || 0) +
+      (Number(r.marine_tax) || 0) +
+      (Number(r.shark_fee) || 0) +
+      (Number(r.nitrox_fee) || 0) +
+      (Number(r.fifteen_l_fee) || 0);
+    if (current !== next || otherFees > 0) {
+      out.push({ date: r.date, site: r.dive_site ?? "", current, next, otherFees });
+    }
+  }
+  return { rows: out };
+}
+
+// Switches an open bill between Fun Diving and Course (migration 060). Switching
+// only changes the mode — it never adds a course fee and never reprices or
+// removes a fun dive. Going to Fun can also remove the bill's course fee rows
+// (only rows marked course_fee; older unmarked course rows are never removed).
+export async function switchVisitMode(
+  diverId: string,
+  visitId: string,
+  to: "fun_diving" | "dive_course",
+  removeCourseFees: boolean,
+): Promise<{ error?: string; removed?: number }> {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+
+  const closedError = await closedVisitError(supabase, user.diveCenterId, visitId);
+  if (closedError) return { error: closedError };
+
+  const { data, error } = await supabase.rpc("switch_visit_mode", {
+    p_visit_id: visitId,
+    p_to: to,
+    p_remove_course_fees: removeCourseFees,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath(`/diver-form/${diverId}`);
+  return { removed: Number((data as { removed?: number } | null)?.removed ?? 0) };
 }
 
 // Applies a configured multi-dive Bundle (Settings > Courses > Bundles,
@@ -868,9 +984,16 @@ export async function autoFillFromActivitySelection(
     // OTHER non-cancelled row in this visit already carry a nonzero dive
     // rate? For a course-mode visit that can only mean the course was
     // already charged elsewhere.
-    const { data: activityRow } = await supabase.from("activities").select("visit_id").eq("id", activityId).maybeSingle();
+    const { data: activityRow } = await supabase
+      .from("activities")
+      .select("visit_id, row_type")
+      .eq("id", activityId)
+      .maybeSingle();
     let diveRate = result.diveRate;
-    if (activityRow?.visit_id) {
+    // A course fee row (migration 060) always takes the full course rate: a
+    // bill can hold any number of courses, so another row already carrying a
+    // rate must never silently set this one to ₱0.
+    if (activityRow?.visit_id && activityRow.row_type !== "course_fee") {
       const { count } = await supabase
         .from("activities")
         .select("id", { count: "exact", head: true })

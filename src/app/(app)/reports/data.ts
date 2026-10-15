@@ -164,8 +164,8 @@ export async function loadOverviewData(
       .select("diver_id, status, date")
       .eq("dive_center_id", diveCenterId)
       // Bundle rows (migration 058) are a price line, not a dive — never
-      // counted as a day or dive served. Null for all ordinary/older rows.
-      .is("row_type", null)
+      // counted as a day or dive served. Course fee rows (060) do count.
+      .or("row_type.is.null,row_type.neq.bundle")
       .gte("date", dateFrom)
       .lte("date", dateTo),
     supabase
@@ -738,7 +738,8 @@ export async function loadStaffActivityData(
         .select("diver_id, visit_id, date, dive_site, staff_name, status, schedule_id, dive_rate")
         .eq("dive_center_id", diveCenterId)
         // A bundle row (migration 058) is never a dive or a commission line.
-        .is("row_type", null)
+        // Course fee rows (060) stay in: they feed Our Dive Educators.
+        .or("row_type.is.null,row_type.neq.bundle")
         .gte("date", dateFrom)
         .lte("date", dateTo),
       supabase
@@ -1776,12 +1777,22 @@ export type AuditBillChange = {
   details: string;
 };
 
+// A Fun Diving <-> Course switch of a bill (migration 060).
+export type AuditModeSwitch = {
+  id: string;
+  label: string;
+  switchedBy: string;
+  switchedAt: string;
+  details: string;
+};
+
 export type BillingAuditData = {
   diveCenterName: string;
   flagged: AuditFlaggedVisit[];
   invoices: AuditInvoiceRow[];
   unlocks: AuditUnlockLog[];
   changesAfterUnlock: AuditBillChange[];
+  modeSwitches: AuditModeSwitch[];
 };
 
 export async function loadBillingAuditData(
@@ -1806,6 +1817,7 @@ export async function loadBillingAuditData(
     { data: allInvoiceEmailsRaw },
     { data: unlockLogsRaw },
     { data: changeLogsRaw },
+    { data: switchLogsRaw },
   ] = await Promise.all([
     supabase.from("dive_centers").select("name").eq("id", diveCenterId).single(),
     supabase
@@ -1845,6 +1857,15 @@ export async function loadBillingAuditData(
       .gte("created_at", startIso)
       .lte("created_at", endIso)
       .order("created_at", { ascending: false }),
+    // Fun/Course mode switches (migration 060) — scoped to the applied range.
+    supabase
+      .from("audit_logs")
+      .select("id, performed_by, notes, created_at")
+      .eq("dive_center_id", diveCenterId)
+      .eq("action", "visit_mode_switched")
+      .gte("created_at", startIso)
+      .lte("created_at", endIso)
+      .order("created_at", { ascending: false }),
   ]);
 
   const visits = visitsRaw ?? [];
@@ -1852,6 +1873,7 @@ export async function loadBillingAuditData(
   const allInvoiceEmails = allInvoiceEmailsRaw ?? [];
   const unlockLogs = unlockLogsRaw ?? [];
   const changeLogs = changeLogsRaw ?? [];
+  const switchLogs = switchLogsRaw ?? [];
 
   const diverIds = [
     ...new Set(
@@ -1867,6 +1889,7 @@ export async function loadBillingAuditData(
         ...allInvoiceEmails.map((i) => i.sent_by),
         ...unlockLogs.map((l) => l.performed_by),
         ...changeLogs.map((l) => l.performed_by),
+        ...switchLogs.map((l) => l.performed_by),
       ].filter((id): id is string => !!id),
     ),
   ];
@@ -1953,5 +1976,17 @@ export async function loadBillingAuditData(
     };
   });
 
-  return { diveCenterName: dc?.name ?? "Dive Center", flagged, invoices, unlocks, changesAfterUnlock };
+  const modeSwitches: AuditModeSwitch[] = switchLogs.map((log) => {
+    const notes = log.notes || "—";
+    const split = notes.indexOf(" — ");
+    return {
+      id: log.id,
+      label: split > 0 ? notes.slice(0, split) : "—",
+      switchedBy: (log.performed_by && userMap.get(log.performed_by)) || "—",
+      switchedAt: log.created_at,
+      details: split > 0 ? notes.slice(split + 3) : notes,
+    };
+  });
+
+  return { diveCenterName: dc?.name ?? "Dive Center", flagged, invoices, unlocks, changesAfterUnlock, modeSwitches };
 }

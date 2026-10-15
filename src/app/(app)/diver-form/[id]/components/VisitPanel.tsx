@@ -9,6 +9,8 @@ import {
   voidVisit,
   applyChargesToVisit,
   removeBundleFromVisit,
+  previewLegacyCourseCharges,
+  switchVisitMode,
   autoFillFromActivitySelection,
   type ActivityFields,
   type AmbiguousPackageGroup,
@@ -19,6 +21,7 @@ import { useToast } from "@/components/ui/Toast";
 import { RateSelectModal } from "./RateSelectModal";
 import { ApplyBundleModal } from "./ApplyBundleModal";
 import { diveCountFromSite } from "../diveCount";
+import { SwitchToFunModal } from "./SwitchToFunModal";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 function peso(n: number): string {
@@ -423,6 +426,8 @@ export function VisitPanel({
   const [ambiguousGroups, setAmbiguousGroups] = useState<AmbiguousPackageGroup[] | null>(null);
   const [changeGroup, setChangeGroup] = useState<{ group: AmbiguousPackageGroup; initial: RateSelection } | null>(null);
   const [bundleModalOpen, setBundleModalOpen] = useState(false);
+  const [switchFunOpen, setSwitchFunOpen] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
   const showToast = useToast();
   const confirm = useConfirm();
 
@@ -445,6 +450,7 @@ export function VisitPanel({
           invoiceCount: 0,
           courseRateId: courseRateId ?? null,
           courseName: course?.courseName ?? null,
+          modeSwitchedAt: null,
         });
         setActivities([]);
         setChoosingCourse(false);
@@ -495,6 +501,23 @@ export function VisitPanel({
     if (!visit) return;
     setError(null);
     startTransition(async () => {
+      // An older course bill is repriced from its one course rate (first row
+      // carries it, the rest go to ₱0). Tell staff exactly which rows first.
+      if (visit.experienceType === "dive_course" && !visit.modeSwitchedAt) {
+        const preview = await previewLegacyCourseCharges(visit.id);
+        if (preview.rows.length > 0) {
+          const list = preview.rows
+            .slice(0, 6)
+            .map((r) => `${r.date} ${r.site || "(no course)"}: ${peso(r.current)} → ${peso(r.next)}${r.otherFees > 0 ? " (other fees cleared)" : ""}`)
+            .join("; ");
+          const more = preview.rows.length > 6 ? ` …and ${preview.rows.length - 6} more` : "";
+          const yes = await confirm(
+            `This is an older course bill. Apply Charges reprices its rows from the course rate — the first row carries the course price and the others are set to ₱0: ${list}${more}. Course fee rows you add as new course fees are not touched.`,
+            { title: "Apply Charges on a course bill", confirmLabel: "Continue", dismissible: true },
+          );
+          if (!yes) return;
+        }
+      }
       const res = await applyChargesToVisit(diverId, visit.id);
       if (res.error) {
         setError(res.error);
@@ -506,6 +529,56 @@ export function VisitPanel({
       }
       finishApplyCharges(res.missingRateCount);
     });
+  }
+
+  // Fun Diving <-> Course (migration 060). Switching only changes the mode: it
+  // never adds a course fee and never reprices or removes a fun dive.
+  async function switchToCourse() {
+    if (!visit) return;
+    setError(null);
+    const yes = await confirm(
+      "Switch this bill to Course mode? Fun dives already on the bill stay billed exactly as they are. No course fee is added — add the course fee row yourself.",
+      { title: "Switch to Course", confirmLabel: "Switch to Course", dismissible: true },
+    );
+    if (!yes) return;
+    startTransition(async () => {
+      const res = await switchVisitMode(diverId, visit.id, "dive_course", false);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      window.location.reload();
+    });
+  }
+
+  async function switchToFun(removeFees: boolean) {
+    if (!visit) return;
+    setSwitchError(null);
+    startTransition(async () => {
+      const res = await switchVisitMode(diverId, visit.id, "fun_diving", removeFees);
+      if (res.error) {
+        setSwitchError(res.error);
+        return;
+      }
+      window.location.reload();
+    });
+  }
+
+  async function startSwitchToFun() {
+    if (!visit) return;
+    setError(null);
+    const fees = activities.filter((a) => a.rowType === "course_fee" && a.status !== "cancelled");
+    if (fees.length > 0) {
+      setSwitchError(null);
+      setSwitchFunOpen(true);
+      return;
+    }
+    const yes = await confirm(
+      "Switch this bill to Fun Diving mode? Nothing on the bill changes; Boat Return will add dive rows for this diver again.",
+      { title: "Switch to Fun Diving", confirmLabel: "Switch to Fun Diving", dismissible: true },
+    );
+    if (!yes) return;
+    switchToFun(false);
   }
 
   function finishApplyCharges(missingRateCount?: number) {
@@ -550,7 +623,7 @@ export function VisitPanel({
   // Bundles (migration 058): the new-style bundle row has rowType "bundle";
   // an older bundle row only has bundleId (and can't be removed — nothing
   // saved to restore). Dive rows are everything else that isn't cancelled.
-  const diveRows = activities.filter((a) => a.status !== "cancelled" && a.rowType !== "bundle");
+  const diveRows = activities.filter((a) => a.status !== "cancelled" && !a.rowType);
   const hasNewBundle = activities.some((a) => a.rowType === "bundle");
   const hasLegacyBundle = activities.some((a) => a.status !== "cancelled" && a.bundleId && a.rowType !== "bundle");
   // Dives, not rows: a package row stands for as many dives as it has site
@@ -670,6 +743,13 @@ export function VisitPanel({
               className="px-3 py-1.5 text-xs font-medium bg-teal text-white rounded-md hover:bg-teal-mid disabled:opacity-60"
             >
               + Add Activity
+            </button>
+            <button
+              onClick={visit.experienceType === "dive_course" ? startSwitchToFun : switchToCourse}
+              disabled={pending}
+              className="px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 text-navy rounded-md hover:bg-gray-50 disabled:opacity-60"
+            >
+              {visit.experienceType === "dive_course" ? "Switch to Fun Diving" : "Switch to Course"}
             </button>
             {activities.length > 0 && (
               <button
@@ -802,7 +882,11 @@ export function VisitPanel({
                       setActivities((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
                     }
                     onDeleted={(id) => setActivities((prev) => prev.filter((x) => x.id !== id))}
-                    visitExperienceType={visit.experienceType}
+                    visitExperienceType={
+                      a.rowType === "course_fee" || (visit.experienceType === "dive_course" && !visit.modeSwitchedAt)
+                        ? "dive_course"
+                        : "fun_diving"
+                    }
                     pricingMode={pricingMode}
                     diveSites={diveSites}
                     packages={packages}
@@ -875,6 +959,19 @@ export function VisitPanel({
           }}
           onClose={() => setChangeGroup(null)}
           onApplied={() => window.location.reload()}
+        />
+      )}
+
+      {switchFunOpen && visit && (
+        <SwitchToFunModal
+          feeRows={activities.filter((a) => a.rowType === "course_fee" && a.status !== "cancelled")}
+          olderCourseRowCount={
+            visit.modeSwitchedAt ? 0 : activities.filter((a) => !a.rowType && a.status !== "cancelled").length
+          }
+          pending={pending}
+          error={switchError}
+          onClose={() => setSwitchFunOpen(false)}
+          onChoose={(remove) => switchToFun(remove)}
         />
       )}
 
